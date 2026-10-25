@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>CS2 Roulette — DPI wheel</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+  body { font-family: "Segoe UI", Roboto, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+  #root { --color: #ffffff; --accent: #ffd166; position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+  #stage { position: absolute; transform-origin: 0 0; }
+  canvas { display: block; opacity: 1; transform: scale(1); transition: opacity .55s ease, transform .55s cubic-bezier(.2,.8,.2,1); }
+  #stage.wheel-hidden canvas { opacity: 0; transform: scale(.85); }
+  #result {
+    position: absolute; left: 0; right: 0; text-align: center; color: var(--color);
+    text-shadow: 0 2px 10px rgba(0,0,0,.8); font-weight: 900; letter-spacing: .02em; white-space: nowrap;
+    transform: scale(.6); opacity: 0; transition: transform .35s cubic-bezier(.2,1.4,.3,1), opacity .3s;
+  }
+  #result.show { transform: scale(1); opacity: 1; }
+  #result .v { font-size: 96px; line-height: 1; color: var(--accent); }
+  #result .u { font-size: 24px; letter-spacing: .3em; opacity: .85; margin-top: 2px; }
+  #result .r { font-size: 16px; opacity: .7; margin-top: 4px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; min-height: 20px; }
+  #debug { position: absolute; left: 8px; bottom: 8px; font: 12px/1.4 monospace; color: #0f0; background: rgba(0,0,0,.6); padding: 6px 8px; display: none; white-space: pre; }
+</style>
+</head>
+<body>
+<div id="root">
+  <div id="stage">
+    <canvas id="wheel" width="600" height="600"></canvas>
+    <div id="result"><div class="v">—</div><div class="u">DPI</div><div class="r"></div></div>
+  </div>
+  <div id="debug"></div>
+</div>
+<script>
+(() => {
+  const qs = new URLSearchParams(location.search);
+  const root = document.getElementById('root');
+  const stage = document.getElementById('stage');
+  const canvas = document.getElementById('wheel');
+  const ctx = canvas.getContext('2d');
+  const resultEl = document.getElementById('result');
+  const debugEl = document.getElementById('debug');
+  const hex = v => /^#?[0-9a-fA-F]{6}$/.test(v) ? '#' + v.replace('#', '') : null;
+  const bool = v => v === '1' || v === 'true' || v === 'yes';
+  if (qs.has('bg') && hex(qs.get('bg'))) document.body.style.background = hex(qs.get('bg'));
+  if (qs.has('debug')) debugEl.style.display = 'block';
+
+  // ---- config (server settings, URL params override) --------------------------------
+  let overlay = { color: '#ffffff', accent: '#ffd166' };
+  let dpi = null;             // service snapshot
+  let cfg = {};
+  function readCfg() {
+    const s = (dpi && dpi.settings) || {};
+    const num = (q, d) => { const v = parseFloat(qs.get(q)); return Number.isFinite(v) ? v : d; };
+    cfg = {
+      color: (qs.has('color') && hex(qs.get('color'))) || overlay.color || '#ffffff',
+      accent: (qs.has('accent') && hex(qs.get('accent'))) || overlay.accent || '#ffd166',
+      scale: qs.has('scale') ? (num('scale', 1) || 1) : 1,
+      labels: qs.has('labels') ? bool(qs.get('labels')) : true,
+      wheel: qs.has('wheel') ? (qs.get('wheel') === 'always' ? 'always' : 'spin') : (s.wheel_mode === 'always' ? 'always' : 'spin'),
+      linger: qs.has('linger') ? num('linger', 2.5) : (Number.isFinite(+s.wheel_linger_s) ? +s.wheel_linger_s : 2.5),
+      hide: qs.has('hide') ? num('hide', 0) : (+s.idle_hide_s || 0),
+      showCurrent: qs.has('current') ? bool(qs.get('current')) : (s.show_current !== false),
+      home: qs.has('home') ? (parseInt(qs.get('home'), 10) || 0) : (+s.home_dpi || 0),
+      homeColor: (qs.has('homecolor') && hex(qs.get('homecolor'))) || s.home_color || '#ff6b6b',
+    };
+    root.style.setProperty('--color', cfg.color);
+    root.style.setProperty('--accent', cfg.accent);
+  }
+
+  // ---- geometry ------------------------------------------------------------------
+  const SIZE = 600, R = 270, CX = 300, CY = 300;
+  const TAU = Math.PI * 2;
+  function layout() {
+    const sc = cfg.scale || 1;
+    const W = window.innerWidth, H = window.innerHeight;
+    const totalW = SIZE * sc, totalH = (SIZE + 150) * sc;
+    stage.style.transform = `scale(${sc})`;
+    stage.style.left = Math.max(0, (W - totalW) / 2) + 'px';
+    stage.style.top = Math.max(0, (H - totalH) / 2) + 'px';
+    resultEl.style.top = (SIZE - 10) + 'px';   // the number always lives below the wheel area
+  }
+
+  // ---- drawing -------------------------------------------------------------------
+  let values = [];
+  let rotation = 0;           // current wheel rotation (radians)
+  function hexToRgba(h, a) { const n = parseInt(h.slice(1), 16); return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`; }
+  function draw() {
+    ctx.clearRect(0, 0, SIZE, SIZE);
+    const n = values.length || 1;
+    const seg = TAU / n;
+    ctx.save();
+    ctx.translate(CX, CY);
+    ctx.rotate(rotation);
+    for (let i = 0; i < n; i++) {
+      const a0 = i * seg, a1 = a0 + seg;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, R, a0, a1); ctx.closePath();
+      const isHome = values[i] === cfg.home;
+      ctx.fillStyle = isHome ? hexToRgba(cfg.homeColor, 0.95) : i % 2 === 0 ? hexToRgba(cfg.accent, 0.85) : hexToRgba(cfg.color, 0.22);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 2; ctx.stroke();
+      if (cfg.labels) {
+        ctx.save();
+        ctx.rotate(a0 + seg / 2);
+        ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        const fs = n > 40 ? 13 : n > 28 ? 16 : n > 16 ? 20 : 26;
+        ctx.font = `800 ${fs}px "Segoe UI", Roboto, Arial, sans-serif`;
+        ctx.fillStyle = isHome ? '#ffffff' : i % 2 === 0 ? '#1a1a1a' : cfg.color;
+        ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = (isHome || i % 2 !== 0) ? 4 : 0;
+        ctx.fillText(String(values[i]), R - 14, 0);
+        ctx.restore();
+      }
+    }
+    ctx.restore();
+    ctx.save(); ctx.translate(CX, CY);
+    ctx.beginPath(); ctx.arc(0, 0, R + 4, 0, TAU); ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 8; ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, R + 1, 0, TAU); ctx.strokeStyle = hexToRgba(cfg.color, .9); ctx.lineWidth = 3; ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, 34, 0, TAU); ctx.fillStyle = '#1a1a1a'; ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, 28, 0, TAU); ctx.fillStyle = cfg.accent; ctx.fill();
+    ctx.restore();
+    ctx.save(); ctx.translate(CX, CY - R - 6);
+    ctx.beginPath(); ctx.moveTo(-22, -30); ctx.lineTo(22, -30); ctx.lineTo(0, 26); ctx.closePath();
+    ctx.fillStyle = cfg.accent; ctx.shadowColor = 'rgba(0,0,0,.7)'; ctx.shadowBlur = 10; ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = '#1a1a1a'; ctx.shadowBlur = 0; ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---- visibility ----------------------------------------------------------------
+  let lingerTimer = null, hideTimer = null;
+  function clearTimers() { clearTimeout(lingerTimer); clearTimeout(hideTimer); lingerTimer = hideTimer = null; }
+  function showWheel(v) { stage.classList.toggle('wheel-hidden', !v); }
+  function showNumber(value, reasonText) {
+    const home = value === cfg.home;
+    resultEl.querySelector('.v').textContent = value;
+    resultEl.querySelector('.v').style.color = home ? cfg.homeColor : '';
+    resultEl.querySelector('.r').textContent = reasonText || '';
+    resultEl.classList.add('show');
+  }
+  function hideNumber() { resultEl.classList.remove('show'); }
+  function reasonText(spin) { return spin.reason === 'death' ? 'после смерти' : spin.reason === 'hotkey' ? 'по хоткею' : ''; }
+
+  // ---- animation -----------------------------------------------------------------
+  let anim = null;            // {from, to, start, duration, spin}
+  const easeOut = t => 1 - Math.pow(1 - t, 3);
+  function targetRotation(spin) {
+    const seg = TAU / spin.values.length;
+    // segment i spans [i*seg, (i+1)*seg) before rotation; the pointer sits at -PI/2 (top)
+    return -Math.PI / 2 - (spin.index + spin.offset) * seg;
+  }
+  function norm(a) { return ((a % TAU) + TAU) % TAU; }
+  function startSpin(spin, nowMs) {
+    values = spin.values; readCfg(); layout();
+    clearTimers();
+    showWheel(true);
+    hideNumber();
+    const elapsed = Math.max(0, nowMs - spin.started_at * 1000);
+    const target = targetRotation(spin);
+    const delta = norm(target - rotation);
+    const to = rotation + spin.revolutions * TAU + delta;
+    anim = { from: rotation, to, start: performance.now() - elapsed, duration: spin.duration_ms, spin };
+    requestAnimationFrame(tick);
+  }
+  function tick(ts) {
+    if (!anim) return;
+    const t = Math.min(1, (ts - anim.start) / anim.duration);
+    rotation = anim.from + (anim.to - anim.from) * easeOut(t);
+    draw();
+    if (t < 1) { requestAnimationFrame(tick); return; }
+    const spin = anim.spin; anim = null;
+    rotation = norm(rotation);
+    rest(spin, 0);
+  }
+  // State after a spin has finished `ageS` seconds ago.
+  function rest(spin, ageS) {
+    clearTimers();
+    showNumber(spin.value, ageS < 15 ? reasonText(spin) : '');
+    if (cfg.wheel === 'always') showWheel(true);
+    else if (ageS >= cfg.linger) showWheel(false);
+    else { showWheel(true); lingerTimer = setTimeout(() => showWheel(false), (cfg.linger - ageS) * 1000); }
+    if (cfg.hide > 0) {
+      if (ageS >= cfg.hide) { hideNumber(); if (cfg.wheel === 'always') showWheel(false); }
+      else hideTimer = setTimeout(() => { hideNumber(); if (cfg.wheel === 'always') showWheel(false); }, (cfg.hide - ageS) * 1000);
+    }
+  }
+  function idle() {
+    clearTimers();
+    showWheel(cfg.wheel === 'always');
+    if (cfg.showCurrent && dpi && dpi.current_dpi) showNumber(dpi.current_dpi, ''); else hideNumber();
+  }
+
+  function sync(nowMs) {
+    if (!dpi) return;
+    readCfg();
+    values = dpi.values || [];
+    layout();
+    const spin = dpi.last_spin;
+    if (spin && spin.values && spin.values.length) {
+      const endMs = spin.started_at * 1000 + spin.duration_ms;
+      if (nowMs < endMs) { startSpin(spin, nowMs); return; }
+      anim = null; values = spin.values; rotation = norm(targetRotation(spin));
+      draw();
+      if (cfg.showCurrent || (nowMs - endMs) / 1000 < 15) rest(spin, (nowMs - endMs) / 1000); else idle();
+    } else {
+      draw(); idle();
+    }
+    debug();
+  }
+  function debug() {
+    if (debugEl.style.display === 'none' || !dpi) return;
+    debugEl.textContent = JSON.stringify({ backend: dpi.backend, current: dpi.current_dpi, target: dpi.target_dpi, mouse: dpi.mouse, cfg }, null, 1);
+  }
+
+  // ---- SSE -------------------------------------------------------------------------
+  let serverOffset = 0;  // server time - client time (ms), to replay spins after a reload
+  const es = new EventSource('/events');
+  es.addEventListener('snapshot', e => {
+    const d = JSON.parse(e.data);
+    overlay = { ...overlay, ...(d.overlay || {}) };
+    dpi = d.dpi;
+    if (dpi && dpi.now) serverOffset = dpi.now * 1000 - Date.now();
+    sync(Date.now() + serverOffset);
+  });
+  es.addEventListener('dpi', e => {
+    dpi = JSON.parse(e.data);
+    if (dpi.now) serverOffset = dpi.now * 1000 - Date.now();
+    readCfg();
+    if (!anim) {
+      // settings may have changed (wheel mode, values); redraw without disturbing a shown result
+      values = (dpi.last_spin && dpi.last_spin.values) || dpi.values || values;
+      draw();
+      if (!resultEl.classList.contains('show') && !lingerTimer) idle();
+    }
+    debug();
+  });
+  es.addEventListener('dpi_spin', e => { const spin = JSON.parse(e.data); if (dpi) dpi.last_spin = spin; startSpin(spin, Date.now() + serverOffset); });
+  es.addEventListener('settings', e => { const d = JSON.parse(e.data); overlay = { ...overlay, ...(d.overlay || {}) }; if (!anim) { readCfg(); layout(); draw(); } });
+  window.addEventListener('resize', () => { readCfg(); layout(); });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>CS2 Roulette — loadout overlay</title>
+<style>
+  html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+  body { font-family: "Segoe UI", Roboto, Arial, sans-serif; }
+  #root { --color: #ffffff; --accent: #ffd166; color: var(--color); position: absolute; left: 0; top: 0; transform-origin: 0 0; padding: 14px; }
+  .side { margin-bottom: 18px; }
+  .side h1 { margin: 0 0 8px; font-size: 30px; letter-spacing: .12em; text-shadow: 0 2px 8px rgba(0,0,0,.8); }
+  .side h1 span { color: var(--accent); }
+  .cat { display: flex; align-items: center; gap: 14px; margin: 8px 0; }
+  .cat .title { width: 150px; font-size: 13px; text-transform: uppercase; letter-spacing: .1em; opacity: .75; text-shadow: 0 2px 6px rgba(0,0,0,.8); }
+  .cat .items { display: flex; gap: 12px; flex-wrap: wrap; }
+  .w { display: flex; flex-direction: column; align-items: center; width: 118px; }
+  .w .iconwrap { width: 110px; height: 44px; filter: drop-shadow(0 2px 5px rgba(0,0,0,.6)); }
+  .w .icon { width: 100%; height: 100%; background: var(--color); -webkit-mask: var(--mask) no-repeat center / contain; mask: var(--mask) no-repeat center / contain; }
+  .w .name { font-size: 12px; margin-top: 2px; opacity: .9; text-shadow: 0 1px 4px rgba(0,0,0,.9); white-space: nowrap; }
+  .hide-names .name { display: none; }
+  .w.done .icon { opacity: .35; }
+  .w.current .icon { background: var(--accent); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+(() => {
+  const qs = new URLSearchParams(location.search);
+  const root = document.getElementById('root');
+  const hex = v => /^#?[0-9a-fA-F]{6}$/.test(v) ? '#' + v.replace('#', '') : null;
+  if (qs.has('bg') && hex(qs.get('bg'))) document.body.style.background = hex(qs.get('bg'));
+  let cfg = { color: '#ffffff', accent: '#ffd166', scale: 1 };
+  let roulette = null, weapons = {};
+  const TITLES = { starting: 'Стартовый', pistol: 'Пистолеты', mid: 'Мид-тир', rifle: 'Винтовки' };
+
+  function loadWeapons(attempt = 0) {
+    fetch('/api/weapons').then(r => r.json()).then(d => { d.weapons.forEach(w => weapons[w.id] = w); render(); })
+      .catch(() => setTimeout(() => loadWeapons(attempt + 1), Math.min(10000, 500 * (attempt + 1))));
+  }
+  loadWeapons();
+
+  function sidesToShow() {
+    const want = qs.get('side') || 'auto';
+    if (want === 'both') return ['T', 'CT'];
+    if (want === 'T' || want === 'CT') return [want];
+    return [roulette ? roulette.side : 'T'];
+  }
+
+  function render() {
+    if (!roulette || !roulette.loadout || !Object.keys(weapons).length) { root.innerHTML = ''; return; }
+    const color = (qs.has('color') && hex(qs.get('color'))) || cfg.color;
+    const accent = (qs.has('accent') && hex(qs.get('accent'))) || cfg.accent;
+    const scale = qs.has('scale') ? (parseFloat(qs.get('scale')) || 1) : (+cfg.scale || 1);
+    root.style.setProperty('--color', color);
+    root.style.setProperty('--accent', accent);
+    root.style.transform = `scale(${scale})`;
+    root.classList.toggle('hide-names', qs.get('names') === '0');
+    const cur = roulette.running && roulette.queue[0] ? roulette.queue[0].id : null;
+    root.replaceChildren();
+    for (const side of sidesToShow()) {
+      const lo = roulette.loadout[side];
+      if (!lo) continue;
+      const done = new Set(((roulette.completed_ids || {})[side]) || []);
+      const sideEl = document.createElement('div'); sideEl.className = 'side';
+      const h1 = document.createElement('h1'); h1.textContent = 'LOADOUT '; const sp = document.createElement('span'); sp.textContent = side; h1.appendChild(sp); sideEl.appendChild(h1);
+      for (const cat of ['starting', 'pistol', 'mid', 'rifle']) {
+        const ids = Array.isArray(lo[cat]) ? lo[cat] : [lo[cat]];
+        const catEl = document.createElement('div'); catEl.className = 'cat';
+        const title = document.createElement('div'); title.className = 'title'; title.textContent = TITLES[cat]; catEl.appendChild(title);
+        const items = document.createElement('div'); items.className = 'items';
+        for (const id of ids) {
+          const w = weapons[id]; if (!w) continue;
+          const el = document.createElement('div');
+          el.className = 'w' + (id === cur && side === roulette.side ? ' current' : '') + (done.has(id) ? ' done' : '');
+          const wrap = document.createElement('div'); wrap.className = 'iconwrap';
+          const icon = document.createElement('div'); icon.className = 'icon'; icon.style.setProperty('--mask', `url('${w.icon}')`);
+          wrap.appendChild(icon); el.appendChild(wrap);
+          const name = document.createElement('div'); name.className = 'name'; name.textContent = w.name; el.appendChild(name);
+          items.appendChild(el);
+        }
+        catEl.appendChild(items); sideEl.appendChild(catEl);
+      }
+      root.appendChild(sideEl);
+    }
+  }
+
+  const es = new EventSource('/events');
+  es.addEventListener('snapshot', e => { const d = JSON.parse(e.data); cfg = { ...cfg, ...(d.overlay || {}) }; roulette = d.roulette; render(); });
+  es.addEventListener('roulette', e => { roulette = JSON.parse(e.data); render(); });
+  es.addEventListener('settings', e => { const d = JSON.parse(e.data); cfg = { ...cfg, ...(d.overlay || {}) }; render(); });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>CS2 Roulette — weapons overlay</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  /* No background anywhere: OBS Browser Source composites with alpha. */
+  html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+  body { font-family: "Segoe UI", Roboto, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+  #root {
+    position: absolute; left: 0; top: 0; width: 100%; height: 100%;
+    --color: #ffffff; --accent: #ffd166;
+  }
+  #strip { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  .card {
+    position: absolute; left: 0; top: 0; width: var(--w); height: var(--h);
+    transform-origin: 0 0;
+    transition: transform .55s cubic-bezier(.2,.8,.2,1), opacity .45s ease;
+    will-change: transform, opacity;
+  }
+  /* filters live on a wrapper: a filter on the masked element itself is cut away by the mask */
+  .card .iconwrap { width: 100%; height: var(--ih); filter: drop-shadow(0 2px 6px rgba(0,0,0,.55)); }
+  .card.current .iconwrap { filter: drop-shadow(0 0 10px rgba(0,0,0,.6)) drop-shadow(0 0 2px rgba(0,0,0,.9)); }
+  .card .icon {
+    width: 100%; height: 100%;
+    background-color: var(--color);
+    -webkit-mask: var(--mask) no-repeat center / contain; mask: var(--mask) no-repeat center / contain;
+    transition: background-color .3s;
+  }
+  .card .label {
+    margin-top: 4px; text-align: center; color: var(--color); font-weight: 700; letter-spacing: .04em;
+    font-size: 22px; text-shadow: 0 2px 6px rgba(0,0,0,.8); white-space: nowrap; opacity: .95;
+  }
+  .card.next .label { font-size: 30px; opacity: .85; }   /* card is scaled ~0.5, so ~15px on screen */
+  .card.hidden-label .label { display: none; }
+  .card .kills {
+    position: absolute; right: -6px; top: -6px; padding: 2px 8px; border-radius: 999px;
+    background: var(--accent); color: #111; font-weight: 800; font-size: 16px;
+    box-shadow: 0 2px 6px rgba(0,0,0,.6);
+  }
+  .card .match {
+    position: absolute; left: -6px; top: -6px; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--accent); color: #111; font-size: 15px; font-weight: 900; line-height: 22px; text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,.6); opacity: 0; transform: scale(.6); transition: opacity .25s, transform .25s;
+  }
+  .card.matched .match { opacity: 1; transform: scale(1); }
+  .card.next { opacity: .62; }
+  .card.enter { opacity: 0; }
+  .card.out { opacity: 0 !important; }
+  /* kill flash */
+  @keyframes flash {
+    0% { filter: drop-shadow(0 0 0 var(--accent)); }
+    30% { filter: drop-shadow(0 0 18px var(--accent)) drop-shadow(0 0 6px var(--accent)); }
+    100% { filter: drop-shadow(0 0 0 rgba(0,0,0,0)); }
+  }
+  .card.flash .iconwrap { animation: flash .9s ease-out; }
+  @keyframes shake { 0%,100% { translate: 0 0; } 20% { translate: -6px 0; } 40% { translate: 6px 0; } 60% { translate: -4px 0; } 80% { translate: 4px 0; } }
+  .card.shake .iconwrap { animation: shake .45s ease; }
+  /* counter badge */
+  #counter {
+    position: absolute; display: flex; align-items: center; gap: 8px; white-space: nowrap;
+    color: var(--color); font-weight: 800; font-size: 26px; text-shadow: 0 2px 6px rgba(0,0,0,.8);
+    opacity: 0; transition: opacity .4s; transform-origin: 0 0;
+  }
+  #counter.show { opacity: 1; }
+  #counter .n { color: var(--accent); }
+  #counter .caption { font-size: 14px; font-weight: 600; opacity: .8; letter-spacing: .08em; text-transform: uppercase; }
+  #debug { position: absolute; left: 8px; bottom: 8px; font: 12px/1.4 monospace; color: #0f0; background: rgba(0,0,0,.6); padding: 6px 8px; display: none; white-space: pre; }
+</style>
+</head>
+<body>
+<div id="root">
+  <div id="strip"></div>
+  <div id="counter"><span class="caption">пройдено</span><span class="n">0</span></div>
+  <div id="debug"></div>
+</div>
+<script>
+(() => {
+  const qs = new URLSearchParams(location.search);
+  const root = document.getElementById('root');
+  const strip = document.getElementById('strip');
+  const counterEl = document.getElementById('counter');
+  const debugEl = document.getElementById('debug');
+
+  // ---- settings (server defaults, URL params override) ----------------------
+  let cfg = { color: '#ffffff', accent: '#ffd166', scale: 1, layout: 'horizontal', labels: false,
+              show_counter: true, show_kills: true, show_match: true, align: 'left' };
+  const bool = v => v === '1' || v === 'true' || v === 'yes';
+  const hex = v => /^#?[0-9a-fA-F]{6}$/.test(v) ? '#' + v.replace('#', '') : null;
+  function applyOverrides() {
+    const c = { ...cfg };
+    if (qs.has('color') && hex(qs.get('color'))) c.color = hex(qs.get('color'));
+    if (qs.has('accent') && hex(qs.get('accent'))) c.accent = hex(qs.get('accent'));
+    if (qs.has('scale')) { const s = parseFloat(qs.get('scale')); if (Number.isFinite(s) && s > 0) c.scale = s; }
+    if (qs.has('layout')) c.layout = qs.get('layout') === 'vertical' ? 'vertical' : 'horizontal';
+    if (qs.has('labels')) c.labels = bool(qs.get('labels'));
+    if (qs.has('counter')) c.show_counter = bool(qs.get('counter'));
+    if (qs.has('kills')) c.show_kills = bool(qs.get('kills'));
+    if (qs.has('match')) c.show_match = bool(qs.get('match'));
+    if (qs.has('align')) c.align = qs.get('align');
+    if (!Number.isFinite(+c.scale) || +c.scale <= 0) c.scale = 1;
+    return c;
+  }
+  if (qs.has('debug')) debugEl.style.display = 'block';
+  // ?bg=1a1a1a — preview background in a normal browser (OBS stays transparent without it)
+  if (qs.has('bg') && hex(qs.get('bg'))) document.body.style.background = hex(qs.get('bg'));
+
+  // ---- geometry ---------------------------------------------------------------
+  const CUR = { w: 320, h: 120, ih: 120 };        // current weapon box (pre-scale)
+  const NXT = { s: 0.52 };                         // next cards: same box, scaled down
+  const GAP = 26;
+  function layoutFor(index, labels, layout) {
+    const labelH = labels ? 42 : 0;   // label line below the icon box (30px font + margin, pre-scale)
+    const s = index === 0 ? 1 : NXT.s;
+    if (layout === 'vertical') {
+      const nextH = (CUR.h + labelH) * NXT.s;
+      const y = index === 0 ? 0 : (CUR.h + labelH + GAP) + (index - 1) * (nextH + GAP * 0.8);
+      const x = index === 0 ? 0 : (CUR.w - CUR.w * NXT.s) / 2;   // centre next cards under the current one
+      return { x, y, s, w: CUR.w * s, h: (CUR.h + labelH) * s };
+    }
+    const x = index === 0 ? 0 : (CUR.w + GAP) + (index - 1) * (CUR.w * NXT.s + GAP * 0.7);
+    const y = index === 0 ? 0 : (CUR.h - CUR.h * NXT.s) / 2;      // vertically centre next cards on the icon row
+    return { x, y, s, w: CUR.w * s, h: (CUR.h + labelH) * s };
+  }
+  function stripSize(count, labels, layout) {
+    let w = 0, h = 0;
+    for (let i = 0; i < count; i++) { const p = layoutFor(i, labels, layout); w = Math.max(w, p.x + p.w); h = Math.max(h, p.y + p.h); }
+    return { w, h };
+  }
+
+  // ---- state -----------------------------------------------------------------
+  let roulette = null, gsi = null, c = applyOverrides();
+  const cards = new Map(); // uid -> element
+
+  function makeCard(item) {
+    const el = document.createElement('div');
+    el.className = 'card enter';
+    el.dataset.uid = item.uid;
+    el.dataset.id = item.id;
+    el.style.setProperty('--w', CUR.w + 'px');
+    el.style.setProperty('--h', CUR.h + 'px');
+    el.style.setProperty('--ih', CUR.ih + 'px');
+    el.innerHTML = `<div class="iconwrap"><div class="icon" style="--mask:url('${item.icon}')"></div></div>
+                    <div class="label"></div>
+                    <div class="kills"></div><div class="match">✓</div>`;
+    el.querySelector('.label').textContent = item.name;
+    strip.appendChild(el);
+    return el;
+  }
+
+  // Positions a card. Idempotent: a non-animated call never touches a card that is already
+  // targeted at the same slot (so SSE status updates cannot cancel a running slide).
+  function place(el, index, animate) {
+    const p = layoutFor(index, c.labels, c.layout);
+    const key = `${p.x}|${p.y}|${p.s}`;
+    if (el.dataset.pos !== key) {
+      el.dataset.pos = key;
+      if (!animate) el.style.transition = 'none';
+      el.style.transform = `translate(${p.x}px, ${p.y}px) scale(${p.s})`;
+      if (!animate) { void el.offsetWidth; el.style.transition = ''; }
+    }
+    el.classList.toggle('current', index === 0);
+    el.classList.toggle('next', index !== 0);
+  }
+
+  function refreshBadges() {
+    if (!roulette) return;
+    const items = roulette.running ? roulette.queue : [];
+    items.forEach((item, index) => {
+      const el = cards.get(item.uid); if (!el) return;
+      const killsEl = el.querySelector('.kills');
+      const showKills = index === 0 && c.show_kills && roulette.kills_per_weapon > 1;
+      killsEl.style.display = showKills ? 'block' : 'none';
+      if (showKills) killsEl.textContent = `${roulette.current_kills}/${roulette.kills_per_weapon}`;
+      const matched = index === 0 && c.show_match && gsi && gsi.connected && gsi.own_player && gsi.held === item.id;
+      el.classList.toggle('matched', !!matched);
+    });
+    counterEl.querySelector('.n').textContent = roulette.completed;
+    if (debugEl.style.display !== 'none') {
+      debugEl.textContent = JSON.stringify({ running: roulette.running, side: roulette.side,
+        queue: roulette.queue.map(q => q.id), held: gsi && gsi.held, gsi: gsi && gsi.connected, cfg: c }, null, 1);
+    }
+  }
+
+  function layoutAll(animate) {
+    if (!roulette) return;
+    root.style.setProperty('--color', c.color);
+    root.style.setProperty('--accent', c.accent);
+    const items = roulette.running ? roulette.queue : [];
+    const seen = new Set();
+    items.forEach((item, index) => {
+      seen.add(item.uid);
+      let el = cards.get(item.uid);
+      if (!el) {
+        el = makeCard(item);
+        cards.set(item.uid, el);
+        // spawn just beyond the last slot and slide in
+        const spawn = layoutFor(Math.max(index, 1) + 1, c.labels, c.layout);
+        el.style.transition = 'none';
+        el.style.transform = `translate(${spawn.x}px, ${spawn.y}px) scale(${NXT.s})`;
+        void el.offsetWidth; el.style.transition = '';
+      }
+      el.classList.toggle('hidden-label', !c.labels);
+      requestAnimationFrame(() => { el.classList.remove('enter'); place(el, index, animate); });
+    });
+    for (const [uid, el] of cards) {
+      if (!seen.has(uid)) {
+        cards.delete(uid);
+        const idx = parseInt(el.dataset.idx || '0', 10);
+        const p = layoutFor(idx, c.labels, c.layout);
+        el.classList.add('out');
+        el.style.transform = idx > 0
+          ? `translate(${p.x}px, ${p.y}px) scale(${NXT.s * 0.9})`          // dropped upcoming card: fade in place
+          : c.layout === 'vertical'
+            ? `translate(${p.x - 60}px, ${p.y}px) scale(.9)`                // finished current card flies away
+            : `translate(${p.x}px, ${p.y - 70}px) scale(.9)`;
+        setTimeout(() => el.remove(), 650);
+      }
+    }
+    items.forEach((item, index) => { const el = cards.get(item.uid); if (el) el.dataset.idx = index; });
+
+    // strip scale + alignment. The panel offers left|center|right for both layouts
+    // ("слева / сверху", "справа / снизу"); URL users may also type top|middle|bottom.
+    const size = stripSize(Math.max(items.length, 1), c.labels, c.layout);
+    const sc = +c.scale;
+    strip.style.transform = `scale(${sc})`;
+    const W = window.innerWidth, H = window.innerHeight;
+    const totalW = size.w * sc, totalH = size.h * sc;
+    const a = String(c.align || 'left').toLowerCase();
+    const vAlign = (a === 'left' || a === 'top') ? 'top' : (a === 'right' || a === 'bottom') ? 'bottom' : 'middle';
+    const hAlign = (a === 'left' || a === 'top') ? 'left' : (a === 'right' || a === 'bottom') ? 'right' : 'center';
+    const counterH = (c.show_counter ? 34 : 0) * sc;
+    let left = 12, top = 12;
+    if (c.layout === 'vertical') {
+      left = (W - totalW) / 2;
+      top = vAlign === 'top' ? 12 : vAlign === 'bottom' ? H - totalH - counterH - 12 : (H - totalH - counterH) / 2;
+      if (qs.has('x')) left = parseFloat(qs.get('x')) || 0;
+    } else {
+      top = (H - totalH - counterH) / 2;
+      left = hAlign === 'left' ? 12 : hAlign === 'right' ? W - totalW - 12 : (W - totalW) / 2;
+      if (qs.has('y')) top = parseFloat(qs.get('y')) || 0;
+    }
+    strip.style.left = left + 'px'; strip.style.top = top + 'px';
+
+    // counter
+    const showCounter = c.show_counter && roulette.running;
+    counterEl.classList.toggle('show', showCounter);
+    counterEl.style.transform = `scale(${sc})`;
+    if (c.layout === 'vertical') {
+      counterEl.style.left = (left + totalW / 2 - (counterEl.offsetWidth * sc) / 2) + 'px';
+      counterEl.style.top = (top + totalH + 22 * sc) + 'px';
+    } else {
+      counterEl.style.left = left + 'px'; counterEl.style.top = (top + totalH + 10 * sc) + 'px';
+    }
+    refreshBadges();
+  }
+
+  function onKill(ev) {
+    if (!roulette) return;
+    let el = null;
+    if (ev.advanced && ev.finished_uid != null) {
+      // the scorer has already left the queue; its element is still in the DOM while fading out
+      el = strip.querySelector(`.card[data-uid="${ev.finished_uid}"]`);
+    }
+    if (!el) { const first = roulette.queue[0]; el = first ? cards.get(first.uid) : null; }
+    if (!el) return;
+    if (ev.counted) { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
+    else if (!ev.ambiguous) { el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); }
+  }
+
+  // ---- SSE ---------------------------------------------------------------------
+  const es = new EventSource('/events');
+  es.addEventListener('snapshot', e => {
+    const d = JSON.parse(e.data);
+    cfg = { ...cfg, ...(d.overlay || {}) }; c = applyOverrides();
+    roulette = d.roulette; gsi = d.gsi;
+    layoutAll(false);
+  });
+  es.addEventListener('roulette', e => { roulette = JSON.parse(e.data); layoutAll(true); });
+  es.addEventListener('gsi', e => { gsi = JSON.parse(e.data); refreshBadges(); });
+  es.addEventListener('settings', e => { const d = JSON.parse(e.data); cfg = { ...cfg, ...(d.overlay || {}) }; c = applyOverrides(); layoutAll(false); });
+  es.addEventListener('kill', e => onKill(JSON.parse(e.data)));
+  es.onerror = () => { /* EventSource reconnects by itself; the next snapshot re-syncs everything */ };
+  window.addEventListener('resize', () => layoutAll(false));
+})();
+</script>
+</body>
+</html>
