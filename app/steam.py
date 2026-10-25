@@ -107,3 +107,4 @@ def installed_cfg_status(expected: str) -> dict:
     except OSError:
         return {"path": path, "state": "stale"}
     return {"path": path, "state": "ok" if current.strip() == expected.strip() else "stale"}
+

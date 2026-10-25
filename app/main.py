@@ -29,7 +29,7 @@ from .modules import dpi
 from .modules.dpi import DpiService, DpiSettings
 from .roulette import Roulette
 
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 KILL_ADVANCE_GRACE = 1.5   # seconds: ignore a manual "next" right after a kill already advanced
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 log = logging.getLogger("cs2roulette")
@@ -324,6 +324,15 @@ def create_app() -> FastAPI:
         except (ValueError, KeyError) as e:
             raise HTTPException(400, str(e))
         return {"loadout": state.roulette.loadout}
+
+    @app.post("/api/loadout/view")
+    async def api_loadout_view(request: Request) -> dict:
+        body = await _json(request)
+        try:
+            state.roulette.set_view_side(str(body.get("side")))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return state.roulette.snapshot()
 
     @app.get("/api/loadout/text", response_class=PlainTextResponse)
     async def api_loadout_text(side: str | None = None) -> str:

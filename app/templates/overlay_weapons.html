@@ -10,7 +10,7 @@
   body { font-family: "Segoe UI", Roboto, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
   #root {
     position: absolute; left: 0; top: 0; width: 100%; height: 100%;
-    --color: #ffffff; --accent: #ffd166;
+    --color: #ffffff; --accent: #ffd166; --match: #ff6b6b;
   }
   #strip { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
   .card {
@@ -39,12 +39,9 @@
     background: var(--accent); color: #111; font-weight: 800; font-size: 16px;
     box-shadow: 0 2px 6px rgba(0,0,0,.6);
   }
-  .card .match {
-    position: absolute; left: -6px; top: -6px; width: 22px; height: 22px; border-radius: 50%;
-    background: var(--accent); color: #111; font-size: 15px; font-weight: 900; line-height: 22px; text-align: center;
-    box-shadow: 0 2px 6px rgba(0,0,0,.6); opacity: 0; transform: scale(.6); transition: opacity .25s, transform .25s;
-  }
-  .card.matched .match { opacity: 1; transform: scale(1); }
+  /* the weapon in hand is the assigned one: recolour the silhouette (and its label) */
+  .card.matched .icon { background-color: var(--match); }
+  .card.matched .label { color: var(--match); }
   .card.next { opacity: .62; }
   .card.enter { opacity: 0; }
   .card.out { opacity: 0 !important; }
@@ -84,7 +81,7 @@
   const debugEl = document.getElementById('debug');
 
   // ---- settings (server defaults, URL params override) ----------------------
-  let cfg = { color: '#ffffff', accent: '#ffd166', scale: 1, layout: 'horizontal', labels: false,
+  let cfg = { color: '#ffffff', accent: '#ffd166', match_color: '#ff6b6b', scale: 1, layout: 'horizontal', labels: false,
               show_counter: true, show_kills: true, show_match: true, align: 'left' };
   const bool = v => v === '1' || v === 'true' || v === 'yes';
   const hex = v => /^#?[0-9a-fA-F]{6}$/.test(v) ? '#' + v.replace('#', '') : null;
@@ -92,6 +89,7 @@
     const c = { ...cfg };
     if (qs.has('color') && hex(qs.get('color'))) c.color = hex(qs.get('color'));
     if (qs.has('accent') && hex(qs.get('accent'))) c.accent = hex(qs.get('accent'));
+    if (qs.has('matchcolor') && hex(qs.get('matchcolor'))) c.match_color = hex(qs.get('matchcolor'));
     if (qs.has('scale')) { const s = parseFloat(qs.get('scale')); if (Number.isFinite(s) && s > 0) c.scale = s; }
     if (qs.has('layout')) c.layout = qs.get('layout') === 'vertical' ? 'vertical' : 'horizontal';
     if (qs.has('labels')) c.labels = bool(qs.get('labels'));
@@ -143,7 +141,7 @@
     el.style.setProperty('--ih', CUR.ih + 'px');
     el.innerHTML = `<div class="iconwrap"><div class="icon" style="--mask:url('${item.icon}')"></div></div>
                     <div class="label"></div>
-                    <div class="kills"></div><div class="match">✓</div>`;
+                    <div class="kills"></div>`;
     el.querySelector('.label').textContent = item.name;
     strip.appendChild(el);
     return el;
@@ -187,6 +185,7 @@
     if (!roulette) return;
     root.style.setProperty('--color', c.color);
     root.style.setProperty('--accent', c.accent);
+    root.style.setProperty('--match', c.match_color || '#ff6b6b');
     const items = roulette.running ? roulette.queue : [];
     const seen = new Set();
     items.forEach((item, index) => {
@@ -202,7 +201,11 @@
         void el.offsetWidth; el.style.transition = '';
       }
       el.classList.toggle('hidden-label', !c.labels);
-      requestAnimationFrame(() => { el.classList.remove('enter'); place(el, index, animate); });
+      // place synchronously: the spawn transform was committed with a forced reflow above, so the
+      // transition still runs, and we do not depend on requestAnimationFrame (which browsers pause
+      // for background tabs - OBS keeps rendering, but a paused page must not stay invisible)
+      el.classList.remove('enter');
+      place(el, index, animate);
     });
     for (const [uid, el] of cards) {
       if (!seen.has(uid)) {

@@ -46,6 +46,17 @@ def test_parse_range_list():
     assert grid.parse_range_list([400, 800, 1600, 0]) == [(400, 400, 1), (800, 800, 1), (1600, 1600, 1)]
 
 
+def test_parse_dpi_words_like_solaar():
+    # the real Superlight 2 answer, spread over pages and terminated by 0
+    words = [100, 0xE001, 200, 0xE002, 500, 0xE005, 1000, 0xE00A, 2000, 0xE014, 5000, 0xE032, 10000,
+             0xE064, 20000, 0xE07D, 32000, 0xE0C8, 44000, 0, 0]
+    vals = grid.parse_dpi_words(words)
+    assert vals[0] == 100 and vals[-1] == 44000
+    assert 1230 in vals and 1234 not in vals and 2020 in vals and 2010 not in vals and 43800 in vals
+    assert grid.parse_dpi_words([400, 800, 1600, 0]) == [400, 800, 1600]
+    assert grid.parse_dpi_words([0xE001, 200]) == []          # step without a start value
+
+
 # ------------------------------------------------------------------ hidpp
 class FakeHandle:
     """Scripted HID handle: answers the next queued response for any write."""
@@ -146,23 +157,24 @@ def test_hidpp_timeout(monkeypatch):
 
 
 def test_dpi_ranges_parsing(monkeypatch):
-    # a page carries 6 words: 16 param bytes = [sensor, page, direction] + 6 x 2 bytes + 1 spare
-    pages = {
-        0: [100, 0xE001, 200, 0xE002, 500, 0xE005],
-        1: [1000, 0xE00A, 2000, 0xE014, 5000, 0],
-    }
+    # the device streams the word list as a continuous byte stream, 13 payload bytes per page
+    # (16 param bytes minus the 3 echoed request bytes), like Solaar's produce_dpi_list reads it
+    words = [100, 0xE001, 200, 0xE002, 500, 0xE005, 1000, 0xE00A, 2000, 0xE014, 5000, 0, 0]
+    stream = b"".join(bytes([w >> 8, w & 0xFF]) for w in words)
+    pages = {i: stream[i * 13:(i + 1) * 13] for i in range((len(stream) + 12) // 13)}
 
     def script(req):
         fidx, fn = req[2], req[3]
         if fidx == 0x00:
             return bytes([0x11, 1, 0x00, fn, 0x09, 0, 0]) + bytes(13)
         if fidx == 0x09 and fn >> 4 == 2:
-            page = req[5]
-            words = pages.get(page)
-            if words is None:
+            assert req[4] == 0 and req[5] == 0, "params must be [sensor, direction, page]"
+            page = req[6]
+            body = pages.get(page)
+            if body is None:
                 return bytes([0x11, 1, 0xFF, fidx, fn, 0x03]) + bytes(14)
-            body = b"".join(bytes([w >> 8, w & 0xFF]) for w in words)
-            return bytes([0x11, 1, 0x09, fn, 0, page, 0]) + body + bytes(20 - 7 - len(body))
+            body = body + bytes(13 - len(body))
+            return bytes([0x11, 1, 0x09, fn, 0, 0, page]) + body
         return None
 
     dev = make_device(monkeypatch, script)

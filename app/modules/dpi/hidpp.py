@@ -280,22 +280,27 @@ class HidppDevice:
         return self.dpi_parameters(sensor)
 
     def dpi_ranges(self, sensor: int = 0, direction: int = 0) -> list[int]:
-        """Legal DPI values read from the device (falls back to the known grid on failure)."""
+        """Legal DPI values read from the device (falls back to the known grid on failure).
+
+        getSensorDpiRanges(sensorIdx, direction, dpiRangeReqIdx): the list is split over several
+        replies (pages); each reply echoes the three request bytes and carries 16-bit words after
+        them. The list ends with a 0x0000 word (Solaar: produce_dpi_list). A word with the top
+        three bits set encodes a step between the neighbouring values.
+        """
         idx = self.feature_index(FEATURE_EXT_ADJUSTABLE_DPI)
+        data = b""
         words: list[int] = []
-        for page in range(0, 8):
+        for page in range(0, 32):
             try:
-                r = self.request(idx, 2, bytes([sensor, page, direction]))
+                r = self.request(idx, 2, bytes([sensor, direction, page]))
             except HidppError:
                 break
-            # response: [sensor, page, direction, w0_hi, w0_lo, ...]
-            body = r[3:]
-            page_words = [(body[i] << 8) | body[i + 1] for i in range(0, len(body) - 1, 2)]
-            if not any(page_words):
+            body = bytes(r[3:])          # 13 payload bytes per page, a continuous byte stream
+            if not body or not any(body):
                 break
-            words += page_words
-            if 0 in page_words:
+            data += body
+            words = [(data[i] << 8) | data[i + 1] for i in range(0, len(data) - 1, 2)]
+            if 0 in words:               # word-aligned terminator seen
                 break
-        ranges = grid.parse_range_list(words)
-        values = grid.expand_ranges(ranges) if ranges else []
+        values = grid.parse_dpi_words(words)
         return values or list(grid.DEFAULT_VALUES)

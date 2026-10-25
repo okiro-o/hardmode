@@ -151,7 +151,7 @@
       </h2>
       <div class="row" style="margin-bottom:6px;">
         <div class="tabs"><button class="T" data-tab="T" onclick="showTab('T')">T</button><button class="CT" data-tab="CT" onclick="showTab('CT')">CT</button></div>
-        <span class="muted">Клик по оружию — заменить его на случайное другое. Выставьте этот лоадаут в игре перед матчем. Кнопки «Только T/CT» перегенерируют одну сторону (вторая остаётся).</span>
+        <span class="muted">Вкладка T/CT здесь же переключает виджет лоадаута в OBS. Клик по оружию — заменить его на случайное другое. Выставьте этот лоадаут в игре перед матчем. Кнопки «Только T/CT» перегенерируют одну сторону (вторая остаётся).</span>
       </div>
       <div id="loadout"></div>
     </section>
@@ -212,7 +212,8 @@
         <label class="inline"><input type="checkbox" data-key="overlay.labels"> Подписи названий</label>
         <label class="inline"><input type="checkbox" data-key="overlay.show_counter"> Счётчик пройденных оружий</label>
         <label class="inline"><input type="checkbox" data-key="overlay.show_kills"> Бейдж «киллов x/y» (если нужно &gt; 1 килла)</label>
-        <label class="inline"><input type="checkbox" data-key="overlay.show_match"> Галочка, когда в руках нужное оружие</label>
+        <label class="inline"><input type="checkbox" data-key="overlay.show_match"> Подсвечивать текущее оружие цветом, когда оно в руках</label>
+        <label>Цвет подсветки «в руках» <input type="color" data-key="overlay.match_color"></label>
       </div>
     </section>
 
@@ -289,6 +290,8 @@
 let S = null;          // full snapshot
 let weapons = {};      // id -> weapon
 let tab = 'T';
+let lastTabClick = 0;
+function tabClickedRecently() { return Date.now() - lastTabClick < 1500; }
 const $ = id => document.getElementById(id);
 
 function toast(msg, bad=false) { const t=$('toast'); t.textContent=msg; t.className='toast show'+(bad?' bad':''); clearTimeout(t._h); t._h=setTimeout(()=>t.className='toast',2600); }
@@ -302,7 +305,7 @@ async function post(url, body) {
 function copyText(id) { navigator.clipboard.writeText($(id).textContent).then(()=>toast('Скопировано')); }
 async function copyLoadout() { const t = await (await fetch('/api/loadout/text')).text(); if (!t) return toast('Лоадаут не сгенерирован', true); navigator.clipboard.writeText(t); toast('Лоадаут скопирован'); }
 function setSide(side) { post('/api/side', {side}); }
-function showTab(t) { tab = t; renderLoadout(); }
+function showTab(t) { tab = t; lastTabClick = Date.now(); renderLoadout(); post('/api/loadout/view', {side: t}); }
 async function installCfg() { const r = await post('/api/gsi/install', {}); if (r) { toast('Конфиг записан: ' + r.path); refreshState(); } }
 
 function fmtTime(t) { const d = new Date(t*1000); return d.toTimeString().slice(0,8); }
@@ -369,6 +372,7 @@ function renderQueue() {
 
 function renderLoadout() {
   const r = S.roulette; const box = $('loadout');
+  if (r.view_side && r.view_side !== tab && !tabClickedRecently()) tab = r.view_side;
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab===tab));
   if (!r.loadout || !r.loadout[tab]) { box.innerHTML = '<div class="muted">Лоадаут ещё не сгенерирован.</div>'; return; }
   const lo = r.loadout[tab]; const titles = {starting:'Стартовый пистолет', pistol:'Пистолеты (4)', mid:'Мид-тир (5)', rifle:'Винтовки (5)'};

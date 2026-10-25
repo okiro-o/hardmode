@@ -70,7 +70,8 @@ class OverlaySettings:
     labels: bool = False          # show weapon names under silhouettes
     show_counter: bool = True     # "completed weapons" badge
     show_kills: bool = True       # x/y kills badge on the current weapon (only if kills_per_weapon > 1)
-    show_match: bool = True       # tick when the held weapon matches the assigned one
+    show_match: bool = True       # recolour the current weapon when it is the one in hand
+    match_color: str = "#ff6b6b"  # colour used for that highlight
     align: str = "left"           # left | center | right (horizontal) == top | middle | bottom (vertical)
 
     def apply(self, patch: dict | None) -> list[str]:
@@ -79,7 +80,7 @@ class OverlaySettings:
             raise ValueError("overlay: нужен объект")
         rejected: list[str] = []
         for k, v in (patch or {}).items():
-            if k in ("color", "accent"):
+            if k in ("color", "accent", "match_color"):
                 if isinstance(v, str) and _COLOR_RE.match(v.strip()):
                     setattr(self, k, v.strip().lower())
                 else:

@@ -44,7 +44,7 @@
     const want = qs.get('side') || 'auto';
     if (want === 'both') return ['T', 'CT'];
     if (want === 'T' || want === 'CT') return [want];
-    return [roulette ? roulette.side : 'T'];
+    return [roulette ? (roulette.view_side || roulette.side) : 'T'];
   }
 
   function render() {

@@ -22,7 +22,8 @@ DEFAULT_RANGES: tuple[tuple[int, int, int], ...] = (
     (32000, 44000, 200),
 )
 
-STEP_FLAG = 0xE000   # in getSensorDpiRanges a value >= 0xE000 encodes "step = value - 0xE000"
+STEP_FLAG = 0xE000   # in getSensorDpiRanges a word with the top three bits set encodes a step
+STEP_MASK = 0x1FFF
 
 
 def expand_ranges(ranges: tuple[tuple[int, int, int], ...] | list[tuple[int, int, int]]) -> list[int]:
@@ -36,6 +37,31 @@ def expand_ranges(ranges: tuple[tuple[int, int, int], ...] | list[tuple[int, int
             v += step
         values.add(end)
     return sorted(values)
+
+
+def parse_dpi_words(words: list[int]) -> list[int]:
+    """Decode the getSensorDpiRanges word list into the sorted list of legal DPI values.
+
+    Same algorithm as Solaar's ``produce_dpi_list``: plain words are values; a word with
+    ``word >> 13 == 0b111`` is a step and the following word is the last value of the range
+    ``previous + step .. last``. A zero word terminates the list.
+    """
+    values: list[int] = []
+    i = 0
+    while i < len(words):
+        w = words[i]
+        if w == 0:
+            break
+        if (w >> 13) == 0b111:
+            step = w & STEP_MASK
+            last = words[i + 1] if i + 1 < len(words) else 0
+            if values and step > 0 and last > values[-1]:
+                values.extend(range(values[-1] + step, last + 1, step))
+            i += 2
+            continue
+        values.append(w)
+        i += 1
+    return sorted(set(v for v in values if 0 < v < STEP_FLAG))
 
 
 def parse_range_list(words: list[int]) -> list[tuple[int, int, int]]:
@@ -53,8 +79,8 @@ def parse_range_list(words: list[int]) -> list[tuple[int, int, int]]:
         w = words[i]
         if w == 0:
             break
-        if w >= STEP_FLAG:
-            step = w - STEP_FLAG
+        if (w >> 13) == 0b111:
+            step = w & STEP_MASK
             nxt = words[i + 1] if i + 1 < len(words) else 0
             if prev is not None and nxt and step > 0:
                 ranges.append((prev, nxt, step))

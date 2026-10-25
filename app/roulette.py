@@ -74,6 +74,7 @@ class Roulette:
     settings: RouletteSettings = field(default_factory=RouletteSettings)
     loadout: dict | None = None
     side: str = W.T
+    view_side: str | None = None   # side shown in the panel tab / loadout overlay (None = follow side)
     running: bool = False
     queue: list[str] = field(default_factory=list)
     queue_uids: list[int] = field(default_factory=list)   # stable per-slot ids for overlay animation
@@ -149,6 +150,8 @@ class Roulette:
         generated = [s for s in L.SIDES if s in sides or s not in new]
         for side in generated:
             new[side] = L.generate_side(side, self._rng, self.settings.ct_starting)
+        if len(sides) == 1 and sides[0] in L.SIDES:
+            self.view_side = sides[0]   # "only CT" -> show CT in the panel and the loadout overlay
         self._log("loadout", "Лоадаут сгенерирован: " + ", ".join(generated))
         self.set_loadout(new)  # publishes the change (log entry included)
         return new
@@ -398,6 +401,7 @@ class Roulette:
         if side == self.side:
             return False
         self.side = side
+        self.view_side = side
         if self.running or self.queue:
             self._rebuild_queue(keep_current=True)
             self._log("side", f"Сторона: {side}. Текущее: {self.current_name()}", source=source)
@@ -405,6 +409,14 @@ class Roulette:
             self._log("side", f"Сторона: {side}", source=source)
         self._changed()
         return True
+
+    def set_view_side(self, side: str) -> None:
+        """Which side the panel tab and the loadout overlay display (does not affect the roulette)."""
+        if side not in (W.T, W.CT):
+            raise ValueError("side must be T or CT")
+        if self.view_side != side:
+            self.view_side = side
+            self._changed()
 
     # -------------------------------------------------------------------- kills
     def on_kill(self, weapon_id: str | None, *, headshot: bool = False, ambiguous: bool = False,
@@ -469,6 +481,7 @@ class Roulette:
             "settings": self.settings.to_dict(),
             "loadout": self.loadout,
             "side": self.side,
+            "view_side": self.view_side,
             "running": self.running,
             "queue": self.queue,
             "queue_uids": self.queue_uids,
@@ -497,6 +510,7 @@ class Roulette:
         lo = d.get("loadout")
         r.loadout = lo if isinstance(lo, dict) and not L.validate(lo) else None
         r.side = d.get("side") if d.get("side") in (W.T, W.CT) else W.T
+        r.view_side = d.get("view_side") if d.get("view_side") in (W.T, W.CT) else None
         r.running = bool(d.get("running", False))
         queue_raw = d.get("queue") if isinstance(d.get("queue"), list) else []
         r.queue = [q for q in queue_raw if isinstance(q, str) and q in W.BY_ID]
@@ -562,6 +576,7 @@ class Roulette:
             "running": self.running,
             "paused": self.paused,
             "side": self.side,
+            "view_side": self.view_side or self.side,
             "loadout": self.loadout,
             "queue": [{**W.get(i).to_dict(), "uid": u} for u, i in visible],
             "pool": self.pool_ids() if self.loadout else [],

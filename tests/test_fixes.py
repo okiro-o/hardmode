@@ -231,3 +231,26 @@ def test_app_settings_default_undo_hotkey_and_corrupt_file(tmp_path):
     assert (tmp_path / "settings.json.broken").exists()
     s2 = AppSettings.load(str(path))
     assert s2.gsi_token == s.gsi_token  # regenerated file persisted, token stable
+
+
+
+def test_view_side_follows_tab_and_side_switch():
+    r = make()
+    r.start(seed=1)
+    assert r.snapshot()["view_side"] == "T"
+    r.set_view_side("CT")
+    assert r.snapshot()["view_side"] == "CT" and r.side == "T"
+    r.set_side("CT")
+    r.set_view_side("T")
+    assert r.snapshot()["view_side"] == "T"
+    r.set_side("T")  # no change (already T) -> view stays
+    r.generate_loadout(("CT",))
+    assert r.snapshot()["view_side"] == "CT"
+    with pytest.raises(ValueError):
+        r.set_view_side("X")
+
+
+def test_overlay_match_color_validation():
+    o = OverlaySettings()
+    assert o.apply({"match_color": "#00ff00"}) == [] and o.match_color == "#00ff00"
+    assert o.apply({"match_color": "red"}) == ["match_color"]
