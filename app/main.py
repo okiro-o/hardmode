@@ -29,8 +29,9 @@ from .chat import ChatNotifier, ChatSettings
 from .modules import dpi
 from .modules.dpi import DpiService, DpiSettings
 from .roulette import Roulette
+from .twitch_irc import IrcMessage, TwitchChatReader
 
-VERSION = "0.5.1"
+VERSION = "0.6.0"
 KILL_ADVANCE_GRACE = 1.5   # seconds: ignore a manual "next" right after a kill already advanced
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 log = logging.getLogger("cs2roulette")
@@ -68,6 +69,10 @@ class AppState:
         self.settings.chat = chat_settings.to_dict()
         self.chat = ChatNotifier(chat_settings, publish_threadsafe=self.broker.publish_threadsafe)
         self.dpi.on_applied = lambda value, reason: self.chat.notify_dpi(value, reason)
+        self.dpi.on_viewer_added = lambda e: (self.chat.notify_viewer(e["user"], e["value"])
+                                              if self.dpi.settings.viewer_announce else None)
+        self.twitch = TwitchChatReader(on_message=self._twitch_from_thread,
+                                       on_status=lambda: self.broker.publish_threadsafe("twitch", self.twitch.status()))
         self._announced: tuple[bool, int | None] = (self.roulette.running, self.roulette.current_uid())
         self.hotkeys = HotkeyManager(on_action=self._hotkey_from_thread,
                                      bindings=self.settings.hotkeys.bindings(),
@@ -132,6 +137,52 @@ class AppState:
                 ignored = True
         self.broker.publish("hotkey", {"action": action, "ignored": ignored, "t": time.time()})
 
+    def persist_dpi_settings(self) -> None:
+        self.settings.dpi = self.dpi.settings.to_dict()
+        self.settings.chat = self.chat.settings.to_dict()
+        try:
+            self.settings.save()
+        except OSError:
+            log.warning("cannot save settings.json", exc_info=True)
+
+    # ------------------------------------------------------------ twitch chat
+    def sync_twitch(self) -> None:
+        """Start/stop the anonymous chat reader according to the settings."""
+        channel = self.chat.settings.channel_login
+        if self.dpi.settings.viewer_enabled and channel:
+            self.twitch.start(channel)
+        else:
+            self.twitch.stop()
+
+    def _twitch_from_thread(self, msg: IrcMessage) -> None:
+        self.broker.call_threadsafe(self.handle_chat_message, msg)
+
+    def handle_chat_message(self, msg: IrcMessage) -> None:
+        s = self.dpi.settings
+        if not s.viewer_enabled:
+            return
+        text = (msg.trailing or "").strip()
+        user = msg.display_name or msg.user
+        if msg.reward_id:
+            if self.dpi.learn_reward:
+                self.dpi.learn_reward = False
+                self.dpi.update_settings({"viewer_reward_id": msg.reward_id})
+                self.persist_dpi_settings()
+                self.dpi._log("viewer", f"Награда определена по сообщению {user}: {msg.reward_id[:8]}…")
+            elif s.viewer_reward_id and msg.reward_id != s.viewer_reward_id:
+                return
+            res = self.dpi.add_viewer_value(text, user, source="reward")
+            if not res["ok"]:
+                self.dpi._log("viewer", f"{user}: «{text[:30]}» не принято ({res['error']})")
+                self.dpi._changed()
+            return
+        cmd = s.viewer_command.lower()
+        if cmd and text.lower().startswith(cmd) and (len(text) == len(cmd) or text[len(cmd)] == " "):
+            res = self.dpi.add_viewer_value(text[len(cmd):].strip(), user, source="command")
+            if not res["ok"]:
+                self.dpi._log("viewer", f"{user}: «{text[:30]}» не принято ({res['error']})")
+                self.dpi._changed()
+
     def urls(self) -> dict:
         base = f"http://127.0.0.1:{self.settings.port}"
         return {
@@ -153,6 +204,7 @@ class AppState:
             "roulette": self.roulette.snapshot(),
             "dpi": self.dpi.snapshot(),
             "chat": self.chat.status(),
+            "twitch": self.twitch.status(),
             "gsi": self.gsi.status.to_dict(),
             "hotkeys": self.hotkeys.describe(),
             "overlay": self.settings.overlay.__dict__,
@@ -262,6 +314,7 @@ def create_app() -> FastAPI:
         state.hotkeys.start()
         state.dpi.start(loop)
         state.chat.start()
+        state.sync_twitch()
         stop = asyncio.Event()
 
         async def housekeeping() -> None:
@@ -289,6 +342,7 @@ def create_app() -> FastAPI:
             state.hotkeys.stop()
             state.dpi.stop()
             state.chat.stop()
+            state.twitch.stop()
             state.save_state()
 
     app = FastAPI(title="CS2 Roulette", version=VERSION, lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -458,6 +512,8 @@ def create_app() -> FastAPI:
             except ValueError as e:
                 raise HTTPException(400, f"Некорректные настройки DPI: {e}")
             s.dpi = state.dpi.settings.to_dict()
+        if "dpi" in body or "chat" in body:
+            state.sync_twitch()
         if "roulette" in body:
             try:
                 state.roulette.update_settings(body["roulette"] or {})
@@ -540,7 +596,24 @@ def create_app() -> FastAPI:
     @app.post("/api/chat/verify")
     async def chat_verify() -> dict:
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, state.chat.verify)
+        res = await loop.run_in_executor(None, state.chat.verify)
+        if res.get("ok"):
+            state.persist_dpi_settings()   # channel_login may have been filled from the SE profile
+            state.sync_twitch()
+            state.broker.publish("settings", state.settings_event())
+        return res
+
+    @app.post("/api/twitch/chat")
+    async def twitch_fake_chat(request: Request) -> dict:
+        """Simulate a chat line (testing without Twitch): {user, text, reward_id?}."""
+        body = await _json(request)
+        tags = {"display-name": str(body.get("user") or "viewer")}
+        if body.get("reward_id"):
+            tags["custom-reward-id"] = str(body["reward_id"])
+        msg = IrcMessage(tags=tags, prefix=f"{tags['display-name'].lower()}!x@x", command="PRIVMSG",
+                         params=["#test"], trailing=str(body.get("text") or ""))
+        state.handle_chat_message(msg)
+        return {"ok": True}
 
     @app.post("/api/chat/test")
     async def chat_test(request: Request) -> dict:

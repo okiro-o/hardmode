@@ -59,6 +59,9 @@ class ChatSettings:
     start_template: str = "🎲 Гонка вооружений началась! Первое оружие: {weapon}"
     weapon_template: str = "🎲 Оружие: {weapon} (пройдено: {completed})"
     dpi_template: str = "🎡 Новый DPI: {dpi}"
+    on_viewer: bool = True
+    viewer_template: str = "✅ {user} добавил {dpi} DPI на колесо"
+    channel_login: str = ""                 # Twitch channel login (for the anonymous chat reader)
     min_interval_s: float = 2.0
 
     @classmethod
@@ -70,12 +73,13 @@ class ChatSettings:
         for k, v in (d or {}).items():
             if k in names:
                 setattr(s, k, v)
-        for b in ("enabled", "on_start", "on_weapon", "on_dpi"):
+        for b in ("enabled", "on_start", "on_weapon", "on_dpi", "on_viewer"):
             setattr(s, b, _bool(getattr(s, b)))
+        s.channel_login = s.channel_login.strip().lstrip("#").lower()[:40] if isinstance(s.channel_login, str) else ""
         if s.provider not in ("streamelements",):
             s.provider = "streamelements"
         s.se_jwt = s.se_jwt.strip() if isinstance(s.se_jwt, str) else ""
-        for t in ("start_template", "weapon_template", "dpi_template"):
+        for t in ("start_template", "weapon_template", "dpi_template", "viewer_template"):
             v = getattr(s, t)
             if not isinstance(v, str):
                 raise ValueError(f"{t}: нужна строка")
@@ -183,6 +187,11 @@ class ChatNotifier:
         if self.settings.on_dpi:
             self._enqueue("dpi", render_template(self.settings.dpi_template, dpi=dpi, reason=reason, **extra))
 
+    def notify_viewer(self, user: str, dpi: int, **extra: Any) -> None:
+        if self.settings.on_viewer:
+            # one queue slot per viewer so confirmations for different people do not collapse
+            self._enqueue(f"viewer:{user.lower()}", render_template(self.settings.viewer_template, user=user, dpi=dpi, **extra))
+
     def send_now(self, message: str) -> dict:
         """Synchronous send (test button). Returns {ok, error}."""
         try:
@@ -271,8 +280,11 @@ class ChatNotifier:
             self._publish("chat", self.status())
             return {"ok": False, "error": str(e)}
         cid = me.get("_id") or jwt_claims(jwt).get("channel")
-        self.channel = {"id": str(cid) if cid else None, "username": me.get("username") or me.get("displayName"),
+        username = me.get("username") or me.get("displayName")
+        self.channel = {"id": str(cid) if cid else None, "username": username,
                         "provider": me.get("provider"), "checked_at": time.time()}
+        if username and not self.settings.channel_login and (me.get("provider") in (None, "twitch")):
+            self.settings.channel_login = str(username).lower()
         self.last_error = None
         self._log("verify", f"Канал подтверждён: {self.channel.get('username') or cid}")
         return {"ok": True, "channel": self.channel}

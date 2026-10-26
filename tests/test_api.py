@@ -238,3 +238,29 @@ def test_chat_settings_masked_and_notifications_wired(client, monkeypatch):
     res = client.post("/api/chat/test", json={"message": "hi"}).json()
     assert res["ok"] and sent[-1] == "hi"
     assert client.post("/api/settings", json={"chat": {"weapon_template": 5}}).status_code == 400
+
+
+def test_viewer_values_via_chat_messages(client):
+    client.post("/api/settings", json={"dpi": {"backend": "fake", "viewer_enabled": True, "viewer_command": "!dpi"},
+                                       "chat": {"channel_login": ""}})
+    # learn the reward from the first redemption, then only that reward counts
+    client.post("/api/dpi/reward/learn", json={"on": True})
+    client.post("/api/twitch/chat", json={"user": "Alice", "text": "1600", "reward_id": "rw-1"})
+    d = client.get("/api/dpi/status").json()
+    assert d["settings"]["viewer_reward_id"] == "rw-1" and d["wheel"]["viewer"][0]["value"] == 1600
+    client.post("/api/twitch/chat", json={"user": "Bob", "text": "2000", "reward_id": "rw-other"})
+    assert len(client.get("/api/dpi/status").json()["wheel"]["viewer"]) == 1
+    client.post("/api/twitch/chat", json={"user": "Carl", "text": "!dpi 2400"})
+    client.post("/api/twitch/chat", json={"user": "Dan", "text": "hello 3000"})
+    d = client.get("/api/dpi/status").json()
+    assert [e["value"] for e in d["wheel"]["viewer"]] == [1600, 2400]
+    assert 1600 in d["values"] and 2400 in d["values"]
+    assert client.post("/api/dpi/viewer/remove", json={"index": 0}).json()["ok"]
+    client.post("/api/dpi/viewer/clear")
+    assert client.get("/api/dpi/status").json()["wheel"]["viewer"] == []
+    assert client.post("/api/dpi/values/add", json={"value": 5000}).json()["value"] == 5000
+    assert 5000 in client.get("/api/dpi/status").json()["values"]
+    client.post("/api/dpi/values/remove", json={"value": 5000})
+    assert 5000 not in client.get("/api/dpi/status").json()["values"]
+    assert client.post("/api/dpi/cycle/reset").json()["ok"]
+    assert "twitch" in client.get("/api/state").json()

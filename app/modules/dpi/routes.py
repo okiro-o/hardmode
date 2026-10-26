@@ -84,6 +84,67 @@ async def dpi_hostmode(request: Request) -> dict:
     return await _svc(request).set_host_mode()
 
 
+@router.post("/api/dpi/values/add")
+async def dpi_values_add(request: Request) -> dict:
+    body = await _json(request)
+    res = _svc(request).add_custom_value(body.get("value"))
+    if not res["ok"]:
+        raise HTTPException(400, res["error"])
+    request.app.state.app.persist_dpi_settings()
+    return res
+
+
+@router.post("/api/dpi/values/remove")
+async def dpi_values_remove(request: Request) -> dict:
+    body = await _json(request)
+    _svc(request).remove_custom_value(body.get("value"))
+    request.app.state.app.persist_dpi_settings()
+    return {"ok": True}
+
+
+@router.post("/api/dpi/cycle/reset")
+async def dpi_cycle_reset(request: Request) -> dict:
+    _svc(request).reset_cycle()
+    return {"ok": True}
+
+
+@router.post("/api/dpi/viewer/add")
+async def dpi_viewer_add(request: Request) -> dict:
+    body = await _json(request)
+    res = _svc(request).add_viewer_value(body.get("value"), str(body.get("user") or "тест"), source="manual")
+    if not res["ok"]:
+        raise HTTPException(400, res["error"])
+    return res
+
+
+@router.post("/api/dpi/viewer/remove")
+async def dpi_viewer_remove(request: Request) -> dict:
+    body = await _json(request)
+    try:
+        idx = int(body.get("index"))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "index")
+    return {"ok": _svc(request).remove_viewer_value(idx)}
+
+
+@router.post("/api/dpi/viewer/clear")
+async def dpi_viewer_clear(request: Request) -> dict:
+    _svc(request).clear_viewer_values()
+    return {"ok": True}
+
+
+@router.post("/api/dpi/reward/learn")
+async def dpi_reward_learn(request: Request) -> dict:
+    body = await _json(request)
+    svc = _svc(request)
+    svc.learn_reward = bool(body.get("on", True))
+    if body.get("clear"):
+        svc.update_settings({"viewer_reward_id": ""})
+        request.app.state.app.persist_dpi_settings()
+    svc._changed()
+    return {"learn": svc.learn_reward}
+
+
 @router.post("/api/dpi/death")
 async def dpi_fake_death(request: Request) -> dict:
     """Simulate a death (testing without CS2)."""

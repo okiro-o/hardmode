@@ -2,7 +2,7 @@
 
 Этот документ — источник правды о приложении: зачем оно, как устроено, какие решения приняты
 и почему, что отклонено, что в бэклоге. Обновляется при каждом значимом изменении.
-Последнее обновление: 2026-10-26, версия приложения 0.5.1.
+Последнее обновление: 2026-10-26, версия приложения 0.6.0.
 
 ## 1. Назначение и пользователь
 
@@ -52,6 +52,7 @@ push-обновлений, обычные HTML/JS-страницы без сбо
 | `app/hotkeys.py` | глобальные хоткеи Windows (RegisterHotKey → fallback GetAsyncKeyState), предупреждение UIPI |
 | `app/steam.py` | поиск папки CS2 (реестр + libraryfolders.vdf), запись GSI-конфига |
 | `app/chat.py` | уведомления в чат Twitch через бота StreamElements (JWT, очередь с объединением всплесков) |
+| `app/twitch_irc.py` | анонимный читатель чата Twitch (IRC/TLS, justinfan, теги IRCv3) для наград за баллы канала |
 | `app/modules/dpi/hidpp.py` | HID++ 2.0 клиент через hidapi: ROOT, DeviceName, OnboardProfiles 0x8100, ExtendedAdjustableDpi 0x2202 |
 | `app/modules/dpi/backends.py` | `HidppBackend`, `FakeBackend`, `NoneBackend`, фабрика (`CS2R_DPI_BACKEND`) |
 | `app/modules/dpi/service.py` | `DpiService`: выбор значения, расписание применения, сторож от отката G HUB, персистентность |
@@ -128,9 +129,21 @@ push-обновлений, обычные HTML/JS-страницы без сбо
 
 ## 6. DPI-рулетка (поведение)
 
-- Значения колеса: `min_dpi..max_dpi` с шагом `step` (по умолчанию 800–3200/100), каждое
-  округлено к сетке сенсора; сетка читается с мыши (0x2202 fn2), fallback — известная сетка
-  (шаг 1/2/5/10/20/50/100/125/200 по диапазонам до 44000). Не выпадать на текущее (опция).
+- Значения колеса = база ∪ зрительские. База: диапазон `min_dpi..max_dpi/step` (отключаемый
+  `use_range`) ∪ `custom_values` (ручной список, снэп к сетке, ≤60). Сетка читается с мыши
+  (0x2202 fn2), fallback — известная (шаг 1/2/5/10/20/50/100/125/200 до 44000).
+  `pool_mode=bag` (по умолчанию): выпавшее базовое значение попадает в `consumed` и уходит с
+  колеса, пока база не исчерпана (тогда `consumed` очищается); «Новый круг» очищает вручную.
+  Зрительские значения (`viewer_values`: value, user, t, source) одноразовые: исчезают, когда
+  выпали. Пустое колесо → `[home_dpi]`. Не выпадать на текущее (опция).
+- Зрители: `viewer_enabled` → анонимный IRC-читатель чата `chat.channel_login` (логин
+  подставляется из профиля SE при «Проверить токен»). Сообщение с тегом `custom-reward-id`
+  (текст награды за баллы канала) → число валидируется (`viewer_min..viewer_max`, лимиты
+  `viewer_max_values`, `viewer_per_user`) и добавляется; `viewer_reward_id` запоминается в
+  режиме «Определить» (`learn_reward`) по первому выкупу, иначе принимаются любые награды с
+  числом. Опциональная чат-команда `viewer_command` (например `!dpi 1600`). Подтверждение в
+  чат через SE (`viewer_announce`, шаблон `chat.viewer_template`). Тестовые эндпоинты
+  `/api/twitch/chat`, `/api/dpi/viewer/add`.
 - Триггеры: смерть из GSI (здоровье → 0 своего игрока или переключение блока `player` на
   тиммейта в живом раунде; в разминке не считается; одна смерть — одно событие до следующего
   «жив»), хоткей F6, кнопка в панели. Кулдаун после кручения (по умолчанию 8 с).
@@ -170,6 +183,9 @@ push-обновлений, обычные HTML/JS-страницы без сбо
 - Панель: вкладка «Общее → Чат Twitch через StreamElements»: сохранить/удалить токен,
   «Проверить токен», «Отправить тест», тогглы, шаблоны, лог отправок.
 - Nightbot (нужна OAuth-регистрация приложения) и Moobot (нет API) отклонены как более сложные.
+- Награды за баллы канала читаются из чата анонимно (IRC `justinfan`, тег `custom-reward-id`)
+  вместо EventSub, чтобы не регистрировать приложение Twitch; риск: Twitch может ограничить
+  анонимный IRC в будущем — тогда переход на EventSub WebSocket с Device Code Grant.
 
 ## 7. API и события
 
@@ -178,11 +194,13 @@ HTTP (все POST — JSON): `/api/state`, `/api/weapons`, `/api/loadout/generat
 `/api/session/start|stop|reset`, `/api/roulette/next|reroll|undo|kill`, `/api/side {side}`,
 `/api/settings` (GET/POST; секции roulette/overlay/hotkeys/dpi, `regenerate_token`, `port`;
 ответ содержит `rejected`), `/gsi` (всегда 2xx), `/api/gsi/cfg|info|install`, `/api/hotkeys`,
-`/api/dpi/status|spin|apply|home|probe|hostmode|death`, `/api/chat/verify|test`. Страницы:
+`/api/dpi/status|spin|apply|home|probe|hostmode|death`, `/api/dpi/values/add|remove`,
+`/api/dpi/cycle/reset`, `/api/dpi/viewer/add|remove|clear`, `/api/dpi/reward/learn`,
+`/api/chat/verify|test`, `/api/twitch/chat` (симуляция). Страницы:
 `/`, `/overlay/weapons`, `/overlay/loadout`, `/overlay/dpi`.
 
 SSE `/events`: `snapshot` (полный), `roulette`, `gsi`, `settings`, `hotkeys`, `kill`
-(`finished_uid` для вспышки на нужной карточке), `hotkey`, `dpi`, `dpi_spin`, `chat`.
+(`finished_uid` для вспышки на нужной карточке), `hotkey`, `dpi`, `dpi_spin`, `chat`, `twitch`.
 
 Параметры URL виджетов перекрывают настройки: оружие — `scale, layout, align, labels, counter,
 kills, match, color, accent, matchcolor, bg, debug, x/y`; лоадаут — `side (auto|T|CT|both),

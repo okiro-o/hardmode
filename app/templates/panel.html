@@ -146,6 +146,13 @@
   details summary { cursor:pointer; color:var(--muted); font-size:12px; margin:6px 0; }
   .sidebtn.T.active { background:var(--t); color:#111; border-color:var(--t); font-weight:700; }
   .sidebtn.CT.active { background:var(--ct); color:#111; border-color:var(--ct); font-weight:700; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip2 { display:inline-flex; align-items:center; gap:6px; padding:4px 8px 4px 10px; border-radius:999px; background:var(--panel2); border:1px solid var(--line); font-size:13px; }
+  .chip2.consumed { opacity:.45; text-decoration:line-through; }
+  .chip2.viewer { border-color:rgba(255,209,102,.45); }
+  .chip2 .u { color:var(--muted); font-size:11.5px; }
+  .chip2 button { border:0; background:transparent; color:var(--muted); padding:0 2px; font-size:14px; line-height:1; }
+  .chip2 button:hover { color:var(--bad); background:transparent; }
   .dpibox { flex:0 0 150px; text-align:center; background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:10px; }
   .dpibox .v { font-size:40px; font-weight:900; color:var(--accent); line-height:1.1; }
   .dpibox .l { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; }
@@ -320,6 +327,50 @@
     </div>
 
     <div class="col">
+      <section id="sec-wheel">
+        <h2>Значения колеса <span class="right"><span class="hint" id="wheel-summary"></span><button onclick="post('/api/dpi/cycle/reset')" title="Вернуть выпавшие значения на колесо">⟲ Новый круг</button></span></h2>
+        <div class="form">
+          <label class="f"><span>Выпавшие значения</span>
+            <select data-key="dpi.pool_mode"><option value="bag">уходят с колеса до конца круга</option><option value="random">остаются (чистый рандом)</option></select></label>
+          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="dpi.use_range"> Диапазон мин–макс–шаг на колесе</label>
+        </div>
+        <h3>Свои значения</h3>
+        <div class="row" style="margin-bottom:8px;">
+          <input type="number" id="custom-dpi" class="inlinefield" min="100" max="44000" step="10" placeholder="DPI" onkeydown="if(event.key==='Enter') addCustomDpi()">
+          <button onclick="addCustomDpi()">Добавить</button>
+          <span class="hint">Округляется к сетке сенсора. Клик по × убирает.</span>
+        </div>
+        <div class="chips" id="custom-chips"></div>
+        <h3>На колесе сейчас</h3>
+        <div class="chips" id="wheel-chips"></div>
+
+        <h3>Зрители добавляют DPI за баллы канала</h3>
+        <div class="form">
+          <label class="inline"><input type="checkbox" data-key="dpi.viewer_enabled"> Включено (читаем чат канала)</label>
+          <span class="chip" id="chip-twitch" style="align-self:center; justify-self:start;"><span class="dot"></span><b>чат: выкл</b></span>
+          <label class="f"><span>Канал Twitch (логин)</span><input type="text" data-key="chat.channel_login" placeholder="например, mychannel"></label>
+          <label class="f"><span>Награда за баллы канала</span>
+            <div class="row" style="flex-wrap:nowrap;">
+              <input type="text" id="reward-id" readonly placeholder="не задана" style="flex:1;">
+              <button id="btn-learn" onclick="learnReward()" title="Следующее выкупленное сообщение-награда станет этой наградой">Определить</button>
+              <button onclick="post('/api/dpi/reward/learn',{on:false,clear:true})" title="Сбросить привязку">×</button>
+            </div></label>
+          <label class="f"><span>Мин. DPI от зрителей</span><input type="number" min="100" max="44000" step="10" data-key="dpi.viewer_min"></label>
+          <label class="f"><span>Макс. DPI от зрителей</span><input type="number" min="100" max="44000" step="10" data-key="dpi.viewer_max"></label>
+          <label class="f"><span>Макс. зрительских значений на колесе</span><input type="number" min="1" max="60" data-key="dpi.viewer_max_values"></label>
+          <label class="f"><span>Значений от одного зрителя</span><input type="number" min="1" max="10" data-key="dpi.viewer_per_user"></label>
+          <label class="f"><span>Чат-команда без награды (пусто = только награда)</span><input type="text" data-key="dpi.viewer_command" placeholder="!dpi"></label>
+          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="dpi.viewer_announce"> Подтверждать в чате (через бота StreamElements)</label>
+        </div>
+        <div class="hint" style="margin-top:8px;">Как настроить: в Twitch создай награду за баллы канала с обязательным текстом («Добавить DPI в колесо», подсказка: «напиши число от 400 до 6400»). Нажми «Определить» и выкупи награду сам или попроси зрителя: приложение запомнит её. Чат читается анонимно, без токенов. Зрительское значение висит на колесе, пока не выпадет, потом исчезает.</div>
+        <div class="row" style="margin-top:8px;">
+          <input type="number" id="viewer-test-dpi" class="inlinefield" min="100" max="44000" step="10" placeholder="DPI" value="1600">
+          <button onclick="post('/api/dpi/viewer/add',{value:$('viewer-test-dpi').value,user:'тест'})">Добавить как зритель (тест)</button>
+          <button onclick="post('/api/dpi/viewer/clear')">Очистить зрительские</button>
+        </div>
+        <div class="chips" id="viewer-chips" style="margin-top:8px;"></div>
+      </section>
+
       <section>
         <h2>Настройки DPI</h2>
         <div class="form">
@@ -343,6 +394,7 @@
     </div>
   </div>
 
+  <!-- (end of DPI tab columns above) -->
   <!-- ================= TAB: GENERAL ================= -->
   <div class="tabpage" id="tab-general">
     <div class="col">
@@ -497,6 +549,27 @@ async function saveJwt() { const v = $('chat-jwt').value.trim(); if (!v) return 
 async function clearJwt() { if (!confirm('Удалить токен StreamElements из настроек?')) return; const r = await post('/api/settings', {chat: {se_jwt: ''}}); if (r) { toast('Токен удалён'); refreshState(); } }
 async function verifyChat() { toast('Проверяю…'); const r = await post('/api/chat/verify', {}); if (!r) return; if (r.ok) toast('Канал: ' + (r.channel.username || r.channel.id)); else toast(r.error || 'Ошибка', true); refreshState(); }
 async function testChat() { const r = await post('/api/chat/test', {}); if (!r) return; if (r.ok) toast('Отправлено в чат'); else toast(r.error || 'Ошибка', true); refreshState(); }
+async function addCustomDpi() { const v = parseInt($('custom-dpi').value, 10); if (!Number.isFinite(v)) return toast('Введите DPI', true); const r = await post('/api/dpi/values/add', {value: v}); if (r) { $('custom-dpi').value = ''; toast('Добавлено: ' + r.value); } }
+async function learnReward() { const r = await post('/api/dpi/reward/learn', {on: true}); if (r) toast('Жду выкуп награды в чате…'); }
+function renderWheel() {
+  const d = S.dpi; if (!d) return;
+  const w = d.wheel || {base_total: 0, consumed: [], viewer: []};
+  $('wheel-summary').textContent = `на колесе ${w.on_wheel ?? (d.values||[]).length} · база ${w.base_total} (выпало ${w.consumed.length}) · зрительских ${w.viewer.length}`;
+  const custom = (d.settings && d.settings.custom_values) || [];
+  $('custom-chips').innerHTML = custom.length ? custom.map(v => `<span class="chip2">${v}<button title="Убрать" onclick="post('/api/dpi/values/remove',{value:${v}})">×</button></span>`).join('') : '<span class="hint">нет своих значений</span>';
+  const consumed = new Set(w.consumed || []);
+  const viewerVals = new Set((w.viewer||[]).map(e => e.value));
+  const all = Array.from(new Set([...(d.values||[]), ...consumed])).sort((a,b)=>a-b);
+  $('wheel-chips').innerHTML = all.map(v => `<span class="chip2 ${consumed.has(v) && !viewerVals.has(v) ? 'consumed' : ''} ${viewerVals.has(v) ? 'viewer' : ''}" title="${consumed.has(v) ? 'уже выпало в этом круге' : viewerVals.has(v) ? 'от зрителя' : ''}">${v}</span>`).join('') || '<span class="hint">—</span>';
+  $('viewer-chips').innerHTML = (w.viewer||[]).length ? w.viewer.map((e,i) => `<span class="chip2 viewer">${e.value} <span class="u">${esc(e.user)}</span><button title="Убрать" onclick="post('/api/dpi/viewer/remove',{index:${i}})">×</button></span>`).join('') : '<span class="hint">зрители пока ничего не добавили</span>';
+  $('reward-id').value = (d.settings && d.settings.viewer_reward_id) || '';
+  $('btn-learn').textContent = d.learn_reward ? '⏳ жду награду…' : 'Определить';
+  const t = S.twitch || {}; const chip = $('chip-twitch');
+  if (!(d.settings && d.settings.viewer_enabled)) { chip.className = 'chip'; chip.querySelector('b').textContent = 'чат: выкл'; }
+  else if (!t.channel) { chip.className = 'chip warn'; chip.querySelector('b').textContent = 'чат: укажи канал'; }
+  else if (t.connected) { chip.className = 'chip ok'; chip.querySelector('b').textContent = `чат: #${t.channel} · ${t.messages} сообщ.`; }
+  else { chip.className = 'chip ' + (t.last_error ? 'bad' : 'warn'); chip.querySelector('b').textContent = t.last_error ? 'чат: ' + t.last_error : 'чат: подключаюсь…'; }
+}
 function renderChat() {
   const c = S.chat; if (!c) return;
   const st = c.settings || {};
@@ -661,7 +734,7 @@ function renderSizes() {
   $('size-dpi').textContent = '600×750'; $('size-dpi-2').textContent = '600×750';
 }
 
-function renderAll() { if (!S) return; renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); renderChat(); }
+function renderAll() { if (!S) return; renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); renderChat(); renderWheel(); }
 
 // ------------------------------------------------------------------ settings form
 document.querySelectorAll('[data-key]').forEach(el => {
@@ -691,8 +764,9 @@ es.addEventListener('roulette', e => { if (!S) return; S.roulette = JSON.parse(e
 es.addEventListener('gsi', e => { if (!S) return; S.gsi = JSON.parse(e.data); renderHeader(); renderMisc(); });
 es.addEventListener('settings', e => { if (!S) return; const d = JSON.parse(e.data); S.overlay = d.overlay; S.hotkeys = d.hotkeys; S.gsi_token = d.gsi_token; S.port = d.port; if (S.dpi && d.dpi) S.dpi.settings = d.dpi; if (S.chat && d.chat) S.chat.settings = d.chat; if (d.roulette) S.roulette.settings = d.roulette; renderHeader(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); refreshState(); });
 es.addEventListener('hotkeys', e => { if (!S) return; S.hotkeys = JSON.parse(e.data); renderHeader(); renderSettings(); renderDpi(); });
-es.addEventListener('dpi', e => { if (!S) return; S.dpi = JSON.parse(e.data); renderDpi(); renderSettings(); });
-es.addEventListener('chat', e => { if (!S) return; S.chat = JSON.parse(e.data); renderChat(); renderSettings(); });
+es.addEventListener('dpi', e => { if (!S) return; S.dpi = JSON.parse(e.data); renderDpi(); renderSettings(); renderWheel(); });
+es.addEventListener('twitch', e => { if (!S) return; S.twitch = JSON.parse(e.data); renderWheel(); });
+es.addEventListener('chat', e => { if (!S) return; S.chat = JSON.parse(e.data); renderChat(); renderSettings(); renderWheel(); });
 es.addEventListener('dpi_spin', e => { const sp = JSON.parse(e.data); toast('DPI-рулетка: ' + sp.value + (sp.reason === 'death' ? ' (смерть)' : '')); });
 es.addEventListener('kill', e => { const k = JSON.parse(e.data); if (k.ambiguous) toast('Килл: возможно граната — не засчитан'); else if (k.counted) toast(k.advanced ? 'Килл засчитан → следующее оружие' : 'Килл засчитан'); else if (S && S.roulette.running) toast('Килл не тем оружием', true); });
 es.addEventListener('hotkey', e => { const h = JSON.parse(e.data); toast('Хоткей «' + (HK_NAMES[h.action]||h.action) + '»' + (h.ignored ? ' — проигнорирован (килл уже переключил оружие)' : '')); });
