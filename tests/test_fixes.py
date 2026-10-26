@@ -280,3 +280,29 @@ def test_set_slot_explicit_choice():
         r.set_slot("T", "rifle", new, other)   # already equipped
     r.set_slot("CT", "starting", r.loadout["CT"]["starting"], "hkp2000")
     assert r.loadout["CT"]["starting"] == "hkp2000"
+
+
+def test_broker_close_streams_ends_generators_and_refuses_new_ones():
+    import asyncio
+
+    import pytest
+
+    from app.events import Broker, close_all_streams_threadsafe
+
+    async def main():
+        b = Broker()
+        b.attach_loop(asyncio.get_running_loop())
+        gen = b.stream(lambda: {"x": 1}, heartbeat=5)
+        assert (await gen.__anext__()).startswith("retry")
+        assert "snapshot" in await gen.__anext__()
+        assert b.subscribers == 1
+        close_all_streams_threadsafe()
+        await asyncio.sleep(0)
+        with pytest.raises(StopAsyncIteration):
+            await asyncio.wait_for(gen.__anext__(), 2)
+        assert b.subscribers == 0
+        gen2 = b.stream(lambda: {}, heartbeat=5)
+        with pytest.raises(StopAsyncIteration):
+            await gen2.__anext__()
+
+    asyncio.run(main())

@@ -32,3 +32,77 @@ def test_icon_image_and_launch_command():
     assert "start_tray.pyw" in cmd and cmd.startswith('"')
     if not autostart.available():
         assert autostart.is_enabled() is False and autostart.set_enabled(True) is False
+
+
+def test_stop_uvicorn_escalates_to_force_exit():
+    import threading
+    import time
+
+    from app.tray import stop_uvicorn
+
+    class FakeServer:
+        should_exit = False
+        force_exit = False
+
+    srv = FakeServer()
+
+    def serve():
+        # like uvicorn with open SSE connections: should_exit alone is not enough
+        while not srv.force_exit:
+            time.sleep(0.02)
+
+    t = threading.Thread(target=serve, daemon=True)
+    t.start()
+    assert stop_uvicorn(srv, t, grace=0.2, force_grace=2.0) is True
+    assert srv.should_exit and srv.force_exit and not t.is_alive()
+
+
+def test_stop_uvicorn_graceful_path_does_not_force():
+    import threading
+    import time
+
+    from app.tray import stop_uvicorn
+
+    class FakeServer:
+        should_exit = False
+        force_exit = False
+
+    srv = FakeServer()
+
+    def serve():
+        while not srv.should_exit:
+            time.sleep(0.02)
+
+    t = threading.Thread(target=serve, daemon=True)
+    t.start()
+    assert stop_uvicorn(srv, t, grace=2.0, force_grace=1.0) is True
+    assert srv.force_exit is False
+
+
+def test_tray_quit_does_not_block_the_menu_thread():
+    import threading
+    import time
+
+    from app.tray import TrayApp
+
+    started = threading.Event()
+    release = threading.Event()
+    stopped = threading.Event()
+
+    def slow_stop():
+        started.set()
+        release.wait(5)
+
+    class FakeIcon:
+        def stop(self):
+            stopped.set()
+
+    app = TrayApp("http://127.0.0.1:1/", slow_stop)
+    app.icon = FakeIcon()
+    t0 = time.monotonic()
+    app._quit()
+    assert time.monotonic() - t0 < 0.5      # returned immediately
+    assert started.wait(2)
+    app._quit()                              # second click is ignored
+    release.set()
+    assert stopped.wait(2)

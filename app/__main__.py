@@ -85,11 +85,15 @@ def main() -> None:
         from .tray import run_with_tray
 
         code = run_with_tray("app.main:app", "127.0.0.1", settings.port, url, open_browser)
-        sys.exit(code)
+        logging.shutdown()
+        # Hard exit: background threads (uvicorn loop, hidapi, pystray helpers) must never keep a
+        # tray application alive after "Выход". Everything persistent is already saved.
+        os._exit(code)
     import uvicorn
 
     # Loopback only: no firewall prompt, nothing exposed to the LAN.
-    uvicorn.run("app.main:app", host="127.0.0.1", port=settings.port, log_level="warning", log_config=None)
+    uvicorn.run("app.main:app", host="127.0.0.1", port=settings.port, log_level="warning", log_config=None,
+                timeout_graceful_shutdown=2.0)
 
 
 if __name__ == "__main__":

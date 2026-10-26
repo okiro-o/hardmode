@@ -4,7 +4,10 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+import weakref
 from typing import AsyncIterator, Callable
+
+_BROKERS: "weakref.WeakSet[Broker]" = weakref.WeakSet()
 
 
 class Broker:
@@ -13,7 +16,9 @@ class Broker:
         self._meta: dict[int, dict] = {}          # id(queue) -> {"page": ..., "obs": bool}
         self._loop: asyncio.AbstractEventLoop | None = None
         self._seq = 0
+        self._closing = False
         self.on_clients_changed: Callable[[], None] | None = None
+        _BROKERS.add(self)
 
     def attach_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
@@ -64,9 +69,24 @@ class Broker:
             return
         self._loop.call_soon_threadsafe(fn, *args)
 
+    def close_streams(self) -> None:
+        """End every SSE stream now and refuse new ones (shutdown). Call from the loop thread."""
+        self._closing = True
+        for q in list(self._subscribers):
+            try:
+                q.put_nowait(None)
+            except asyncio.QueueFull:
+                try:
+                    q.get_nowait()
+                    q.put_nowait(None)
+                except (asyncio.QueueEmpty, asyncio.QueueFull):
+                    pass
+
     async def stream(self, snapshot: Callable[[], dict], heartbeat: float = 15.0,
                      meta: dict | None = None) -> AsyncIterator[str]:
         """Async generator producing SSE frames. First frame is a full snapshot."""
+        if self._closing:
+            return
         q: asyncio.Queue = asyncio.Queue(maxsize=256)
         self._subscribers.add(q)
         self._meta[id(q)] = dict(meta or {})
@@ -77,7 +97,10 @@ class Broker:
             last = time.monotonic()
             while True:
                 try:
-                    seq, event, data = await asyncio.wait_for(q.get(), timeout=heartbeat)
+                    item = await asyncio.wait_for(q.get(), timeout=heartbeat)
+                    if item is None:          # close_streams(): finish the response cleanly
+                        return
+                    seq, event, data = item
                     yield _frame(seq, event, data)
                 except asyncio.TimeoutError:
                     yield ": ping\n\n"
@@ -89,6 +112,12 @@ class Broker:
             self._subscribers.discard(q)
             self._meta.pop(id(q), None)
             self._clients_changed()
+
+
+def close_all_streams_threadsafe() -> None:
+    """Ask every live broker (normally one) to end its SSE streams. Safe from any thread."""
+    for b in list(_BROKERS):
+        b.call_threadsafe(b.close_streams)
 
 
 def _frame(seq: int, event: str, data: str) -> str:

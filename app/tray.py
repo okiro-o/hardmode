@@ -11,9 +11,10 @@ import os
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 
-from . import autostart, config
+from . import autostart, config, events
 
 log = logging.getLogger("cs2roulette.tray")
 
@@ -70,11 +71,25 @@ class TrayApp:
             self.notify(f"Не удалось изменить автозапуск: {e}")
 
     def _quit(self, *_: object) -> None:
-        try:
-            self.stop_server()
-        finally:
-            if self.icon:
-                self.icon.stop()
+        # pystray calls menu actions on its own message-loop thread: never block it, or the icon
+        # looks dead. Stop the server from a helper thread, then stop the icon loop.
+        if getattr(self, "_quitting", False):
+            return
+        self._quitting = True
+
+        def worker() -> None:
+            try:
+                self.stop_server()
+            except Exception:
+                log.exception("stop_server failed")
+            finally:
+                if self.icon:
+                    try:
+                        self.icon.stop()
+                    except Exception:
+                        log.exception("icon.stop failed")
+
+        threading.Thread(target=worker, name="tray-quit", daemon=True).start()
 
     def notify(self, text: str) -> None:
         try:
@@ -99,11 +114,33 @@ class TrayApp:
         self.icon.run()
 
 
+def stop_uvicorn(server, thread: threading.Thread, grace: float = 3.0, force_grace: float = 3.0) -> bool:
+    """Ask uvicorn to exit; escalate to force_exit when open connections (SSE widgets, the panel)
+    keep it waiting. Returns True when the server thread has finished."""
+    try:
+        # End the SSE responses ourselves first: otherwise uvicorn cancels them at the graceful
+        # timeout and logs a traceback ("Exception in ASGI application") per widget.
+        events.close_all_streams_threadsafe()
+        time.sleep(0.3)
+    except Exception:
+        log.exception("closing SSE streams failed")
+    server.should_exit = True
+    thread.join(timeout=grace)
+    if thread.is_alive():
+        log.warning("server did not stop within %.1fs, forcing exit", grace)
+        server.force_exit = True
+        thread.join(timeout=force_grace)
+    return not thread.is_alive()
+
+
 def run_with_tray(app_import: str, host: str, port: int, panel_url: str, open_browser: bool) -> int:
     """Start uvicorn in a thread, then block on the tray loop. Returns an exit code."""
     import uvicorn
 
-    server = uvicorn.Server(uvicorn.Config(app_import, host=host, port=port, log_level="info", log_config=None))
+    # timeout_graceful_shutdown: the SSE streams of the panel/OBS widgets never end on their own;
+    # without a timeout uvicorn would wait for them forever and "Выход" would hang.
+    server = uvicorn.Server(uvicorn.Config(app_import, host=host, port=port, log_level="info", log_config=None,
+                                           timeout_graceful_shutdown=1.0))
     errors: list[BaseException] = []
 
     def serve() -> None:
@@ -117,8 +154,8 @@ def run_with_tray(app_import: str, host: str, port: int, panel_url: str, open_br
     thread.start()
 
     def stop_server() -> None:
-        server.should_exit = True
-        thread.join(timeout=5.0)
+        if thread.is_alive():
+            stop_uvicorn(server, thread)
 
     tray = TrayApp(panel_url, stop_server)
     if open_browser:
@@ -134,4 +171,5 @@ def run_with_tray(app_import: str, host: str, port: int, panel_url: str, open_br
     threading.Thread(target=watchdog, name="watchdog", daemon=True).start()
     tray.run()
     stop_server()
+    log.info("tray: exiting (errors=%d)", len(errors))
     return 1 if errors else 0
