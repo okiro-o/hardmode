@@ -25,11 +25,12 @@ from . import config, loadout as L, steam, weapons as W
 from .events import Broker
 from .gsi import GsiTracker, build_cfg
 from .hotkeys import HotkeyManager
+from .chat import ChatNotifier, ChatSettings
 from .modules import dpi
 from .modules.dpi import DpiService, DpiSettings
 from .roulette import Roulette
 
-VERSION = "0.4.1"
+VERSION = "0.5.0"
 KILL_ADVANCE_GRACE = 1.5   # seconds: ignore a manual "next" right after a kill already advanced
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 log = logging.getLogger("cs2roulette")
@@ -60,6 +61,14 @@ class AppState:
         self.settings.dpi = dpi_settings.to_dict()
         self.dpi = DpiService(dpi_settings, config.dpi_state_path(),
                               publish=self.broker.publish, publish_threadsafe=self.broker.publish_threadsafe)
+        try:
+            chat_settings = ChatSettings.from_dict(self.settings.chat)
+        except ValueError:
+            chat_settings = ChatSettings()
+        self.settings.chat = chat_settings.to_dict()
+        self.chat = ChatNotifier(chat_settings, publish_threadsafe=self.broker.publish_threadsafe)
+        self.dpi.on_applied = lambda value, reason: self.chat.notify_dpi(value, reason)
+        self._announced: tuple[bool, int | None] = (self.roulette.running, self.roulette.current_uid())
         self.hotkeys = HotkeyManager(on_action=self._hotkey_from_thread,
                                      bindings=self.settings.hotkeys.bindings(),
                                      enabled=self.settings.hotkeys.enabled)
@@ -81,7 +90,23 @@ class AppState:
 
     def _on_roulette_change(self) -> None:
         self.save_state()
+        self._announce_weapon()
         self.broker.publish("roulette", self.roulette.snapshot())
+
+    def _announce_weapon(self) -> None:
+        """Chat notification when the current weapon changes (start, kill, hotkey, reroll, side switch)."""
+        r = self.roulette
+        now = (r.running, r.current_uid())
+        was = self._announced
+        self._announced = now
+        if not r.running or now == was or r.current() is None:
+            return
+        name = W.get(r.current()).name
+        fresh_start = not was[0] and r.completed == 0 and not r.history
+        if fresh_start:
+            self.chat.notify_start(name, side=r.side)
+        else:
+            self.chat.notify_weapon(name, r.completed, side=r.side, kills=r.kills_total)
 
     def _hotkey_from_thread(self, action: str) -> None:
         self.broker.call_threadsafe(self.hotkey_action, action)
@@ -127,6 +152,7 @@ class AppState:
             "platform": sys.platform,
             "roulette": self.roulette.snapshot(),
             "dpi": self.dpi.snapshot(),
+            "chat": self.chat.status(),
             "gsi": self.gsi.status.to_dict(),
             "hotkeys": self.hotkeys.describe(),
             "overlay": self.settings.overlay.__dict__,
@@ -142,6 +168,7 @@ class AppState:
     def settings_event(self) -> dict:
         return {"overlay": self.settings.overlay.__dict__, "hotkeys": self.hotkeys.describe(),
                 "roulette": self.roulette.settings.to_dict(), "dpi": self.dpi.settings.to_dict(),
+                "chat": self.chat.settings.public_dict(),
                 "gsi_token": self.settings.gsi_token, "port": self.settings.port}
 
     def publish_gsi(self, force: bool = False) -> None:
@@ -234,6 +261,7 @@ def create_app() -> FastAPI:
         state.broker.attach_loop(loop)
         state.hotkeys.start()
         state.dpi.start(loop)
+        state.chat.start()
         stop = asyncio.Event()
 
         async def housekeeping() -> None:
@@ -260,6 +288,7 @@ def create_app() -> FastAPI:
             task.cancel()
             state.hotkeys.stop()
             state.dpi.stop()
+            state.chat.stop()
             state.save_state()
 
     app = FastAPI(title="CS2 Roulette", version=VERSION, lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -406,6 +435,7 @@ def create_app() -> FastAPI:
         d = state.settings.to_dict()
         d["roulette"] = state.roulette.settings.to_dict()
         d["dpi"] = state.dpi.settings.to_dict()
+        d["chat"] = state.chat.settings.public_dict()   # never expose the JWT
         return d
 
     @app.post("/api/settings")
@@ -413,9 +443,15 @@ def create_app() -> FastAPI:
         body = await _json(request)
         s = state.settings
         rejected: list[str] = []
-        for section in ("roulette", "overlay", "hotkeys", "dpi"):
+        for section in ("roulette", "overlay", "hotkeys", "dpi", "chat"):
             if section in body and body[section] is not None and not isinstance(body[section], dict):
                 raise HTTPException(400, f"{section}: нужен объект")
+        if "chat" in body:
+            try:
+                state.chat.update_settings(body["chat"] or {})
+            except ValueError as e:
+                raise HTTPException(400, f"Некорректные настройки чата: {e}")
+            s.chat = state.chat.settings.to_dict()
         if "dpi" in body:
             try:
                 state.dpi.update_settings(body["dpi"] or {})
@@ -499,6 +535,19 @@ def create_app() -> FastAPI:
     @app.get("/api/hotkeys")
     async def api_hotkeys() -> dict:
         return state.hotkeys.describe()
+
+    # ------------------------------------------------------------------- chat
+    @app.post("/api/chat/verify")
+    async def chat_verify() -> dict:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, state.chat.verify)
+
+    @app.post("/api/chat/test")
+    async def chat_test(request: Request) -> dict:
+        body = await _json(request)
+        text = str(body.get("message") or "✅ cs2-roulette: тестовое сообщение").strip()[:450]
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, state.chat.send_now, text)
 
     return app
 

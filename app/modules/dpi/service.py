@@ -124,6 +124,7 @@ class DpiService:
         self.last_error: str | None = None
         self.mouse: dict = {"found": False}
         self.busy = False
+        self.on_applied: Callable[[int, str], None] | None = None   # external hook (chat notifications)
         self._last_spin_at = 0.0
         self._pending_apply: asyncio.TimerHandle | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -274,6 +275,11 @@ class DpiService:
             del self.history[:-MAX_HISTORY]
             self._log("apply", f"DPI {actual} применён ({reason})", value=actual)
             result = {"ok": True, "value": actual}
+            if self.on_applied:
+                try:
+                    self.on_applied(actual, reason)
+                except Exception:
+                    pass
         except Exception as e:  # HidppError or anything from hidapi
             self.last_error = str(e)
             self._log("error", f"Не удалось применить DPI {value}: {e}")

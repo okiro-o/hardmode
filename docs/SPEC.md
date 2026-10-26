@@ -2,7 +2,7 @@
 
 Этот документ — источник правды о приложении: зачем оно, как устроено, какие решения приняты
 и почему, что отклонено, что в бэклоге. Обновляется при каждом значимом изменении.
-Последнее обновление: 2026-10-26, версия приложения 0.4.1.
+Последнее обновление: 2026-10-26, версия приложения 0.5.0.
 
 ## 1. Назначение и пользователь
 
@@ -51,6 +51,7 @@ push-обновлений, обычные HTML/JS-страницы без сбо
 | `app/gsi.py` | разбор GSI: килл (рост `round_kills`), атрибуция оружия, смерть, сторона, гранаты, фильтр наблюдения |
 | `app/hotkeys.py` | глобальные хоткеи Windows (RegisterHotKey → fallback GetAsyncKeyState), предупреждение UIPI |
 | `app/steam.py` | поиск папки CS2 (реестр + libraryfolders.vdf), запись GSI-конфига |
+| `app/chat.py` | уведомления в чат Twitch через бота StreamElements (JWT, очередь с объединением всплесков) |
 | `app/modules/dpi/hidpp.py` | HID++ 2.0 клиент через hidapi: ROOT, DeviceName, OnboardProfiles 0x8100, ExtendedAdjustableDpi 0x2202 |
 | `app/modules/dpi/backends.py` | `HidppBackend`, `FakeBackend`, `NoneBackend`, фабрика (`CS2R_DPI_BACKEND`) |
 | `app/modules/dpi/service.py` | `DpiService`: выбор значения, расписание применения, сторож от отката G HUB, персистентность |
@@ -153,6 +154,23 @@ push-обновлений, обычные HTML/JS-страницы без сбо
   сегмент `home_dpi` в цвете `home_color`, число при выпадении на него — тем же цветом, без
   текстовых подписей вроде «твой обычный» (пользователь просил убрать).
 
+## 6a. Чат Twitch (StreamElements)
+
+- Провайдер: StreamElements (выбран как самый простой: нужен только JWT-токен канала из
+  дашборда, без регистрации приложения). `POST https://api.streamelements.com/kappa/v2/bot/
+  {channelId}/say {"message"}` с `Authorization: Bearer <JWT>`; channelId — claim `channel` из
+  payload JWT (без верификации), проверка/имя канала — `GET /kappa/v2/channels/me`.
+- Настройки `chat`: enabled, se_jwt (секрет; в API/SSE только `se_jwt_set`), on_start,
+  on_weapon, on_dpi, шаблоны (`{weapon} {completed} {kills} {side} {dpi} {reason}`),
+  min_interval_s (≥0.5, по умолчанию 2). Токен лежит в data/settings.json.
+- Триггеры: смена текущего оружия при запущенной сессии (старт/возобновление с нуля → шаблон
+  старта; иначе шаблон оружия; детект по `(running, current_uid)` в `_on_roulette_change`),
+  успешное применение DPI (`DpiService.on_applied`, любая причина). Отправка из рабочего потока;
+  всплески одного типа схлопываются в последнее сообщение.
+- Панель: вкладка «Общее → Чат Twitch через StreamElements»: сохранить/удалить токен,
+  «Проверить токен», «Отправить тест», тогглы, шаблоны, лог отправок.
+- Nightbot (нужна OAuth-регистрация приложения) и Moobot (нет API) отклонены как более сложные.
+
 ## 7. API и события
 
 HTTP (все POST — JSON): `/api/state`, `/api/weapons`, `/api/loadout/generate {sides}`,
@@ -160,11 +178,11 @@ HTTP (все POST — JSON): `/api/state`, `/api/weapons`, `/api/loadout/generat
 `/api/session/start|stop|reset`, `/api/roulette/next|reroll|undo|kill`, `/api/side {side}`,
 `/api/settings` (GET/POST; секции roulette/overlay/hotkeys/dpi, `regenerate_token`, `port`;
 ответ содержит `rejected`), `/gsi` (всегда 2xx), `/api/gsi/cfg|info|install`, `/api/hotkeys`,
-`/api/dpi/status|spin|apply|home|probe|hostmode|death`. Страницы: `/`, `/overlay/weapons`,
-`/overlay/loadout`, `/overlay/dpi`.
+`/api/dpi/status|spin|apply|home|probe|hostmode|death`, `/api/chat/verify|test`. Страницы:
+`/`, `/overlay/weapons`, `/overlay/loadout`, `/overlay/dpi`.
 
 SSE `/events`: `snapshot` (полный), `roulette`, `gsi`, `settings`, `hotkeys`, `kill`
-(`finished_uid` для вспышки на нужной карточке), `hotkey`, `dpi`, `dpi_spin`.
+(`finished_uid` для вспышки на нужной карточке), `hotkey`, `dpi`, `dpi_spin`, `chat`.
 
 Параметры URL виджетов перекрывают настройки: оружие — `scale, layout, align, labels, counter,
 kills, match, color, accent, matchcolor, bg, debug, x/y`; лоадаут — `side (auto|T|CT|both),
@@ -194,13 +212,16 @@ current, home, homecolor, color, accent, bg, debug`.
 
 ## 10. Бэклог и открытые вопросы
 
-- **Twitch-бот**: сообщать в чат о новом оружии/DPI. Варианты: (а) напрямую Twitch Helix
-  «Send Chat Message» с Device Code Grant (нужен Client ID приложения, которое заводит
-  пользователь на dev.twitch.tv; токены с refresh), (б) StreamElements bot API (`/kappa/v2/bot/
-  {channel}/say`, JWT из дашборда — самый простой путь, если стример пользуется SE),
-  (в) Streamer.bot по локальному WebSocket (DoAction), (г) универсальный webhook (POST JSON на
-  URL) для любого бота. Про JeetBot публичного API для внешних сообщений не найдено (2026-10-26);
-  уточнить у пользователя, каким ботом/сервисом он пользуется, прежде чем делать.
+- ~~Twitch-бот~~ — сделано через StreamElements в 0.5.0 (см. 6a). Исходный анализ: документация JeetBot (docs.jeetbot.cc,
+  прочитана 2026-10-26) даёт только переменную `$(api URL $.path)` в кастомных командах:
+  GET по фиксированному **публичному HTTPS** URL, кэш 15 с, кулдаун 5 с, до 3 команд с API на
+  бесплатном тарифе; никакого push-API/webhook/интеграций нет. Значит: (1) автоматические
+  сообщения «новое оружие/DPI» возможны только если шлёт само приложение — Twitch Helix «Send
+  Chat Message» с Device Code Grant (пользователь заводит приложение на dev.twitch.tv ради
+  Client ID; токены с refresh); альтернативы StreamElements `/kappa/v2/bot/{channel}/say` (JWT)
+  или Streamer.bot (локальный WebSocket); (2) команды зрителей `!dpi` / `!оружие` через JeetBot
+  возможны, если состояние опубликовать по публичному HTTPS JSON (туннель вроде Cloudflare
+  Tunnel или облачный JSON-бин, куда приложение пишет состояние). Решение за пользователем.
 - Проверить на ПК пользователя: предупреждение UIPI, поведение G HUB при alt-tab (нужен ли
   Persistent Profile), реальные значения `map.mode` в Premier.
 - Возможные улучшения: пул «обе стороны» для Deathmatch; экспорт статистики сессии; звук при

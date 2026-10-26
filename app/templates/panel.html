@@ -53,12 +53,12 @@
   .form .full { grid-column: 1 / -1; }
   label.f { display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--muted); min-width:0; }
   label.f > span { padding-left:2px; }
-  input[type=text], input[type=number], select {
+  input[type=text], input[type=number], input[type=password], select {
     width:100%; height:36px; background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:8px;
     padding:0 10px; font: inherit; font-size:13.5px; transition: border-color .15s, box-shadow .15s, background .15s;
   }
-  input[type=text]:hover, input[type=number]:hover, select:hover { border-color:var(--line2); }
-  input[type=text]:focus, input[type=number]:focus, select:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(255,209,102,.14); background:#222838; }
+  input[type=text]:hover, input[type=number]:hover, input[type=password]:hover, select:hover { border-color:var(--line2); }
+  input[type=text]:focus, input[type=number]:focus, input[type=password]:focus, select:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(255,209,102,.14); background:#222838; }
   input[type=number] { -moz-appearance: textfield; }
   input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
   select {
@@ -348,6 +348,37 @@
         <div class="hint" style="margin-top:8px;">Формат: <span class="kbd">F9</span>, <span class="kbd">ctrl+alt+K</span>, <span class="kbd">numpad+</span>, <span class="kbd">F13</span>… Клавиша перехватывается глобально, игра её не увидит. При автопереходе после килла нажимать «Следующее» не нужно: нажатие в течение 1,5 с после килла игнорируется. Если Steam/CS2 запущены от администратора, запускайте run.bat тоже от администратора. Статус: <span id="hk-status">—</span></div>
       </section>
 
+      <section id="sec-chat">
+        <h2>Чат Twitch через StreamElements <span class="right"><span class="chip" id="chip-chat"><span class="dot"></span><b>выкл</b></span></span></h2>
+        <div class="hint">Бот StreamElements пишет в чат о старте гонки, новом оружии и новом DPI. Нужен JWT-токен канала: streamelements.com → иконка аккаунта (справа вверху) → свой канал → включить «Show secrets» → скопировать <b>JWT Token</b>. Бот SE должен быть добавлен в канал (кнопка «Join channel» в дашборде). <b>Токен — секрет</b>, не показывайте эту страницу на стриме.</div>
+        <div class="form" style="margin-top:8px;">
+          <label class="inline"><input type="checkbox" data-key="chat.enabled"> Уведомления в чат включены</label>
+          <div></div>
+          <label class="f full"><span>JWT-токен StreamElements <span id="chat-jwt-state" class="muted"></span></span>
+            <div class="row" style="flex-wrap:nowrap;">
+              <input type="password" id="chat-jwt" placeholder="вставьте токен и нажмите «Сохранить»" autocomplete="off" style="flex:1;">
+              <button onclick="saveJwt()">Сохранить</button>
+              <button onclick="clearJwt()" title="Удалить токен из настроек">Удалить</button>
+            </div></label>
+          <div class="row full">
+            <button onclick="verifyChat()">Проверить токен</button>
+            <button onclick="testChat()">Отправить тест в чат</button>
+            <span class="hint" id="chat-status"></span>
+          </div>
+          <h3 class="full">Когда писать</h3>
+          <label class="inline"><input type="checkbox" data-key="chat.on_start"> Старт гонки вооружений</label>
+          <label class="inline"><input type="checkbox" data-key="chat.on_weapon"> Новое оружие</label>
+          <label class="inline"><input type="checkbox" data-key="chat.on_dpi"> Новый DPI</label>
+          <label class="f"><span>Минимум между сообщениями, с</span><input type="number" min="0.5" max="60" step="0.5" data-key="chat.min_interval_s"></label>
+          <h3 class="full">Тексты сообщений</h3>
+          <div class="hint full">Подстановки: <span class="kbd">{weapon}</span> <span class="kbd">{completed}</span> <span class="kbd">{kills}</span> <span class="kbd">{side}</span> <span class="kbd">{dpi}</span> <span class="kbd">{reason}</span></div>
+          <label class="f full"><span>Старт</span><input type="text" data-key="chat.start_template"></label>
+          <label class="f full"><span>Новое оружие</span><input type="text" data-key="chat.weapon_template"></label>
+          <label class="f full"><span>Новый DPI</span><input type="text" data-key="chat.dpi_template"></label>
+        </div>
+        <div class="log" id="chat-log" style="margin-top:10px; max-height:140px;"></div>
+      </section>
+
       <section>
         <h2>Разное</h2>
         <div class="hint">Папка данных: <code id="data-dir"></code><br>Порт: <code id="port"></code> (меняется в <code>data/settings.json</code>, нужен перезапуск)</div>
@@ -407,6 +438,22 @@ async function installCfg() { const r = await post('/api/gsi/install', {}); if (
 async function applyManualDpi() { const v = parseInt($('dpi-manual').value, 10); if (!Number.isFinite(v)) return toast('Введите DPI', true); const r = await post('/api/dpi/apply', {value: v}); if (r && !r.ok) toast(r.error || 'Ошибка', true); }
 async function probeMouse() { toast('Ищу мышь…'); const r = await post('/api/dpi/probe', {}); if (r && !r.found) toast('Мышь не найдена: ' + (r.error||''), true); else if (r) toast('Мышь найдена: ' + (r.name || r.product)); }
 function fmtTime(t) { const d = new Date(t*1000); return d.toTimeString().slice(0,8); }
+async function saveJwt() { const v = $('chat-jwt').value.trim(); if (!v) return toast('Вставьте токен', true); const r = await post('/api/settings', {chat: {se_jwt: v}}); if (r) { $('chat-jwt').value = ''; toast('Токен сохранён, нажмите «Проверить токен»'); refreshState(); } }
+async function clearJwt() { if (!confirm('Удалить токен StreamElements из настроек?')) return; const r = await post('/api/settings', {chat: {se_jwt: ''}}); if (r) { toast('Токен удалён'); refreshState(); } }
+async function verifyChat() { toast('Проверяю…'); const r = await post('/api/chat/verify', {}); if (!r) return; if (r.ok) toast('Канал: ' + (r.channel.username || r.channel.id)); else toast(r.error || 'Ошибка', true); refreshState(); }
+async function testChat() { const r = await post('/api/chat/test', {}); if (!r) return; if (r.ok) toast('Отправлено в чат'); else toast(r.error || 'Ошибка', true); refreshState(); }
+function renderChat() {
+  const c = S.chat; if (!c) return;
+  const st = c.settings || {};
+  const chip = $('chip-chat');
+  if (!st.enabled) { chip.className = 'chip'; chip.querySelector('b').textContent = 'выкл'; }
+  else if (!st.se_jwt_set) { chip.className = 'chip warn'; chip.querySelector('b').textContent = 'нет токена'; }
+  else if (c.last_error) { chip.className = 'chip bad'; chip.querySelector('b').textContent = 'ошибка'; }
+  else { chip.className = 'chip ok'; chip.querySelector('b').textContent = (c.channel && c.channel.username) ? '#' + c.channel.username : 'готов'; }
+  $('chat-jwt-state').textContent = st.se_jwt_set ? '— сохранён' : '— не задан';
+  $('chat-status').textContent = (c.channel && c.channel.username ? `канал ${c.channel.username}` : '') + (c.sent_count ? ` · отправлено ${c.sent_count}` : '') + (c.last_error ? ` · ошибка: ${c.last_error}` : '');
+  $('chat-log').innerHTML = (c.log||[]).slice().reverse().map(e => `<div class="${esc(e.kind)}"><span class="t">${fmtTime(e.t)}</span><span>${esc(e.text)}</span></div>`).join('');
+}
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
 
 // ------------------------------------------------------------------ main tabs
@@ -475,7 +522,7 @@ function renderLoadout() {
 
 function renderSettings() {
   const r = S.roulette.settings, o = S.overlay, h = S.hotkeys;
-  const src = { roulette: r, overlay: o, hotkeys: {...h.bindings, enabled: h.enabled}, dpi: (S.dpi && S.dpi.settings) || {} };
+  const src = { roulette: r, overlay: o, hotkeys: {...h.bindings, enabled: h.enabled}, dpi: (S.dpi && S.dpi.settings) || {}, chat: (S.chat && S.chat.settings) || {} };
   document.querySelectorAll('[data-key]').forEach(el => {
     if (document.activeElement === el) return;
     const [grp, key] = el.dataset.key.split('.'); const v = src[grp] ? src[grp][key] : undefined; if (v === undefined) return;
@@ -558,7 +605,7 @@ function renderSizes() {
   $('size-dpi').textContent = '600×750'; $('size-dpi-2').textContent = '600×750';
 }
 
-function renderAll() { if (!S) return; renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); }
+function renderAll() { if (!S) return; renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); renderChat(); }
 
 // ------------------------------------------------------------------ settings form
 document.querySelectorAll('[data-key]').forEach(el => {
@@ -586,9 +633,10 @@ const es = new EventSource('/events');
 es.addEventListener('snapshot', e => { S = JSON.parse(e.data); renderAll(); $('chip-sse').className='chip ok'; });
 es.addEventListener('roulette', e => { if (!S) return; S.roulette = JSON.parse(e.data); renderHeader(); renderQueue(); renderLoadout(); renderSettings(); });
 es.addEventListener('gsi', e => { if (!S) return; S.gsi = JSON.parse(e.data); renderHeader(); renderMisc(); });
-es.addEventListener('settings', e => { if (!S) return; const d = JSON.parse(e.data); S.overlay = d.overlay; S.hotkeys = d.hotkeys; S.gsi_token = d.gsi_token; S.port = d.port; if (S.dpi && d.dpi) S.dpi.settings = d.dpi; if (d.roulette) S.roulette.settings = d.roulette; renderHeader(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); refreshState(); });
+es.addEventListener('settings', e => { if (!S) return; const d = JSON.parse(e.data); S.overlay = d.overlay; S.hotkeys = d.hotkeys; S.gsi_token = d.gsi_token; S.port = d.port; if (S.dpi && d.dpi) S.dpi.settings = d.dpi; if (S.chat && d.chat) S.chat.settings = d.chat; if (d.roulette) S.roulette.settings = d.roulette; renderHeader(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); refreshState(); });
 es.addEventListener('hotkeys', e => { if (!S) return; S.hotkeys = JSON.parse(e.data); renderHeader(); renderSettings(); renderDpi(); });
 es.addEventListener('dpi', e => { if (!S) return; S.dpi = JSON.parse(e.data); renderDpi(); renderSettings(); });
+es.addEventListener('chat', e => { if (!S) return; S.chat = JSON.parse(e.data); renderChat(); renderSettings(); });
 es.addEventListener('dpi_spin', e => { const sp = JSON.parse(e.data); toast('DPI-рулетка: ' + sp.value + (sp.reason === 'death' ? ' (смерть)' : '')); });
 es.addEventListener('kill', e => { const k = JSON.parse(e.data); if (k.ambiguous) toast('Килл: возможно граната — не засчитан'); else if (k.counted) toast(k.advanced ? 'Килл засчитан → следующее оружие' : 'Килл засчитан'); else if (S && S.roulette.running) toast('Килл не тем оружием', true); });
 es.addEventListener('hotkey', e => { const h = JSON.parse(e.data); toast('Хоткей «' + (HK_NAMES[h.action]||h.action) + '»' + (h.ignored ? ' — проигнорирован (килл уже переключил оружие)' : '')); });

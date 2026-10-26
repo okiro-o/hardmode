@@ -212,3 +212,29 @@ def test_kill_event_has_finished_uid_and_collateral_not_wrong(client):
     r = client.get("/api/state").json()["roulette"]
     assert r["completed"] == 1 and r["kills_wrong_weapon"] == 0
     assert r["history"][-1]["uid"] == uid
+
+
+def test_chat_settings_masked_and_notifications_wired(client, monkeypatch):
+    from tests.test_chat import fake_jwt
+    sent = []
+    app_state = client.app.state.app
+    app_state.chat._sender = lambda jwt, cid, msg: sent.append(msg)
+    r = client.post("/api/settings", json={"chat": {"enabled": True, "se_jwt": fake_jwt(), "min_interval_s": 0.5}})
+    assert r.status_code == 200
+    assert "se_jwt" not in r.json()["chat"] and r.json()["chat"]["se_jwt_set"] is True
+    dumped = json.dumps(client.get("/api/state").json())
+    assert fake_jwt() not in dumped and '"se_jwt":' not in dumped   # the secret never leaves settings.json
+    # start -> start message; next -> weapon message; dpi apply -> dpi message
+    client.post("/api/loadout/generate", json={})
+    client.post("/api/session/start")
+    client.post("/api/roulette/next")
+    client.post("/api/settings", json={"dpi": {"backend": "fake"}})
+    client.post("/api/dpi/apply", json={"value": 1600})
+    import time as _t
+    end = _t.time() + 3
+    while _t.time() < end and len(sent) < 3:
+        _t.sleep(0.05)
+    assert any("началась" in m for m in sent) and any("Оружие:" in m for m in sent) and any("1600" in m for m in sent)
+    res = client.post("/api/chat/test", json={"message": "hi"}).json()
+    assert res["ok"] and sent[-1] == "hi"
+    assert client.post("/api/settings", json={"chat": {"weapon_template": 5}}).status_code == 400

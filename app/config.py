@@ -168,6 +168,7 @@ class AppSettings:
     gsi_token: str = field(default_factory=lambda: secrets.token_urlsafe(12))
     roulette: dict = field(default_factory=dict)      # RouletteSettings as dict
     dpi: dict = field(default_factory=dict)           # DpiSettings as dict (validated by the module)
+    chat: dict = field(default_factory=dict)          # ChatSettings as dict (contains the SE JWT secret)
     overlay: OverlaySettings = field(default_factory=OverlaySettings)
     hotkeys: HotkeySettings = field(default_factory=HotkeySettings)
     open_browser: bool = True
@@ -191,6 +192,7 @@ class AppSettings:
             s.gsi_token = tok.strip()
         s.roulette = dict(d.get("roulette") or {}) if isinstance(d.get("roulette"), dict) else {}
         s.dpi = dict(d.get("dpi") or {}) if isinstance(d.get("dpi"), dict) else {}
+        s.chat = dict(d.get("chat") or {}) if isinstance(d.get("chat"), dict) else {}
         s.open_browser = _to_bool(d.get("open_browser", True))
         if isinstance(d.get("overlay"), dict):
             s.overlay.apply(d["overlay"])
