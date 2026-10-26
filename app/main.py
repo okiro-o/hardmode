@@ -131,11 +131,13 @@ class AppState:
             now < float(spin.get("started_at", 0)) + float(spin.get("duration_ms", 0)) / 1000.0 + 0.5
         cur = d.current_dpi
         dpi = {"present": bool(d.settings.enabled and (cur is not None or spinning)), "current": cur,
-               "spinning": spinning, "home": d.settings.home_dpi, "key": [cur, spinning], "hold": spinning}
+               "spinning": spinning, "home": d.settings.home_dpi, "key": [cur, spinning], "hold": spinning,
+               "reason": "DPI-рулетка выключена" if not d.settings.enabled else ("DPI ещё не применялся" if cur is None else "")}
         wid = r.current() if r.running else None
         n = int(self.settings.ingame.weapons_next)
         nxt = list(r.queue)[1:1 + n] if wid else []
         weapons = {"present": bool(wid),
+                   "reason": "" if wid else ("гонка на паузе" if r.paused else "гонка не запущена"),
                    "current": {"id": wid, "name": W.get(wid).name} if wid else None,
                    "next": [{"id": i, "name": W.get(i).name} for i in nxt],
                    "kills": [r.current_kills, r.settings.kills_per_weapon],

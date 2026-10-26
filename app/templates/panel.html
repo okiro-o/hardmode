@@ -373,6 +373,7 @@
         <div class="row" style="margin-top:10px; align-items:center; gap:14px; flex-wrap:wrap;">
           <button onclick="ingamePreview('weapons')">Показать поверх игры на 5 с</button>
           <img id="ingame-prev-weapons" class="ingame-prev" alt="">
+          <span class="hint" id="ingame-note-weapons"></span>
         </div>
       </section>
 
@@ -443,6 +444,7 @@
         <div class="row" style="margin-top:10px; align-items:center; gap:14px; flex-wrap:wrap;">
           <button onclick="ingamePreview('dpi')">Показать поверх игры на 5 с</button>
           <img id="ingame-prev-dpi" class="ingame-prev" alt="">
+          <span class="hint" id="ingame-note-dpi"></span>
         </div>
       </section>
     </div>
@@ -772,11 +774,15 @@ function renderIngame() {
   for (const kind of ['dpi', 'weapons']) {
     const chip = $('chip-ingame-' + kind); if (!chip) continue;
     const b = chip.querySelector('b');
+    const err = (g.errors && g.errors[kind]) || g.error;
+    const note = $('ingame-note-' + kind);
     if (g.available === false) { chip.className = 'chip'; b.textContent = 'только Windows'; }
-    else if (g.error) { chip.className = 'chip bad'; b.textContent = 'ошибка'; chip.title = g.error; }
+    else if (err) { chip.className = 'chip bad'; b.textContent = 'ошибка'; chip.title = err; }
     else if (!g[kind + '_enabled']) { chip.className = 'chip'; b.textContent = 'выкл'; }
     else if (g.visible && g.visible[kind]) { chip.className = 'chip ok'; b.textContent = 'на экране'; }
+    else if (g.present && g.present[kind] === false) { chip.className = 'chip warn'; b.textContent = (g.reason && g.reason[kind]) || 'нет данных'; }
     else { chip.className = 'chip ok'; b.textContent = g[kind + '_mode'] === 'always' ? 'всегда' : 'после смены'; }
+    if (note) note.textContent = err ? err : (g.present && g.present[kind] === false && g.reason && g.reason[kind]) ? 'сейчас скрыт: ' + g.reason[kind] + ' (на картинке пример)' : '';
     const img = $('ingame-prev-' + kind); if (img && !img.src) schedulePreview(kind);
   }
 }

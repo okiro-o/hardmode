@@ -105,3 +105,22 @@ def test_api_ingame_render_and_settings(client):
     assert "available" in st["ingame"]
     r = client.post("/api/ingame/preview", json={"kind": "dpi"})
     assert r.status_code == 200 and "ok" in r.json()
+
+
+def test_weapons_render_falls_back_to_text_when_silhouettes_fail(monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("no icons")
+    monkeypatch.setattr(ingame, "svg_mask", boom)
+    img = ingame.render("weapons", ingame.SAMPLE_STATE["weapons"], IngameSettings(), COLORS)
+    assert img is not None and img.size[0] > 60
+
+
+def test_status_exposes_per_kind_diagnostics():
+    ov = ingame.IngameOverlays(IngameSettings(), lambda: {"dpi": {"present": False, "reason": "x"}, "weapons": {"present": False}}, lambda: COLORS)
+    st = ov.status()
+    assert set(st["errors"]) == {"dpi", "weapons"} and set(st["present"]) == {"dpi", "weapons"} and "reason" in st
+
+
+def test_state_reason_when_race_not_running(client):
+    st = client.get("/api/state").json()["ingame"]
+    assert "present" in st and "reason" in st

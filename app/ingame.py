@@ -29,6 +29,7 @@ from . import config, weapons as W
 
 log = logging.getLogger("cs2roulette.ingame")
 IS_WINDOWS = sys.platform.startswith("win")
+_RENDER_LOCK = threading.Lock()   # Pillow font objects are shared (lru_cache) between the overlay thread and HTTP previews
 KINDS = ("dpi", "weapons")
 SS = 3  # supersampling factor for silhouettes
 
@@ -283,9 +284,13 @@ def render_weapons(st: dict, s: config.IngameSettings, colors: dict) -> Image.Im
     nxt = list(st.get("next") or [])[: max(0, int(s.weapons_next))]
     name_f, badge_f = font(int(15 * k)), font(int(13 * k))
 
-    cur_mask = svg_mask(cur["id"], H)
+    try:
+        cur_mask = svg_mask(cur["id"], H)
+        next_masks = [(n, svg_mask(n["id"], h2)) for n in nxt]
+    except Exception:  # noqa: BLE001 - never lose the whole block because of one silhouette
+        log.exception("silhouette rasterization failed, falling back to text")
+        cur_mask, next_masks = None, [(n, None) for n in nxt]
     cur_w = cur_mask.size[0] if cur_mask else int(_text_w(name_f, cur["name"]))
-    next_masks = [(n, svg_mask(n["id"], h2)) for n in nxt]
     name_h = int(22 * k) if s.weapons_names else 0
     w = pad * 2 + max(cur_w, int(_text_w(name_f, cur["name"])) if s.weapons_names else 0)
     if next_masks:
@@ -299,6 +304,8 @@ def render_weapons(st: dict, s: config.IngameSettings, colors: dict) -> Image.Im
     x = pad
     if cur_mask:
         img.alpha_composite(tinted(cur_mask, color), (x, pad))
+    else:
+        d.text((x, pad + H // 2 - int(10 * k)), cur["name"], font=font(int(22 * k)), fill=color + (255,))
     kills = st.get("kills") or [0, 1]
     if len(kills) == 2 and int(kills[1]) > 1:
         badge = f"{kills[0]}/{kills[1]}"
@@ -487,8 +494,8 @@ if IS_WINDOWS:  # pragma: no cover - exercised only on Windows
             self.visible = True
 
         def raise_(self) -> None:
-            if self.visible:
-                user32.SetWindowPos(self.hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
+            if self.visible:   # SHOWWINDOW too: re-show if something hid the window behind our back
+                user32.SetWindowPos(self.hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW)
 
         def hide(self) -> None:
             if self.visible:
@@ -523,6 +530,9 @@ class IngameOverlays:
         self._preview_until: dict[str, float] = {k: 0.0 for k in KINDS}
         self._version = 0
         self.visible: dict[str, bool] = {k: False for k in KINDS}
+        self.errors: dict[str, str | None] = {k: None for k in KINDS}
+        self.present: dict[str, bool] = {k: False for k in KINDS}
+        self.reason: dict[str, str] = {k: "" for k in KINDS}
 
     # -------------------------------------------------------------- control
     def start(self) -> None:
@@ -547,7 +557,8 @@ class IngameOverlays:
 
     def status(self) -> dict:
         return {"available": self.available, "running": bool(self._thread and self._thread.is_alive()),
-                "error": self.error, "visible": dict(self.visible)}
+                "error": self.error, "visible": dict(self.visible), "errors": dict(self.errors),
+                "present": dict(self.present), "reason": dict(self.reason)}
 
     # ------------------------------------------------------------ rendering
     def state_for(self, kind: str, sample_if_empty: bool = True) -> dict:
@@ -562,7 +573,8 @@ class IngameOverlays:
 
     def render(self, kind: str, sample_if_empty: bool = True) -> Image.Image | None:
         st = self.state_for(kind, sample_if_empty)
-        return render(kind, st, self.settings, self._colors_fn())
+        with _RENDER_LOCK:
+            return render(kind, st, self.settings, self._colors_fn())
 
     def render_png(self, kind: str) -> bytes:
         img = self.render(kind)
@@ -613,9 +625,14 @@ class IngameOverlays:
                         shown_until[kind] = now + float(getattr(s, f"{kind}_show_s"))
                     enabled = bool(getattr(s, f"{kind}_enabled"))
                     mode = getattr(s, f"{kind}_mode")
+                    self.present[kind] = bool(st.get("present"))
                     visible = st.get("present") and (previewing or (enabled and (
                         mode == "always" or st.get("hold") or now < shown_until[kind])))
                     if not visible:
+                        self.reason[kind] = (st.get("reason") or "нет данных") if not st.get("present") else \
+                            ("выключено" if not enabled else "ждёт смены")
+                        if self.visible[kind]:
+                            log.info("ingame %s: hide (%s)", kind, self.reason[kind])
                         layer.hide()
                         last_sig.pop(kind, None)
                         self.visible[kind] = False
@@ -623,11 +640,15 @@ class IngameOverlays:
                     sig = (json.dumps(st, sort_keys=True, default=str), self._version, mon)
                     if sig != last_sig.get(kind):
                         try:
-                            img = render(kind, st, s, colors)
-                        except Exception:
-                            log.exception("ingame render failed")
+                            with _RENDER_LOCK:
+                                img = render(kind, st, s, colors)
+                            self.errors[kind] = None
+                        except Exception as e:  # noqa: BLE001
+                            self.errors[kind] = f"render: {type(e).__name__}: {e}"
+                            log.exception("ingame %s: render failed", kind)
                             img = None
                         if img is None:
+                            self.reason[kind] = self.errors[kind] or "нечего рисовать"
                             layer.hide()
                             self.visible[kind] = False
                             continue
@@ -635,10 +656,15 @@ class IngameOverlays:
                         try:
                             layer.update(img, x, y, float(getattr(s, f"{kind}_opacity")))
                             last_sig[kind] = sig
+                            if not self.visible[kind]:
+                                log.info("ingame %s: show %dx%d at %d,%d", kind, img.size[0], img.size[1], x, y)
                             self.visible[kind] = True
-                        except Exception as e:
-                            self.error = f"{type(e).__name__}: {e}"
-                            log.exception("ingame overlay update failed")
+                            self.reason[kind] = "на экране"
+                            self.errors[kind] = None
+                        except Exception as e:  # noqa: BLE001
+                            self.errors[kind] = f"window: {type(e).__name__}: {e}"
+                            self.error = self.errors[kind]
+                            log.exception("ingame %s: window update failed", kind)
                 if now - last_raise > 2.0:
                     last_raise = now
                     for layer in layers.values():
