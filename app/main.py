@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import autostart, config, loadout as L, steam, weapons as W
+from . import autostart, config, docs, loadout as L, steam, weapons as W
 from .events import Broker
 from .gsi import GsiTracker, build_cfg
 from .hotkeys import HotkeyManager
@@ -31,7 +31,7 @@ from .modules.dpi import DpiService, DpiSettings
 from .roulette import Roulette
 from .twitch_irc import IrcMessage, TwitchChatReader
 
-VERSION = "0.9.0"
+VERSION = "0.10.0"
 KILL_ADVANCE_GRACE = 1.5   # seconds: ignore a manual "next" right after a kill already advanced
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 log = logging.getLogger("cs2roulette")
@@ -396,6 +396,10 @@ def create_app() -> FastAPI:
     @app.get("/api/state")
     async def api_state() -> dict:
         return state.full_snapshot()
+
+    @app.get("/api/docs")
+    async def api_docs() -> dict:
+        return docs.load_help()
 
     @app.get("/api/weapons")
     async def api_weapons() -> dict:

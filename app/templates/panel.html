@@ -89,6 +89,28 @@
   .tokenbox button:hover { background:var(--panel3); }
   .tokenbox button.eye { width:44px; padding:0; font-size:16px; }
   .tokenbox button.primary { background:var(--accent); color:#1a1a1a; }
+  /* help */
+  .help { display:grid; grid-template-columns: 220px 1fr; gap:16px; }
+  .toc { position:sticky; top:120px; align-self:start; display:flex; flex-direction:column; gap:2px; }
+  @media (max-width: 900px) { .help { grid-template-columns: 1fr; } .toc { position:static; flex-direction:row; flex-wrap:wrap; } }
+  .toc a { color:var(--muted); text-decoration:none; padding:6px 10px; border-radius:8px; font-size:13px; }
+  .toc a:hover { color:var(--text); background:var(--panel2); }
+  .toc a.active { color:var(--accent); background:rgba(255,209,102,.08); }
+  .doc { line-height:1.6; font-size:14px; min-width:0; }
+  .doc h1 { display:none; }
+  .doc h2 { font-size:18px; text-transform:none; letter-spacing:0; margin:26px 0 10px; padding-top:14px; border-top:1px solid var(--line); letter-spacing:.02em; scroll-margin-top:110px; }
+  .doc h2:first-child { border-top:0; margin-top:0; padding-top:0; }
+  .doc h3 { font-size:15px; margin:18px 0 6px; }
+  .doc p { margin:8px 0; }
+  .doc ul, .doc ol { margin:6px 0 10px; padding-left:22px; }
+  .doc li { margin:4px 0; }
+  .doc code { font-family: ui-monospace, Consolas, monospace; font-size:12.5px; background:#262c3a; border:1px solid #3b4356; border-radius:5px; padding:1px 5px; }
+  .doc pre { background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:10px 12px; overflow:auto; }
+  .doc pre code { background:transparent; border:0; padding:0; }
+  .doc table { border-collapse:collapse; margin:10px 0; width:100%; font-size:13px; }
+  .doc th, .doc td { border:1px solid var(--line); padding:6px 10px; text-align:left; vertical-align:top; }
+  .doc th { background:var(--panel2); color:var(--muted); font-weight:600; text-transform:uppercase; font-size:11px; letter-spacing:.06em; }
+  .doc a { color:var(--accent); }
   /* button groups */
   .controls { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:10px; margin-top:10px; min-width:0; }
   .bg { background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:8px 10px 10px; min-width:0; }
@@ -207,10 +229,18 @@
     <button data-tab="weapons" onclick="showMainTab('weapons')">🔫 Оружие</button>
     <button data-tab="dpi" onclick="showMainTab('dpi')">🎡 DPI</button>
     <button data-tab="general" onclick="showMainTab('general')">⚙ Общее</button>
+    <button data-tab="help" onclick="showMainTab('help')">📖 Справка</button>
   </nav>
 </header>
 
 <main>
+  <!-- ================= TAB: HELP ================= -->
+  <div class="tabpage" id="tab-help" style="grid-template-columns: 1fr;">
+    <section>
+      <div class="help"><nav class="toc" id="toc"></nav><div class="doc" id="doc">Загружаю…</div></div>
+    </section>
+  </div>
+
   <!-- ================= TAB: STARTUP ================= -->
   <div class="tabpage" id="tab-startup">
     <div class="col">
@@ -276,7 +306,6 @@
         </h2>
         <div class="row" style="margin-bottom:6px;">
           <div class="tabs"><button class="T" data-tab="T" onclick="showTab('T')">T</button><button class="CT" data-tab="CT" onclick="showTab('CT')">CT</button></div>
-          <span class="hint">Вкладка T/CT переключает и виджет лоадаута в OBS. Клик по оружию — выбрать вместо него другое (или случайное). Так можно собрать свой лоадаут вручную. «Только T/CT» перегенерируют одну сторону.</span>
         </div>
         <div id="loadout"></div>
       </section>
@@ -323,7 +352,7 @@
           <label class="inline"><input type="checkbox" data-key="overlay.show_kills"> Бейдж «киллов x/y» (если нужно &gt; 1 килла)</label>
           <label class="inline"><input type="checkbox" data-key="overlay.show_match"> Подсвечивать цветом оружие в руках</label>
         </div>
-        <div class="hint" style="margin-top:8px;">Размер источника в OBS под текущие настройки: <b id="size-weapons">—</b>. Контент прижат к краю выравнивания, поэтому источник можно двигать куда угодно, ничего не обрежется.<br>Цвета силуэтов и подсветки — на вкладке «Общее → Цвета». Параметры в ссылке переопределяют настройки: <span class="kbd">?scale=1.2&amp;layout=vertical&amp;labels=1</span></div>
+        <div class="hint" style="margin-top:8px;">Размер источника: <b id="size-weapons">—</b></div>
       </section>
 
       <section>
@@ -333,7 +362,7 @@
           <label class="f"><span>Раскладка лоадаута</span><select data-key="overlay.loadout_layout"><option value="rows">строки: категория в строку</option><option value="columns">колонки: как в игре (пистолеты | мид | винтовки)</option></select></label>
           <label class="inline" style="align-self:end;"><input type="checkbox" data-key="overlay.loadout_names"> Названия под силуэтами</label>
         </div>
-        <div class="hint" style="margin-top:8px;">Размер источника: одна сторона <b id="size-loadout">—</b>, обе стороны (<span class="kbd">?side=both</span>) <b id="size-loadout-both">—</b>. Показывает сторону, выбранную вкладкой T/CT выше; в матче переключается сам. Масштаб — через <span class="kbd">?scale=0.8</span> в ссылке (размер меняется пропорционально).</div>
+        <div class="hint" style="margin-top:8px;">Размер источника: <b id="size-loadout">—</b>, обе стороны <b id="size-loadout-both">—</b></div>
       </section>
     </div>
   </div>
@@ -372,10 +401,10 @@
         <div class="form" style="margin-top:8px;">
           <label class="f"><span>Колесо на виджете</span><select data-key="dpi.wheel_mode"><option value="spin">только пока крутится, потом остаётся число</option><option value="always">всегда видно</option></select></label>
           <label class="f"><span>Колесо остаётся после остановки, с</span><input type="number" min="0" max="60" step="0.5" data-key="dpi.wheel_linger_s"></label>
-          <label class="f"><span>Прятать число через, с (0 — до следующей смерти)</span><input type="number" min="0" max="3600" step="1" data-key="dpi.idle_hide_s"></label>
+          <label class="f"><span>Прятать число через, с (0 — не прятать)</span><input type="number" min="0" max="3600" step="1" data-key="dpi.idle_hide_s"></label>
           <label class="inline" style="align-self:end;"><input type="checkbox" data-key="dpi.show_current"> Показывать текущий DPI между кручениями</label>
         </div>
-        <div class="hint" style="margin-top:8px;">Размер источника: <b id="size-dpi">600×750</b> (масштаб через <span class="kbd">?scale=</span> в ссылке, размер меняется пропорционально). Цвет сегмента «мой DPI» — на вкладке «Общее → Цвета».</div>
+        <div class="hint" style="margin-top:8px;">Размер источника: <b id="size-dpi">600×750</b></div>
       </section>
     </div>
 
@@ -391,7 +420,6 @@
         <div class="row" style="margin-bottom:8px;">
           <input type="number" id="custom-dpi" class="inlinefield" min="100" max="44000" step="10" placeholder="DPI" onkeydown="if(event.key==='Enter') addCustomDpi()">
           <button onclick="addCustomDpi()">Добавить</button>
-          <span class="hint">Округляется к сетке сенсора. Клик по × убирает.</span>
         </div>
         <div class="chips" id="custom-chips"></div>
         <h3>На колесе сейчас</h3>
@@ -399,7 +427,7 @@
 
         <h3>Зрители добавляют DPI за баллы канала</h3>
         <div class="form">
-          <label class="inline"><input type="checkbox" data-key="dpi.viewer_enabled"> Включено (читаем чат канала)</label>
+          <label class="inline"><input type="checkbox" data-key="dpi.viewer_enabled"> Включено</label>
           <span class="chip" id="chip-twitch" style="align-self:center; justify-self:start;"><span class="dot"></span><b>чат: выкл</b></span>
           <label class="f"><span>Канал Twitch (логин)</span><input type="text" data-key="chat.channel_login" placeholder="например, mychannel"></label>
           <label class="f"><span>Награда за баллы канала</span>
@@ -412,10 +440,9 @@
           <label class="f"><span>Макс. DPI от зрителей</span><input type="number" min="100" max="44000" step="10" data-key="dpi.viewer_max"></label>
           <label class="f"><span>Макс. зрительских значений на колесе</span><input type="number" min="1" max="60" data-key="dpi.viewer_max_values"></label>
           <label class="f"><span>Значений от одного зрителя</span><input type="number" min="1" max="10" data-key="dpi.viewer_per_user"></label>
-          <label class="f"><span>Чат-команда без награды (пусто = только награда)</span><input type="text" data-key="dpi.viewer_command" placeholder="!dpi"></label>
-          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="dpi.viewer_announce"> Подтверждать в чате (через бота StreamElements)</label>
+          <label class="f"><span>Чат-команда (пусто — только награда)</span><input type="text" data-key="dpi.viewer_command" placeholder="!dpi"></label>
+          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="dpi.viewer_announce"> Подтверждать в чате</label>
         </div>
-        <div class="hint" style="margin-top:8px;">Как настроить: в Twitch создай награду за баллы канала с обязательным текстом («Добавить DPI в колесо», подсказка: «напиши число от 400 до 6400»). Нажми «Определить» и выкупи награду сам или попроси зрителя: приложение запомнит её. Чат читается анонимно, без токенов. Зрительское значение висит на колесе, пока не выпадет, потом исчезает.</div>
         <div class="row" style="margin-top:8px;">
           <input type="number" id="viewer-test-dpi" class="inlinefield" min="100" max="44000" step="10" placeholder="DPI" value="1600">
           <button onclick="post('/api/dpi/viewer/add',{value:$('viewer-test-dpi').value,user:'тест'})">Добавить как зритель (тест)</button>
@@ -442,7 +469,6 @@
           <label class="inline"><input type="checkbox" data-key="dpi.exclude_current"> Не выпадать на текущее значение</label>
           <label class="inline"><input type="checkbox" data-key="dpi.guard"> Возвращать DPI, если G HUB его перебил</label>
         </div>
-        <div class="hint" style="margin-top:10px;">Сенсор принимает только значения своей сетки (шаг 10 в диапазоне 1000–2000, шаг 20 в 2000–5000), значения округляются автоматически. В G HUB держите «On-Board Memory Mode» выключенным и закрепите профиль (Settings → Persistent Profile), чтобы G HUB не возвращал свой DPI при alt-tab.</div>
       </section>
     </div>
   </div>
@@ -453,7 +479,7 @@
     <div class="col">
       <section>
         <h2>Подключение к CS2 (GSI)</h2>
-        <div class="hint">Игра сама шлёт состояние (килы, активное оружие, сторону, смерти). Нужен конфиг в папке CS2, он читается только при запуске игры: после установки перезапустите CS2.</div>
+        <div class="hint">После установки конфига перезапустите CS2.</div>
         <div class="row" style="margin-top:8px;">
           <button class="primary" onclick="installCfg()">Установить конфиг в CS2</button>
           <span class="hint" id="cfg-short"></span>
@@ -474,8 +500,8 @@
       </section>
 
       <section>
-        <h2>Хоткеи <span class="right hint">необязательно: килл и смерть обрабатываются сами</span></h2>
-        <label class="inline"><input type="checkbox" data-key="hotkeys.enabled"> Глобальные хоткеи включены (срабатывают в игре, не только в панели)</label>
+        <h2>Хоткеи</h2>
+        <label class="inline"><input type="checkbox" data-key="hotkeys.enabled"> Глобальные хоткеи включены</label>
         <details style="margin-top:6px;"><summary>Клавиши и статус</summary>
           <div class="form" style="margin-top:8px;">
             <label class="f"><span>Следующее оружие</span><input type="text" data-key="hotkeys.next" placeholder="F9"></label>
@@ -483,13 +509,13 @@
             <label class="f"><span>Отмена</span><input type="text" data-key="hotkeys.undo" placeholder="F7"></label>
             <label class="f"><span>Крутить DPI</span><input type="text" data-key="hotkeys.dpi_spin" placeholder="F6"></label>
           </div>
-          <div class="hint" style="margin-top:8px;">Формат: <span class="kbd">F9</span>, <span class="kbd">ctrl+alt+K</span>, <span class="kbd">numpad+</span>, <span class="kbd">F13</span>… Клавиша перехватывается на уровне Windows (как хоткеи OBS), игра её не видит. Если срабатывает только при свёрнутой игре, значит Steam/CS2 запущены от администратора: запускайте run.bat тоже от администратора или уберите запуск от админа у Steam. Статус: <span id="hk-status">—</span></div>
+          <div class="hint" style="margin-top:8px;">Статус: <span id="hk-status">—</span></div>
         </details>
       </section>
 
       <section id="sec-chat">
         <h2>Чат Twitch через StreamElements <span class="right"><span class="chip" id="chip-chat"><span class="dot"></span><b>выкл</b></span></span></h2>
-        <div class="hint">Бот StreamElements пишет в чат о старте гонки, новом оружии и новом DPI. Нужен JWT-токен канала: streamelements.com → иконка аккаунта (справа вверху) → свой канал → включить «Show secrets» → скопировать <b>JWT Token</b>. Бот SE должен быть добавлен в канал (кнопка «Join channel» в дашборде). <b>Токен — секрет</b>, не показывайте эту страницу на стриме.</div>
+        <div class="hint">Токен: streamelements.com → аккаунт → канал → Show secrets → JWT Token. Не показывайте его на стриме.</div>
         <div class="form" style="margin-top:8px;">
           <label class="inline"><input type="checkbox" data-key="chat.enabled"> Уведомления в чат включены</label>
           <div></div>
@@ -543,7 +569,6 @@
           <div class="swatch"><input type="color" data-key="overlay.match_color"><div><div class="t">Оружие в руках</div><div class="d">подсветка, когда держишь назначенное оружие</div></div></div>
           <div class="swatch"><input type="color" data-key="dpi.home_color"><div><div class="t">Сегмент «мой DPI»</div><div class="d">на колесе и число при выпадении на него</div></div></div>
         </div>
-        <div class="hint" style="margin-top:8px;">Фон у всех виджетов прозрачный. Для предпросмотра в обычном браузере добавьте к ссылке <span class="kbd">?bg=1b1e26</span>.</div>
       </section>
 
       <section>
@@ -551,11 +576,7 @@
         <div class="url"><span class="name">Оружие</span><code id="url-weapons-2"></code><button onclick="copyText('url-weapons-2')">Копировать</button></div>
         <div class="url"><span class="name">Лоадаут</span><code id="url-loadout-2"></code><button onclick="copyText('url-loadout-2')">Копировать</button></div>
         <div class="url"><span class="name">Колесо DPI</span><code id="url-dpi-2"></code><button onclick="copyText('url-dpi-2')">Копировать</button></div>
-        <div class="hint" style="margin-top:6px;">
-          OBS → Источники → <b>Браузер</b>: вставьте ссылку и размер. Под текущие настройки: оружие <b id="size-weapons-2">—</b>, лоадаут <b id="size-loadout-2">—</b>, колесо DPI <b id="size-dpi-2">—</b>.
-          Галочки «Выключать источник, когда не виден» и «Обновлять при активации сцены» <b>оставьте выключенными</b>.
-          Лоадаут показывает сторону, выбранную вкладкой T/CT на вкладке «Оружие» (<span class="kbd">?side=both</span> — обе).
-        </div>
+        <div class="hint" style="margin-top:6px;">Размеры: оружие <b id="size-weapons-2">—</b>, лоадаут <b id="size-loadout-2">—</b>, колесо DPI <b id="size-dpi-2">—</b>.</div>
       </section>
     </div>
   </div>
@@ -684,7 +705,41 @@ function renderChat() {
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
 
 // ------------------------------------------------------------------ main tabs
+let helpLoaded = false;
+async function loadHelp() {
+  if (helpLoaded) return; helpLoaded = true;
+  try {
+    const d = await (await fetch('/api/docs')).json();
+    $('doc').innerHTML = d.html;
+    $('toc').innerHTML = d.headings.filter(h => h.level === 2).map(h => `<a href="#" data-id="${h.id}">${esc(h.text)}</a>`).join('');
+    const links = [...$('toc').querySelectorAll('a')];
+    const heads = [...$('doc').querySelectorAll('h2')];
+    let pinned = null;   // clicked in the TOC: stays highlighted until the user scrolls by hand
+    const mark = () => {
+      let cur = pinned;
+      if (!cur) {
+        // Reference line sits 140px from the top; within the last screen of the page it slides down to the
+        // bottom edge, so the final sections (which can never reach the top) still get their turn in order.
+        const vh = window.innerHeight;
+        const max = Math.max(1, document.documentElement.scrollHeight - vh);
+        const rem = Math.max(0, max - window.scrollY);
+        const line = rem >= vh ? 140 : 140 + (1 - rem / vh) * (vh - 160);
+        cur = heads[0] && heads[0].id;
+        for (const h of heads) { if (h.getBoundingClientRect().top <= line) cur = h.id; else break; }
+      }
+      links.forEach(a => a.classList.toggle('active', a.dataset.id === cur));
+    };
+    links.forEach(a => a.onclick = (e) => {
+      e.preventDefault(); pinned = a.dataset.id; mark();
+      const el = document.getElementById(a.dataset.id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    ['wheel', 'touchstart', 'keydown', 'mousedown'].forEach(ev => window.addEventListener(ev, () => { pinned = null; }, { passive: true }));
+    window.addEventListener('scroll', mark, { passive: true });
+    mark();
+  } catch (e) { $('doc').textContent = 'Не удалось загрузить справку.'; helpLoaded = false; }
+}
 function showMainTab(name) {
+  if (name === 'help') loadHelp();
   document.querySelectorAll('.tabpage').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
   document.querySelectorAll('.maintabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   try { localStorage.setItem('cs2r.tab', name); } catch (e) {}
@@ -692,10 +747,12 @@ function showMainTab(name) {
 }
 (function initTab() {
   let name = (location.hash || '').replace('#', '');
-  if (!['startup', 'weapons', 'dpi', 'general'].includes(name)) { try { name = localStorage.getItem('cs2r.tab') || ''; } catch (e) { name = ''; } }
-  if (!['startup', 'weapons', 'dpi', 'general'].includes(name)) name = '';
+  const TABS = ['startup', 'weapons', 'dpi', 'general', 'help'];
+  if (!TABS.includes(name)) { try { name = localStorage.getItem('cs2r.tab') || ''; } catch (e) { name = ''; } }
+  if (!TABS.includes(name)) name = '';
   showMainTab(name || 'weapons');
   window.__tabChosen = !!name;
+  window.addEventListener('hashchange', () => { const n = (location.hash || '').replace('#', ''); if (TABS.includes(n)) showMainTab(n); });
 })();
 
 // ------------------------------------------------------------------ render
@@ -776,7 +833,7 @@ function renderMisc() {
   $('gsi-token').textContent = S.gsi_token;
   $('data-dir').textContent = S.data_dir; $('port').textContent = S.port; $('log-path').textContent = S.log_path || '';
   const a = S.autostart || {}; const at = $('autostart-toggle'); at.disabled = !a.available; if (document.activeElement !== at) at.checked = !!a.enabled;
-  $('mode-info').textContent = (S.mode === 'tray' ? 'Запущено в трее: иконка рядом с часами, «Выход» там же.' : 'Запущено с консолью (режим отладки). Обычный запуск — run.bat, он уходит в трей.') + (a.available ? '' : ' Автозапуск доступен только в Windows.');
+  $('mode-info').textContent = S.mode === 'tray' ? 'режим: трей' : 'режим: консоль';
   const g = S.gsi; const badTok = g.rejected_auth ? ` · отклонено по токену: ${g.rejected_auth}` : '';
   $('gsi-detail').textContent = g.payloads ? `Пакетов: ${g.payloads} · режим: ${g.mode||'?'} · киллов в раунде: ${g.round_kills??'-'} · за матч: ${g.match_kills??'-'}` + badTok : '';
   $('gsi-player').textContent = g.name || g.rejected_name || '—';

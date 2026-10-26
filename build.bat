@@ -12,7 +12,7 @@ if not exist ".venv\Scripts\python.exe" (
 ".venv\Scripts\python.exe" -m pip install -r requirements-dev.txt || (echo Не удалось установить зависимости. & pause & exit /b 1)
 ".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean --onedir --noconsole --name cs2-roulette ^
   --icon "app\static\icon.ico" ^
-  --add-data "app\templates;app\templates" --add-data "app\static;app\static" ^
+  --add-data "app\templates;app\templates" --add-data "app\static;app\static" --add-data "QUICKSTART.md;." ^
   --collect-all uvicorn --collect-all fastapi --collect-all starlette --collect-all anyio ^
   --collect-all pystray --collect-submodules PIL --hidden-import hid ^
   --hidden-import app.main --hidden-import app.modules.dpi --hidden-import app.tray ^
