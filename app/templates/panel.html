@@ -145,7 +145,7 @@
   .pick .name { font-size:12px; margin-top:5px; }
   .pick.random { grid-column: 1 / -1; padding:8px; color:var(--muted); }
   /* toggles */
-  label.inline { display:flex; align-items:center; gap:10px; color:var(--text); font-size:13px; padding:7px 10px; border-radius:8px; cursor:pointer; user-select:none; border:1px solid transparent; }
+  label.inline { display:flex; align-items:center; gap:10px; color:var(--text); font-size:13px; padding:7px 10px; border-radius:8px; cursor:pointer; user-select:none; border:1px solid transparent; justify-self:start; width:fit-content; max-width:100%; }
   label.inline:hover { background:rgba(255,255,255,.03); border-color:var(--line); }
   input[type=checkbox] { appearance:none; -webkit-appearance:none; width:40px; height:22px; margin:0; flex:0 0 auto; border-radius:999px; background:#2a3040; border:1px solid #3b4356; position:relative; cursor:pointer; transition: background .2s, border-color .2s; }
   input[type=checkbox]::before { content:""; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#8b93a7; transition: transform .2s cubic-bezier(.2,.8,.2,1), background .2s; box-shadow:0 1px 3px rgba(0,0,0,.5); }

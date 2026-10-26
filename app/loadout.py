@@ -66,8 +66,8 @@ def replace_weapon(loadout: dict, side: str, category: str, weapon_id: str, rng:
     if not options:
         return new  # nothing to swap to (cannot happen with current pools)
     idx = current.index(weapon_id)
-    current[idx] = rng.choice(options)
-    side_lo[category] = W.sort_ids(current)
+    current[idx] = rng.choice(options)       # in place: the slot keeps its position
+    side_lo[category] = current
     return new
 
 
@@ -92,8 +92,8 @@ def set_slot(loadout: dict, side: str, category: str, old_id: str, new_id: str) 
         raise ValueError(f"{old_id} is not in {side}/{category}")
     if new_id in current and new_id != old_id:
         raise ValueError(f"{W.get(new_id).name} уже в лоадауте")
-    current[current.index(old_id)] = new_id
-    side_lo[category] = W.sort_ids(current)
+    current[current.index(old_id)] = new_id  # in place: no re-sorting, the chosen weapon stays where it was clicked
+    side_lo[category] = current
     return new
 
 

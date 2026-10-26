@@ -106,3 +106,20 @@ def test_icon_aspect_from_svg():
     assert abs(W.icon_aspect("hkp2000") - 32.167 / 32) < 0.01
     assert W.icon_aspect("nope") == 2.5
     assert W.get("awp").to_dict()["aspect"] > 3
+
+
+def test_set_slot_and_replace_keep_slot_position():
+    import random
+
+    from app import loadout as L, weapons as W
+
+    lo = L.generate(random.Random(7))
+    rifles = list(lo["T"]["rifle"])
+    # pick a rifle not in the loadout and put it into the middle slot
+    spare = next(w.id for w in W.pool("T", "rifle") if w.id not in rifles)
+    new = L.set_slot(lo, "T", "rifle", rifles[2], spare)
+    assert new["T"]["rifle"][2] == spare
+    assert new["T"]["rifle"][:2] == rifles[:2] and new["T"]["rifle"][3:] == rifles[3:]
+    # random replacement also stays in place
+    rep = L.replace_weapon(lo, "T", "rifle", rifles[0], random.Random(1))
+    assert rep["T"]["rifle"][1:] == rifles[1:] and rep["T"]["rifle"][0] != rifles[0]
