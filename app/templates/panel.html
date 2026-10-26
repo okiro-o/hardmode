@@ -595,6 +595,7 @@
         <div class="form">
           <label class="inline"><input type="checkbox" id="autostart-toggle" onchange="toggleAutostart(this)"> Автозапуск с Windows (в трее)</label>
           <div class="hint" id="mode-info" style="align-self:center;"></div>
+          <button onclick="quitApp()" style="margin-left:auto;">Завершить приложение</button>
         </div>
         <div class="hint" style="margin-top:8px;">Папка данных: <code id="data-dir"></code><br>Лог: <code id="log-path"></code><br>Порт: <code id="port"></code> (меняется в <code>data/settings.json</code>, нужен перезапуск)</div>
       </section>
@@ -714,6 +715,7 @@ async function testChat() {
   else toast('StreamElements принял сообщение. Нет в чате? Напишите пару сообщений в чат сами: Twitch прячет бота после долгого простоя');
   refreshState();
 }
+async function quitApp() { if (!confirm('Завершить CS2 Roulette? Виджеты в OBS перестанут обновляться.')) return; const r = await post('/api/quit', {}); if (r && r.ok) toast('Завершаю…'); }
 async function joinChat() { toast('Подключаю бота…'); const r = await post('/api/chat/join', {}); if (!r) return; if (r.ok) toast('Бот подключён к каналу'); else toast(r.error || 'Не удалось подключить бота', true); refreshState(); }
 async function addCustomDpi() { const v = parseInt($('custom-dpi').value, 10); if (!Number.isFinite(v)) return toast('Введите DPI', true); const r = await post('/api/dpi/values/add', {value: v}); if (r) { $('custom-dpi').value = ''; toast('Добавлено: ' + r.value); } }
 async function learnReward() { const r = await post('/api/dpi/reward/learn', {on: true}); if (r) toast('Жду выкуп награды в чате…'); }

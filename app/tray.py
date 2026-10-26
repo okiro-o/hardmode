@@ -158,6 +158,11 @@ def run_with_tray(app_import: str, host: str, port: int, panel_url: str, open_br
             stop_uvicorn(server, thread)
 
     tray = TrayApp(panel_url, stop_server)
+    try:
+        from . import main as _main
+        _main.QUIT_HOOK.append(tray._quit)     # /api/quit (panel button, newer launcher) stops the tray app
+    except Exception:
+        log.exception("cannot register quit hook")
     if open_browser:
         threading.Timer(1.0, lambda: webbrowser.open(panel_url)).start()
 

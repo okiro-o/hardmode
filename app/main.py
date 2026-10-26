@@ -10,6 +10,7 @@ import asyncio
 import logging
 import os
 import secrets
+import signal
 import sys
 import threading
 import time
@@ -32,7 +33,11 @@ from .modules.dpi import DpiService, DpiSettings
 from .roulette import Roulette
 from .twitch_irc import IrcMessage, TwitchChatReader
 
-VERSION = "0.11.1"
+from .version import VERSION
+
+# Callables that stop this instance (set by the tray). Without them /api/quit raises SIGINT, which
+# uvicorn in console mode turns into a graceful shutdown.
+QUIT_HOOK: list = []
 KILL_ADVANCE_GRACE = 1.5   # seconds: ignore a manual "next" right after a kill already advanced
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 log = logging.getLogger("cs2roulette")
@@ -695,6 +700,23 @@ def create_app() -> FastAPI:
                          params=["#test"], trailing=str(body.get("text") or ""))
         state.handle_chat_message(msg)
         return {"ok": True}
+
+    @app.post("/api/quit")
+    async def api_quit() -> dict:
+        """Stop this instance: used by the panel and by a newer launcher taking over the port."""
+        def do_quit() -> None:
+            if QUIT_HOOK:
+                for fn in list(QUIT_HOOK):
+                    try:
+                        fn()
+                    except Exception:
+                        log.exception("quit hook failed")
+            else:
+                signal.raise_signal(signal.SIGINT)
+
+        log.info("quit requested via API")
+        threading.Timer(0.3, do_quit).start()   # let the response leave first
+        return {"ok": True, "version": VERSION}
 
     @app.get("/api/ingame/render")
     async def ingame_render(kind: str = "dpi") -> Response:

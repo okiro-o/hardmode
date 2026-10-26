@@ -7,14 +7,18 @@ Modes:
 """
 from __future__ import annotations
 
+import json
 import logging
 import logging.handlers
 import os
 import socket
 import sys
+import time
+import urllib.request
 import webbrowser
 
 from . import config
+from .version import VERSION
 
 
 def _port_free(port: int) -> bool:
@@ -24,6 +28,62 @@ def _port_free(port: int) -> bool:
             return False
     except OSError:
         return True
+
+
+def instance_version(port: int) -> str | None:
+    """Version of the instance answering on the port, or None when it is not us / not answering."""
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/state", timeout=1.5) as r:
+            return str(json.load(r).get("version") or "") or None
+    except Exception:
+        return None
+
+
+def ask_quit(port: int) -> bool:
+    req = urllib.request.Request(f"http://127.0.0.1:{port}/api/quit", data=b"{}", method="POST",
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=3.0) as r:
+            return r.status < 300
+    except Exception:
+        return False
+
+
+def wait_port_free(port: int, timeout: float = 15.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if _port_free(port):
+            return True
+        time.sleep(0.25)
+    return _port_free(port)
+
+
+def take_over(port: int, mine: str, log: logging.Logger,
+              version_fn=instance_version, quit_fn=ask_quit, wait_fn=wait_port_free) -> str:
+    """Port is busy. Returns 'free' (an older/other version of us was asked to quit and the port is
+    free now), 'same' (this very version already runs: just open its panel), 'stuck' (another
+    version runs and does not stop on request) or 'foreign' (not our app)."""
+    other = version_fn(port)
+    if other is None:
+        return "foreign"
+    if other == mine:
+        return "same"
+    log.info("another instance v%s is running on port %s, asking it to quit", other, port)
+    if quit_fn(port) and wait_fn(port):
+        log.info("v%s stopped, taking over the port", other)
+        return "free"
+    return "stuck"
+
+
+def alert(message: str, tray: bool) -> None:
+    """Show a message where the user can see it: a message box in tray mode on Windows."""
+    print(f"[cs2-roulette] {message}")
+    if tray and sys.platform.startswith("win"):
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(0, message, "CS2 Roulette", 0x30)  # MB_ICONWARNING
+        except Exception:
+            pass
 
 
 def want_tray(argv: list[str], frozen: bool) -> bool:
@@ -73,11 +133,18 @@ def main() -> None:
     url = f"http://127.0.0.1:{settings.port}/"
     open_browser = settings.open_browser and os.environ.get("CS2R_NO_BROWSER") != "1"
     if not _port_free(settings.port):
-        log.warning("port %s is busy: the app is probably already running, opening %s", settings.port, url)
-        print(f"[cs2-roulette] port {settings.port} is busy: the app is probably already running. Opening {url}")
-        if open_browser:
-            webbrowser.open(url)
-        return
+        verdict = take_over(settings.port, VERSION, log)
+        if verdict == "stuck":
+            other = instance_version(settings.port)
+            alert(f"Уже запущена версия {other}, и она не завершается по запросу. Закройте её: трей → «Выход», "
+                  f"либо диспетчер задач (cs2-roulette.exe или pythonw.exe), и запустите снова.", tray)
+            return
+        if verdict != "free":
+            log.warning("port %s is busy (%s): opening %s", settings.port, verdict, url)
+            print(f"[cs2-roulette] port {settings.port} is busy: the app is probably already running. Opening {url}")
+            if open_browser:
+                webbrowser.open(url)
+            return
     log.info("starting (mode=%s, log=%s)", "tray" if tray else "console", log_path)
     os.environ["CS2R_MODE"] = "tray" if tray else "console"
     if tray:
