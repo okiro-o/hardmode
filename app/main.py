@@ -18,20 +18,21 @@ from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import autostart, config, docs, loadout as L, steam, weapons as W
 from .events import Broker
 from .gsi import GsiTracker, build_cfg
 from .hotkeys import HotkeyManager
+from .ingame import IngameOverlays
 from .chat import ChatNotifier, ChatSettings
 from .modules import dpi
 from .modules.dpi import DpiService, DpiSettings
 from .roulette import Roulette
 from .twitch_irc import IrcMessage, TwitchChatReader
 
-VERSION = "0.10.1"
+VERSION = "0.11.0"
 KILL_ADVANCE_GRACE = 1.5   # seconds: ignore a manual "next" right after a kill already advanced
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 log = logging.getLogger("cs2roulette")
@@ -78,6 +79,7 @@ class AppState:
                                      bindings=self.settings.hotkeys.bindings(),
                                      enabled=self.settings.hotkeys.enabled)
         self.hotkeys.on_status = lambda: self.broker.publish_threadsafe("hotkeys", self.hotkeys.describe())
+        self.ingame = IngameOverlays(self.settings.ingame, self.ingame_state, self.ingame_colors)
         self._save_lock = threading.Lock()
         self._last_gsi_publish = 0.0
         self._last_gsi_key: tuple = ()
@@ -113,6 +115,36 @@ class AppState:
             self.chat.notify_start(name, side=r.side)
         else:
             self.chat.notify_weapon(name, r.completed, side=r.side, kills=r.kills_total)
+
+    # ------------------------------------------------------------ in-game overlay
+    def ingame_state(self) -> dict:
+        """Compact state for the in-game overlay thread (also used by the panel preview)."""
+        d, r = self.dpi, self.roulette
+        spin = d.last_spin or {}
+        now = time.time()
+        spinning = bool(spin) and spin.get("applied") is None and \
+            now < float(spin.get("started_at", 0)) + float(spin.get("duration_ms", 0)) / 1000.0 + 0.5
+        cur = d.current_dpi
+        dpi = {"present": bool(d.settings.enabled and (cur is not None or spinning)), "current": cur,
+               "spinning": spinning, "home": d.settings.home_dpi, "key": [cur, spinning], "hold": spinning}
+        wid = r.current() if r.running else None
+        n = int(self.settings.ingame.weapons_next)
+        nxt = list(r.queue)[1:1 + n] if wid else []
+        weapons = {"present": bool(wid),
+                   "current": {"id": wid, "name": W.get(wid).name} if wid else None,
+                   "next": [{"id": i, "name": W.get(i).name} for i in nxt],
+                   "kills": [r.current_kills, r.settings.kills_per_weapon],
+                   "matched": bool(wid and self.gsi.status.held == wid),
+                   "completed": r.completed, "key": [r.current_uid(), r.completed]}
+        return {"dpi": dpi, "weapons": weapons}
+
+    def ingame_colors(self) -> dict:
+        o = self.settings.overlay
+        return {"color": o.color, "accent": o.accent, "match_color": o.match_color,
+                "home_color": self.dpi.settings.home_color}
+
+    def ingame_info(self) -> dict:
+        return {**self.settings.ingame.__dict__, **self.ingame.status()}
 
     def _hotkey_from_thread(self, action: str) -> None:
         self.broker.call_threadsafe(self.hotkey_action, action)
@@ -216,6 +248,7 @@ class AppState:
             "gsi": self.gsi.status.to_dict(),
             "hotkeys": self.hotkeys.describe(),
             "overlay": self.settings.overlay.__dict__,
+            "ingame": self.ingame_info(),
             "urls": self.urls(),
             "gsi_token": self.settings.gsi_token,
             "port": self.settings.port,
@@ -230,6 +263,7 @@ class AppState:
 
     def settings_event(self) -> dict:
         return {"overlay": self.settings.overlay.__dict__, "hotkeys": self.hotkeys.describe(),
+                "ingame": self.ingame_info(),
                 "roulette": self.roulette.settings.to_dict(), "dpi": self.dpi.settings.to_dict(),
                 "chat": self.chat.settings.public_dict(),
                 "gsi_token": self.settings.gsi_token, "port": self.settings.port}
@@ -324,6 +358,7 @@ def create_app() -> FastAPI:
         state.broker.attach_loop(loop)
         state.hotkeys.start()
         state.dpi.start(loop)
+        state.ingame.start()
         state.chat.start()
         state.sync_twitch()
         stop = asyncio.Event()
@@ -352,6 +387,7 @@ def create_app() -> FastAPI:
             task.cancel()
             state.hotkeys.stop()
             state.dpi.stop()
+            state.ingame.stop()
             state.chat.stop()
             state.twitch.stop()
             state.save_state()
@@ -528,7 +564,7 @@ def create_app() -> FastAPI:
         body = await _json(request)
         s = state.settings
         rejected: list[str] = []
-        for section in ("roulette", "overlay", "hotkeys", "dpi", "chat"):
+        for section in ("roulette", "overlay", "hotkeys", "dpi", "chat", "ingame"):
             if section in body and body[section] is not None and not isinstance(body[section], dict):
                 raise HTTPException(400, f"{section}: нужен объект")
         if "chat" in body:
@@ -556,6 +592,9 @@ def create_app() -> FastAPI:
         if "hotkeys" in body:
             rejected += [f"hotkeys.{k}" for k in s.hotkeys.apply(body["hotkeys"] or {})]
             state.hotkeys.update(s.hotkeys.bindings(), s.hotkeys.enabled)
+        if "ingame" in body:
+            rejected += [f"ingame.{k}" for k in s.ingame.apply(body["ingame"] or {})]
+            state.ingame.update_settings(s.ingame)
         if body.get("regenerate_token"):
             s.gsi_token = secrets.token_urlsafe(12)
             state.gsi.token = s.gsi_token
@@ -655,6 +694,25 @@ def create_app() -> FastAPI:
         msg = IrcMessage(tags=tags, prefix=f"{tags['display-name'].lower()}!x@x", command="PRIVMSG",
                          params=["#test"], trailing=str(body.get("text") or ""))
         state.handle_chat_message(msg)
+        return {"ok": True}
+
+    @app.get("/api/ingame/render")
+    async def ingame_render(kind: str = "dpi") -> Response:
+        if kind not in ("dpi", "weapons"):
+            raise HTTPException(400, "kind: dpi | weapons")
+        loop = asyncio.get_running_loop()
+        png = await loop.run_in_executor(None, state.ingame.render_png, kind)
+        return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/ingame/preview")
+    async def ingame_preview(request: Request) -> dict:
+        body = await _json(request)
+        kind = str(body.get("kind") or "dpi")
+        if kind not in ("dpi", "weapons"):
+            raise HTTPException(400, "kind: dpi | weapons")
+        if not state.ingame.available:
+            return {"ok": False, "error": "Оверлей поверх игры работает только в Windows"}
+        state.ingame.preview(kind, 5.0)
         return {"ok": True}
 
     @app.post("/api/chat/join")

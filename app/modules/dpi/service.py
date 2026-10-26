@@ -345,6 +345,7 @@ class DpiService:
         if not self.settings.enabled:
             raise ValueError("DPI-рулетка выключена в настройках")
         idx, value, vals = self.pick()
+        instant = len(vals) <= 1          # nothing to spin: the number just changes on screen
         self.spins += 1
         self._last_spin_at = time.monotonic()
         spin = {
@@ -352,8 +353,9 @@ class DpiService:
             "index": idx,
             "value": value,
             "values": vals,
-            "duration_ms": self.settings.spin_duration_ms,
-            "revolutions": self.settings.revolutions,
+            "duration_ms": 0 if instant else self.settings.spin_duration_ms,
+            "revolutions": 0 if instant else self.settings.revolutions,
+            "instant": instant,
             "offset": round(self._rng.uniform(0.15, 0.85), 3),   # where inside the segment the pointer rests
             "started_at": time.time(),
             "reason": reason,
@@ -362,12 +364,15 @@ class DpiService:
         }
         self.last_spin = spin
         self._consume(value)
-        self._log("spin", f"Крутим: {value} DPI ({reason})", value=value, reason=reason)
+        if instant:
+            self._log("spin", f"{value} DPI без кручения: на колесе одно значение ({reason})", value=value, reason=reason)
+        else:
+            self._log("spin", f"Крутим: {value} DPI ({reason})", value=value, reason=reason)
         self._publish("dpi_spin", spin)
         if self._pending_apply:
             self._pending_apply.cancel()
             self._pending_apply = None
-        if self.settings.apply_at == "start":
+        if instant or self.settings.apply_at == "start":
             self._schedule_apply(value, f"spin:{reason}", delay=0.0)
         else:
             self._schedule_apply(value, f"spin:{reason}", delay=self.settings.spin_duration_ms / 1000.0)

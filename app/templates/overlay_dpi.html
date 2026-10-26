@@ -151,6 +151,10 @@
   function startSpin(spin, nowMs) {
     values = spin.values; readCfg(); layout();
     clearTimers();
+    if (spin.instant || !spin.duration_ms) {
+      // single value on the wheel: no animation, the number simply changes
+      anim = null; rotation = norm(targetRotation(spin)); draw(); rest(spin, 0); return;
+    }
     showWheel(true);
     hideNumber();
     const elapsed = Math.max(0, nowMs - spin.started_at * 1000);
@@ -174,9 +178,10 @@
   function rest(spin, ageS) {
     clearTimers();
     showNumber(spin.value, ageS < 15 ? reasonText(spin) : '');
+    const linger = spin.instant ? 0 : cfg.linger;
     if (cfg.wheel === 'always') showWheel(true);
-    else if (ageS >= cfg.linger) showWheel(false);
-    else { showWheel(true); lingerTimer = setTimeout(() => showWheel(false), (cfg.linger - ageS) * 1000); }
+    else if (ageS >= linger) showWheel(false);
+    else { showWheel(true); lingerTimer = setTimeout(() => showWheel(false), (linger - ageS) * 1000); }
     if (cfg.hide > 0) {
       if (ageS >= cfg.hide) { hideNumber(); if (cfg.wheel === 'always') showWheel(false); }
       else hideTimer = setTimeout(() => { hideNumber(); if (cfg.wheel === 'always') showWheel(false); }, (cfg.hide - ageS) * 1000);

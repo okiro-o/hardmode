@@ -57,6 +57,16 @@ def main() -> None:
         os.environ["CS2R_NO_BROWSER"] = "1"
     frozen = bool(getattr(sys, "frozen", False))
     tray = want_tray(argv, frozen)
+    if sys.platform.startswith("win"):
+        # per-monitor DPI awareness: the in-game overlay must not be scaled/blurred by Windows
+        try:
+            import ctypes
+            try:
+                ctypes.WinDLL("shcore").SetProcessDpiAwareness(2)
+            except Exception:
+                ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
     log_path = setup_logging(to_console=not tray)
     log = logging.getLogger("cs2roulette")
     settings = config.AppSettings.load()

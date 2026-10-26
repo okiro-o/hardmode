@@ -2,7 +2,7 @@
 
 Этот документ — источник правды о приложении: зачем оно, как устроено, какие решения приняты
 и почему, что отклонено, что в бэклоге. Обновляется при каждом значимом изменении.
-Последнее обновление: 2026-10-26, версия приложения 0.10.1.
+Последнее обновление: 2026-10-26, версия приложения 0.11.0.
 
 ## 1. Назначение и пользователь
 
@@ -62,6 +62,7 @@ push-обновлений, обычные HTML/JS-страницы без сбо
 | `app/modules/dpi/service.py` | `DpiService`: выбор значения, расписание применения, сторож от отката G HUB, персистентность |
 | `app/modules/dpi/grid.py` | сетка DPI сенсора HERO 2, разбор списка диапазонов (алгоритм Solaar), округление |
 | `app/modules/dpi/routes.py` | `/api/dpi/*`, `/overlay/dpi` |
+| `app/ingame.py` | оверлей поверх игры (Windows): layered Win32-окна через ctypes (click-through, no-activate, topmost), рендер Pillow, собственный растеризатор SVG-силуэтов (M/L/H/V/C/S/Z, вложенные контуры = дырки, 3× суперсэмплинг), менеджер-поток с опросом состояния |
 | `app/docs.py` | мини-рендер Markdown → HTML для вкладки «Справка» (заголовки с id, списки, таблицы, код, жирный, ссылки; всё экранируется) |
 | `app/templates/panel.html` | панель: вкладки «Startup», «Оружие», «DPI», «Общее», «Справка» |
 | `app/templates/overlay_weapons.html` | виджет оружия (конвейер карточек, ширина по aspect силуэта) |
@@ -188,6 +189,33 @@ push-обновлений, обычные HTML/JS-страницы без сбо
   сегмент `home_dpi` в цвете `home_color`, число при выпадении на него — тем же цветом, без
   текстовых подписей вроде «твой обычный» (пользователь просил убрать).
 
+- Одно значение на колесе → `spin()` помечает `instant: true`, `duration_ms: 0`, применяет сразу;
+  виджет не показывает колесо, число просто меняется (просьба пользователя 2026-10-26).
+
+## 6b. Оверлей поверх игры (Windows)
+
+- Назначение: стример видит текущий DPI и текущее оружие (+ следующие) поверх CS2, не глядя на
+  второй монитор. Работает только при **Fullscreen Windowed**: эксклюзивный fullscreen обходит
+  композитор. В процесс игры ничего не внедряется (VAC-безопасно). Голосовой дубль отклонён
+  пользователем («оверлея достаточно»).
+- Реализация: `IngameOverlays` (поток `ingame-overlay`, тик 100 мс) опрашивает `AppState.
+  ingame_state()` → `{dpi: {present, current, spinning, home, key, hold}, weapons: {present,
+  current, next, kills, matched, completed, key}}`; изменение `key` показывает блок на `*_show_s`
+  секунд (режим `change`) или блок виден всегда (`always`); `hold` (кручение) держит блок.
+  Перерисовка только при изменении состояния/настроек; каждые 2 с `SetWindowPos(HWND_TOPMOST)`.
+  Окна: `WS_EX_LAYERED|TRANSPARENT|TOPMOST|TOOLWINDOW|NOACTIVATE`, `UpdateLayeredWindow` с
+  premultiplied BGRA (Pillow `ImageChops.multiply`). DPI-awareness процесса выставляется в
+  `__main__` до создания окон. Монитор: `monitor` (0 = основной) через `EnumDisplayMonitors`.
+- Настройки `ingame` (config.IngameSettings, плоские ключи `<kind>_<опция>`): enabled, mode
+  change|always, show_s 1–120, corner tl|tr|bl|br, x/y 0–8000, scale 0.5–3, opacity 0.2–1,
+  weapons_next 0–3, weapons_names, monitor.
+- API: `GET /api/ingame/render?kind=dpi|weapons` → PNG (реальное состояние или пример
+  `SAMPLE_STATE`), используется панелью как превью; `POST /api/ingame/preview {kind}` показывает
+  блок на 5 с (на не-Windows возвращает ошибку). Снапшот/`settings`-событие содержат `ingame`
+  = настройки + `{available, running, error, visible}`.
+- Не проверено на Windows пользователя (разработка на macOS): создание окон, DPI-awareness,
+  мультимонитор. Рендер и растеризатор покрыты тестами, все 44 силуэта проверены визуально.
+
 ## 6a. Чат Twitch (StreamElements)
 
 - Провайдер: StreamElements (выбран как самый простой: нужен только JWT-токен канала из
@@ -229,7 +257,7 @@ HTTP (все POST — JSON): `/api/state`, `/api/weapons`, `/api/loadout/generat
 ответ содержит `rejected`), `/gsi` (всегда 2xx), `/api/gsi/cfg|info|install`, `/api/hotkeys`,
 `/api/dpi/status|spin|apply|home|probe|hostmode|death`, `/api/dpi/values/add|remove`,
 `/api/dpi/cycle/reset`, `/api/dpi/viewer/add|remove|clear`, `/api/dpi/reward/learn`,
-`/api/chat/verify|test`, `/api/twitch/chat` (симуляция), `/api/docs` (справка из QUICKSTART.md:
+`/api/chat/verify|test|join`, `/api/twitch/chat` (симуляция), `/api/ingame/render|preview`, `/api/docs` (справка из QUICKSTART.md:
 `{html, headings}`). Страницы:
 `/`, `/overlay/weapons`, `/overlay/loadout`, `/overlay/dpi`.
 
@@ -252,7 +280,8 @@ current, home, homecolor, color, accent, bg, debug`.
 пользователь просил назвать именно «Startup», без лозунгов), **Оружие** (очередь, кнопки, статистика, лог,
 лоадаут с вкладкой T/CT, настройки гонки, настройки виджета оружия), **DPI** (текущий DPI,
 кнопки, диагностика мыши, лог, настройки DPI, настройки виджета), **Общее** (GSI, хоткеи,
-разное, **все цвета в одном блоке**, ссылки на виджеты), **Справка** (QUICKSTART.md, отрендеренный
+разное, **все цвета в одном блоке**, ссылки на виджеты; блоки «Поверх игры: оружие/DPI» живут во
+вкладках «Оружие» и «DPI» с превью-PNG и кнопкой «Показать поверх игры на 5 с»), **Справка** (QUICKSTART.md, отрендеренный
 `app/docs.py`; слева оглавление по h2 с подсветкой текущего раздела — в последнем экране страницы
 опорная линия съезжает вниз, чтобы последние разделы тоже подсвечивались; клик по пункту закрепляет
 его до ручной прокрутки). В блоках панели **нет поясняющих текстов** (пользователь: «много лишних
@@ -296,8 +325,11 @@ current, home, homecolor, color, accent, bg, debug`.
   или Streamer.bot (локальный WebSocket); (2) команды зрителей `!dpi` / `!оружие` через JeetBot
   возможны, если состояние опубликовать по публичному HTTPS JSON (туннель вроде Cloudflare
   Tunnel или облачный JSON-бин, куда приложение пишет состояние). Решение за пользователем.
+- Подтверждено пользователем на реальном аккаунте (2026-10-26): чат через бота StreamElements
+  и награды за баллы канала (обучение награде, добавление DPI зрителями) работают.
 - Проверить на ПК пользователя: предупреждение UIPI, поведение G HUB при alt-tab (нужен ли
-  Persistent Profile), реальные значения `map.mode` в Premier.
+  Persistent Profile), реальные значения `map.mode` в Premier, exe-сборка с hidapi у других
+  пользователей после правок build.bat (v0.10.1).
 - Возможные улучшения: пул «обе стороны» для Deathmatch; экспорт статистики сессии; звук при
   килле/кручении; PyInstaller-сборка без Python.
 

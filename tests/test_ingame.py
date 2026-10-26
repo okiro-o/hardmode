@@ -1,0 +1,107 @@
+import pytest
+from fastapi.testclient import TestClient
+from PIL import Image
+
+from app import ingame, weapons as W
+from app.config import AppSettings, IngameSettings
+from app.modules.dpi.service import DpiService, DpiSettings
+
+COLORS = {"color": "#ffffff", "accent": "#ffd166", "match_color": "#ff6b6b", "home_color": "#4cc9f0"}
+
+
+def _coverage(mask):
+    hist = mask.histogram()
+    total = mask.size[0] * mask.size[1]
+    return sum(hist[128:]) / total
+
+
+def test_every_weapon_icon_rasterizes_to_a_sane_silhouette():
+    for w in W.CATALOG:
+        m = ingame.svg_mask(w.id, 48)
+        assert m is not None and m.mode == "L", w.id
+        assert m.size[1] == 48 and m.size[0] >= 8, w.id
+        cov = _coverage(m)
+        assert 0.03 < cov < 0.95, (w.id, cov)
+
+
+def test_path_polygons_handles_relative_and_smooth_curves():
+    polys = ingame.path_polygons("M10 10 h20 v10 H10 z m5 5 l5 0 c2 0 4 2 4 4 s-2 4 -4 4 L15 23 Z")
+    assert len(polys) == 2
+    assert all(len(p) >= 4 for p in polys)
+
+
+def test_render_dpi_and_weapons_sample():
+    s = IngameSettings()
+    img = ingame.render("dpi", ingame.SAMPLE_STATE["dpi"], s, COLORS)
+    assert img is not None and img.mode == "RGBA" and img.size[0] > 80 and img.size[1] == 80
+    assert img.getchannel("A").getextrema()[1] == 255
+    spinning = ingame.render("dpi", {**ingame.SAMPLE_STATE["dpi"], "spinning": True, "current": None}, s, COLORS)
+    assert spinning is not None
+    wimg = ingame.render("weapons", ingame.SAMPLE_STATE["weapons"], s, COLORS)
+    assert wimg is not None and wimg.size[0] > 150 and wimg.size[1] > 60
+    # the matched current weapon is drawn with the match colour
+    px = {wimg.getpixel((x, y))[:3] for x in range(0, wimg.size[0], 3) for y in range(0, wimg.size[1], 3)}
+    assert (255, 107, 107) in px
+    assert ingame.render("weapons", {"present": False}, s, COLORS) is None
+    assert ingame.render("dpi", {"present": True, "current": None, "spinning": False}, s, COLORS) is None
+
+
+def test_place_corners():
+    s = IngameSettings(dpi_corner="br", dpi_x=10, dpi_y=20)
+    assert ingame.place("dpi", s, (100, 50), (0, 0, 1920, 1080)) == (1810, 1010)
+    s = IngameSettings(weapons_corner="tl", weapons_x=5, weapons_y=7)
+    assert ingame.place("weapons", s, (100, 50), (2560, 0, 1920, 1080)) == (2565, 7)
+
+
+def test_ingame_settings_validation_and_persistence():
+    s = IngameSettings()
+    rejected = s.apply({"dpi_corner": "middle", "dpi_scale": "9", "weapons_next": 7, "dpi_mode": "always",
+                        "weapons_enabled": "0", "bogus": 1, "dpi_opacity": 0.01})
+    assert set(rejected) == {"dpi_corner", "bogus"}
+    assert s.dpi_scale == 3.0 and s.weapons_next == 3 and s.dpi_mode == "always"
+    assert s.weapons_enabled is False and s.dpi_opacity == 0.2
+    d = AppSettings.from_dict({"ingame": {"dpi_corner": "br", "weapons_y": 333}}).to_dict()
+    assert d["ingame"]["dpi_corner"] == "br" and d["ingame"]["weapons_y"] == 333
+
+
+def test_single_value_wheel_changes_without_spinning(tmp_path, monkeypatch):
+    monkeypatch.setenv("CS2R_DPI_BACKEND", "fake")
+    st = DpiSettings.from_dict({"enabled": True, "use_range": False, "custom_values": [1600], "pool_mode": "random"})
+    published = []
+    svc = DpiService(st, str(tmp_path / "dpi.json"), publish=lambda e, d: published.append((e, d)),
+                     publish_threadsafe=lambda e, d: None)
+    assert svc.values() == [1600]
+    spin = svc.spin("death")
+    assert spin["instant"] is True and spin["duration_ms"] == 0 and spin["value"] == 1600
+    assert any(e == "dpi_spin" and d["instant"] for e, d in published)
+    st2 = DpiSettings.from_dict({"enabled": True, "use_range": False, "custom_values": [800, 1600], "pool_mode": "random"})
+    svc2 = DpiService(st2, str(tmp_path / "dpi2.json"), publish=lambda e, d: None, publish_threadsafe=lambda e, d: None)
+    assert svc2.spin()["instant"] is False
+
+
+@pytest.fixture
+def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("CS2R_DATA", str(tmp_path))
+    monkeypatch.setenv("CS2R_DPI_BACKEND", "fake")
+    monkeypatch.setenv("CS2R_NO_BROWSER", "1")
+    from app import main as m
+    app = m.create_app()
+    with TestClient(app, base_url="http://127.0.0.1") as c:
+        yield c
+
+
+def test_api_ingame_render_and_settings(client):
+    r = client.get("/api/ingame/render?kind=weapons")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+    img = Image.open(__import__("io").BytesIO(r.content))
+    assert img.size[0] > 100
+    assert client.get("/api/ingame/render?kind=nope").status_code == 400
+    r = client.post("/api/settings", json={"ingame": {"dpi_corner": "tr", "weapons_scale": 1.5, "dpi_corner_x": 1}})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["rejected"] == ["ingame.dpi_corner_x"]
+    st = client.get("/api/state").json()
+    assert st["ingame"]["dpi_corner"] == "tr" and st["ingame"]["weapons_scale"] == 1.5
+    assert "available" in st["ingame"]
+    r = client.post("/api/ingame/preview", json={"kind": "dpi"})
+    assert r.status_code == 200 and "ok" in r.json()

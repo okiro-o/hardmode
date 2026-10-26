@@ -89,6 +89,8 @@
   .tokenbox button:hover { background:var(--panel3); }
   .tokenbox button.eye { width:44px; padding:0; font-size:16px; }
   .tokenbox button.primary { background:var(--accent); color:#1a1a1a; }
+  .ingame-prev { max-height:110px; max-width:min(100%, 520px); border-radius:8px; padding:6px;
+    background: repeating-conic-gradient(#2b303c 0 25%, #1c2029 0 50%) 0 0 / 18px 18px; }
   /* help */
   .help { display:grid; grid-template-columns: 220px 1fr; gap:16px; }
   .toc { position:sticky; top:120px; align-self:start; display:flex; flex-direction:column; gap:2px; }
@@ -354,6 +356,25 @@
         </div>
         <div class="hint" style="margin-top:8px;">Размер источника: <b id="size-weapons">—</b></div>
       </section>
+      <section>
+        <h2>Поверх игры: оружие <span class="right"><span class="chip" id="chip-ingame-weapons"><span class="dot"></span><b>—</b></span></span></h2>
+        <div class="form" style="margin-top:8px;">
+          <label class="f"><span>Когда показывать</span><select data-key="ingame.weapons_mode"><option value="change">после смены, на несколько секунд</option><option value="always">всегда</option></select></label>
+          <label class="f"><span>Держать на экране, с</span><input type="number" min="1" max="120" step="1" data-key="ingame.weapons_show_s"></label>
+          <label class="f"><span>Угол экрана</span><select data-key="ingame.weapons_corner"><option value="tl">слева сверху</option><option value="tr">справа сверху</option><option value="bl">слева снизу</option><option value="br">справа снизу</option></select></label>
+          <label class="f"><span>Масштаб</span><input type="number" min="0.5" max="3" step="0.1" data-key="ingame.weapons_scale"></label>
+          <label class="f"><span>Отступ по горизонтали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.weapons_x"></label>
+          <label class="f"><span>Отступ по вертикали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.weapons_y"></label>
+          <label class="f"><span>Непрозрачность</span><input type="number" min="0.2" max="1" step="0.05" data-key="ingame.weapons_opacity"></label>
+          <label class="f"><span>Следующих оружий рядом</span><input type="number" min="0" max="3" step="1" data-key="ingame.weapons_next"></label>
+          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="ingame.weapons_names"> Название под силуэтом</label>
+          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="ingame.weapons_enabled"> Включено</label>
+        </div>
+        <div class="row" style="margin-top:10px; align-items:center; gap:14px; flex-wrap:wrap;">
+          <button onclick="ingamePreview('weapons')">Показать поверх игры на 5 с</button>
+          <img id="ingame-prev-weapons" class="ingame-prev" alt="">
+        </div>
+      </section>
 
       <section>
         <h2>Виджет лоадаута</h2>
@@ -405,6 +426,24 @@
           <label class="inline" style="align-self:end;"><input type="checkbox" data-key="dpi.show_current"> Показывать текущий DPI между кручениями</label>
         </div>
         <div class="hint" style="margin-top:8px;">Размер источника: <b id="size-dpi">600×750</b></div>
+      </section>
+      <section>
+        <h2>Поверх игры: DPI <span class="right"><span class="chip" id="chip-ingame-dpi"><span class="dot"></span><b>—</b></span></span></h2>
+        <div class="form" style="margin-top:8px;">
+          <label class="f"><span>Когда показывать</span><select data-key="ingame.dpi_mode"><option value="change">после смены, на несколько секунд</option><option value="always">всегда</option></select></label>
+          <label class="f"><span>Держать на экране, с</span><input type="number" min="1" max="120" step="1" data-key="ingame.dpi_show_s"></label>
+          <label class="f"><span>Угол экрана</span><select data-key="ingame.dpi_corner"><option value="tl">слева сверху</option><option value="tr">справа сверху</option><option value="bl">слева снизу</option><option value="br">справа снизу</option></select></label>
+          <label class="f"><span>Масштаб</span><input type="number" min="0.5" max="3" step="0.1" data-key="ingame.dpi_scale"></label>
+          <label class="f"><span>Отступ по горизонтали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.dpi_x"></label>
+          <label class="f"><span>Отступ по вертикали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.dpi_y"></label>
+          <label class="f"><span>Непрозрачность</span><input type="number" min="0.2" max="1" step="0.05" data-key="ingame.dpi_opacity"></label>
+          <div></div>
+          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="ingame.dpi_enabled"> Включено</label>
+        </div>
+        <div class="row" style="margin-top:10px; align-items:center; gap:14px; flex-wrap:wrap;">
+          <button onclick="ingamePreview('dpi')">Показать поверх игры на 5 с</button>
+          <img id="ingame-prev-dpi" class="ingame-prev" alt="">
+        </div>
       </section>
     </div>
 
@@ -717,6 +756,29 @@ function renderChat() {
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
 
 // ------------------------------------------------------------------ main tabs
+// ---- in-game overlay (Windows): status chips + live preview PNG
+const previewTimers = {};
+function schedulePreview(kind) {
+  clearTimeout(previewTimers[kind]);
+  previewTimers[kind] = setTimeout(() => {
+    const img = $('ingame-prev-' + kind); if (!img) return;
+    img.src = '/api/ingame/render?kind=' + kind + '&t=' + Date.now();
+  }, 600);
+}
+function renderIngame() {
+  const g = S.ingame || {};
+  for (const kind of ['dpi', 'weapons']) {
+    const chip = $('chip-ingame-' + kind); if (!chip) continue;
+    const b = chip.querySelector('b');
+    if (g.available === false) { chip.className = 'chip'; b.textContent = 'только Windows'; }
+    else if (g.error) { chip.className = 'chip bad'; b.textContent = 'ошибка'; chip.title = g.error; }
+    else if (!g[kind + '_enabled']) { chip.className = 'chip'; b.textContent = 'выкл'; }
+    else if (g.visible && g.visible[kind]) { chip.className = 'chip ok'; b.textContent = 'на экране'; }
+    else { chip.className = 'chip ok'; b.textContent = g[kind + '_mode'] === 'always' ? 'всегда' : 'после смены'; }
+    const img = $('ingame-prev-' + kind); if (img && !img.src) schedulePreview(kind);
+  }
+}
+async function ingamePreview(kind) { const r = await post('/api/ingame/preview', {kind}); if (!r) return; if (r.ok) toast('Показываю поверх игры 5 секунд'); else toast(r.error || 'Недоступно', true); }
 let helpLoaded = false;
 async function loadHelp() {
   if (helpLoaded) return; helpLoaded = true;
@@ -824,7 +886,7 @@ function renderLoadout() {
 
 function renderSettings() {
   const r = S.roulette.settings, o = S.overlay, h = S.hotkeys;
-  const src = { roulette: r, overlay: o, hotkeys: {...h.bindings, enabled: h.enabled}, dpi: (S.dpi && S.dpi.settings) || {}, chat: (S.chat && S.chat.settings) || {} };
+  const src = { roulette: r, overlay: o, hotkeys: {...h.bindings, enabled: h.enabled}, dpi: (S.dpi && S.dpi.settings) || {}, chat: (S.chat && S.chat.settings) || {}, ingame: S.ingame || {} };
   document.querySelectorAll('[data-key]').forEach(el => {
     if (document.activeElement === el) return;
     const [grp, key] = el.dataset.key.split('.'); const v = src[grp] ? src[grp][key] : undefined; if (v === undefined) return;
@@ -973,7 +1035,7 @@ function renderChecks() {
   if (!window.__tabChosen && bad && !window.__autoStartup) { window.__autoStartup = true; showMainTab('startup'); }
 }
 
-function renderAll() { if (!S) return; renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); renderChat(); renderWheel(); renderChecks(); }
+function renderAll() { if (!S) return; renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); renderChat(); renderWheel(); renderChecks(); renderIngame(); }
 
 // ------------------------------------------------------------------ settings form
 document.querySelectorAll('[data-key]').forEach(el => {
@@ -1001,12 +1063,17 @@ const es = new EventSource('/events');
 es.addEventListener('snapshot', e => { S = JSON.parse(e.data); renderAll(); $('chip-sse').className='chip ok'; });
 es.addEventListener('roulette', e => { if (!S) return; S.roulette = JSON.parse(e.data); renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderChecks(); });
 es.addEventListener('gsi', e => { if (!S) return; S.gsi = JSON.parse(e.data); renderHeader(); renderMisc(); renderChecks(); });
-es.addEventListener('settings', e => { if (!S) return; const d = JSON.parse(e.data); S.overlay = d.overlay; S.hotkeys = d.hotkeys; S.gsi_token = d.gsi_token; S.port = d.port; if (S.dpi && d.dpi) S.dpi.settings = d.dpi; if (S.chat && d.chat) S.chat.settings = d.chat; if (d.roulette) S.roulette.settings = d.roulette; renderHeader(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); refreshState(); });
+es.addEventListener('settings', e => { if (!S) return; const d = JSON.parse(e.data); S.overlay = d.overlay; S.ingame = d.ingame || S.ingame; S.hotkeys = d.hotkeys; S.gsi_token = d.gsi_token; S.port = d.port; if (S.dpi && d.dpi) S.dpi.settings = d.dpi; if (S.chat && d.chat) S.chat.settings = d.chat; if (d.roulette) S.roulette.settings = d.roulette; renderHeader(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); refreshState(); });
 es.addEventListener('hotkeys', e => { if (!S) return; S.hotkeys = JSON.parse(e.data); renderHeader(); renderSettings(); renderDpi(); });
 es.addEventListener('dpi', e => { if (!S) return; S.dpi = JSON.parse(e.data); renderDpi(); renderSettings(); renderWheel(); renderChecks(); });
 es.addEventListener('twitch', e => { if (!S) return; S.twitch = JSON.parse(e.data); renderWheel(); renderChecks(); });
 es.addEventListener('clients', e => { if (!S) return; S.clients = JSON.parse(e.data); renderChecks(); });
 es.addEventListener('chat', e => { if (!S) return; S.chat = JSON.parse(e.data); renderChat(); renderSettings(); renderWheel(); renderChecks(); });
+es.addEventListener('dpi', () => schedulePreview('dpi'));
+es.addEventListener('dpi_spin', () => schedulePreview('dpi'));
+es.addEventListener('roulette', () => schedulePreview('weapons'));
+es.addEventListener('gsi', () => schedulePreview('weapons'));
+es.addEventListener('settings', () => { renderIngame(); schedulePreview('dpi'); schedulePreview('weapons'); });
 es.addEventListener('dpi_spin', e => { const sp = JSON.parse(e.data); toast('DPI-рулетка: ' + sp.value + (sp.reason === 'death' ? ' (смерть)' : '')); });
 es.addEventListener('kill', e => { const k = JSON.parse(e.data); if (k.ambiguous) toast('Килл: возможно граната — не засчитан'); else if (k.counted) toast(k.advanced ? 'Килл засчитан → следующее оружие' : 'Килл засчитан'); else if (S && S.roulette.running) toast('Килл не тем оружием', true); });
 es.addEventListener('hotkey', e => { const h = JSON.parse(e.data); toast('Хоткей «' + (HK_NAMES[h.action]||h.action) + '»' + (h.ignored ? ' — проигнорирован (килл уже переключил оружие)' : '')); });

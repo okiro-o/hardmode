@@ -162,6 +162,76 @@ class HotkeySettings:
         return {a: getattr(self, a) for a in self.ACTIONS}
 
 
+CORNERS = ("tl", "tr", "bl", "br")
+
+
+@dataclass
+class IngameSettings:
+    """In-game overlay (always-on-top windows over CS2, Windows only). Keys are flat: <kind>_<option>."""
+    dpi_enabled: bool = True
+    dpi_mode: str = "change"        # change: a few seconds after each change | always
+    dpi_show_s: float = 6.0
+    dpi_corner: str = "tl"
+    dpi_x: int = 24
+    dpi_y: int = 100
+    dpi_scale: float = 1.0
+    dpi_opacity: float = 0.9
+    weapons_enabled: bool = True
+    weapons_mode: str = "change"
+    weapons_show_s: float = 6.0
+    weapons_corner: str = "tl"
+    weapons_x: int = 24
+    weapons_y: int = 200
+    weapons_scale: float = 1.0
+    weapons_opacity: float = 0.9
+    weapons_next: int = 2           # how many upcoming weapons to show (0-3)
+    weapons_names: bool = True
+    monitor: int = 0                # 0 = primary
+
+    def apply(self, patch: dict | None) -> list[str]:
+        if patch is not None and not isinstance(patch, dict):
+            raise ValueError("ingame: нужен объект")
+        rejected: list[str] = []
+        for k, v in (patch or {}).items():
+            try:
+                if k in ("dpi_enabled", "weapons_enabled", "weapons_names"):
+                    setattr(self, k, _to_bool(v))
+                elif k in ("dpi_mode", "weapons_mode"):
+                    if v not in ("change", "always"):
+                        raise ValueError(k)
+                    setattr(self, k, v)
+                elif k in ("dpi_corner", "weapons_corner"):
+                    if v not in CORNERS:
+                        raise ValueError(k)
+                    setattr(self, k, v)
+                elif k in ("dpi_show_s", "weapons_show_s"):
+                    f = float(v)
+                    if f != f:
+                        raise ValueError(k)
+                    setattr(self, k, max(1.0, min(120.0, f)))
+                elif k in ("dpi_x", "dpi_y", "weapons_x", "weapons_y"):
+                    setattr(self, k, max(0, min(8000, int(float(v)))))
+                elif k in ("dpi_scale", "weapons_scale"):
+                    f = float(v)
+                    if f != f:
+                        raise ValueError(k)
+                    setattr(self, k, max(0.5, min(3.0, f)))
+                elif k in ("dpi_opacity", "weapons_opacity"):
+                    f = float(v)
+                    if f != f:
+                        raise ValueError(k)
+                    setattr(self, k, max(0.2, min(1.0, f)))
+                elif k == "weapons_next":
+                    self.weapons_next = max(0, min(3, int(float(v))))
+                elif k == "monitor":
+                    self.monitor = max(0, min(8, int(float(v))))
+                else:
+                    raise ValueError(k)
+            except (TypeError, ValueError):
+                rejected.append(k)
+        return rejected
+
+
 @dataclass
 class AppSettings:
     port: int = DEFAULT_PORT
@@ -171,6 +241,7 @@ class AppSettings:
     chat: dict = field(default_factory=dict)          # ChatSettings as dict (contains the SE JWT secret)
     overlay: OverlaySettings = field(default_factory=OverlaySettings)
     hotkeys: HotkeySettings = field(default_factory=HotkeySettings)
+    ingame: IngameSettings = field(default_factory=IngameSettings)
     open_browser: bool = True
 
     def to_dict(self) -> dict:
@@ -198,6 +269,8 @@ class AppSettings:
             s.overlay.apply(d["overlay"])
         if isinstance(d.get("hotkeys"), dict):
             s.hotkeys.apply(d["hotkeys"])
+        if isinstance(d.get("ingame"), dict):
+            s.ingame.apply(d["ingame"])
         return s
 
     def save(self, path: str | None = None) -> None:
