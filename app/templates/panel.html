@@ -529,6 +529,7 @@
           <div class="row full">
             <button onclick="verifyChat()">Проверить токен</button>
             <button onclick="testChat()">Отправить тест в чат</button>
+            <button id="chat-join" onclick="joinChat()" style="display:none;">Подключить бота к каналу</button>
           </div>
           <div class="hint full" id="chat-status"></div>
           <h3 class="full">Когда писать</h3>
@@ -667,7 +668,14 @@ async function toggleAutostart(el) { const r = await post('/api/autostart', {ena
 async function saveJwt() { const v = $('chat-jwt').value.trim(); if (!v) return toast('Вставьте токен', true); const r = await post('/api/settings', {chat: {se_jwt: v}}); if (r) { $('chat-jwt').value = ''; toast('Токен сохранён, нажмите «Проверить токен»'); refreshState(); } }
 async function clearJwt() { if (!confirm('Удалить токен StreamElements из настроек?')) return; const r = await post('/api/settings', {chat: {se_jwt: ''}}); if (r) { toast('Токен удалён'); refreshState(); } }
 async function verifyChat() { toast('Проверяю…'); const r = await post('/api/chat/verify', {}); if (!r) return; if (r.ok) toast('Канал: ' + (r.channel.username || r.channel.id)); else toast(r.error || 'Ошибка', true); refreshState(); }
-async function testChat() { const r = await post('/api/chat/test', {}); if (!r) return; if (r.ok) toast('Отправлено в чат'); else toast(r.error || 'Ошибка', true); refreshState(); }
+async function testChat() {
+  const r = await post('/api/chat/test', {}); if (!r) return;
+  if (!r.ok) { toast(r.error || 'Ошибка', true); refreshState(); return; }
+  if (r.bot_problem) toast('StreamElements принял сообщение, но ' + r.bot_problem, true);
+  else toast('StreamElements принял сообщение. Нет в чате? Напишите пару сообщений в чат сами: Twitch прячет бота после долгого простоя');
+  refreshState();
+}
+async function joinChat() { toast('Подключаю бота…'); const r = await post('/api/chat/join', {}); if (!r) return; if (r.ok) toast('Бот подключён к каналу'); else toast(r.error || 'Не удалось подключить бота', true); refreshState(); }
 async function addCustomDpi() { const v = parseInt($('custom-dpi').value, 10); if (!Number.isFinite(v)) return toast('Введите DPI', true); const r = await post('/api/dpi/values/add', {value: v}); if (r) { $('custom-dpi').value = ''; toast('Добавлено: ' + r.value); } }
 async function learnReward() { const r = await post('/api/dpi/reward/learn', {on: true}); if (r) toast('Жду выкуп награды в чате…'); }
 function renderWheel() {
@@ -698,7 +706,11 @@ function renderChat() {
   else if (c.last_error) { chip.className = 'chip bad'; chip.querySelector('b').textContent = 'ошибка'; }
   else { chip.className = 'chip ok'; chip.querySelector('b').textContent = (c.channel && c.channel.username) ? '#' + c.channel.username : 'готов'; }
   $('chat-jwt-state').textContent = st.se_jwt_set ? '— сохранён' : '— не задан';
-  const parts = []; if (c.channel && c.channel.username) parts.push(`канал ${c.channel.username}`); if (c.sent_count) parts.push(`отправлено ${c.sent_count}`); if (c.last_error) parts.push(`ошибка: ${c.last_error}`);
+  const parts = []; if (c.channel && c.channel.username) parts.push(`канал ${c.channel.username}`);
+  const b = c.bot || {};
+  if (b.joined !== undefined) parts.push('бот ' + (b.joined ? 'в канале' : 'НЕ в канале') + (b.mod ? ', модератор' : ', не модератор') + (b.muted ? ', ЗАГЛУШЕН' : '') + (b.enabled === false ? ', выключен' : ''));
+  if (c.sent_count) parts.push(`отправлено ${c.sent_count}`); if (c.last_error) parts.push(`ошибка: ${c.last_error}`);
+  $('chat-join').style.display = b.joined === false ? '' : 'none';
   $('chat-status').textContent = parts.join(' · '); $('chat-status').style.display = parts.length ? '' : 'none';
   $('chat-log').innerHTML = (c.log||[]).slice().reverse().map(e => `<div class="${esc(e.kind)}"><span class="t">${fmtTime(e.t)}</span><span>${esc(e.text)}</span></div>`).join('');
 }

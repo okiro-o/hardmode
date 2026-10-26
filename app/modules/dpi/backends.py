@@ -228,9 +228,12 @@ def make_backend(kind: str = "auto") -> DpiBackend:
     if kind in ("auto", "hidpp"):
         try:
             import hid  # noqa: F401
-        except ImportError:
+        except ImportError as e:
+            if getattr(sys, "frozen", False):
+                return NoneBackend(f"В сборке нет модуля hidapi ({e}). Пересоберите build.bat: сборка не должна "
+                                   f"писать «Hidden import 'hid' not found», а в dist\\cs2-roulette\\_internal должен лежать hid*.pyd")
             if IS_WINDOWS:
-                return NoneBackend("Не установлен модуль hidapi: выполните  .venv\\Scripts\\pip install hidapi")
+                return NoneBackend(f"Не установлен модуль hidapi: выполните  .venv\\Scripts\\pip install hidapi  ({e})")
             return NoneBackend("hidapi не установлен (на этой ОС управление мышью не используется)")
         return HidppBackend()
     return NoneBackend(f"Неизвестный backend {kind!r}")

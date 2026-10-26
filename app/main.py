@@ -31,7 +31,7 @@ from .modules.dpi import DpiService, DpiSettings
 from .roulette import Roulette
 from .twitch_irc import IrcMessage, TwitchChatReader
 
-VERSION = "0.10.0"
+VERSION = "0.10.1"
 KILL_ADVANCE_GRACE = 1.5   # seconds: ignore a manual "next" right after a kill already advanced
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 log = logging.getLogger("cs2roulette")
@@ -657,12 +657,21 @@ def create_app() -> FastAPI:
         state.handle_chat_message(msg)
         return {"ok": True}
 
+    @app.post("/api/chat/join")
+    async def chat_join() -> dict:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, state.chat.join_bot)
+
     @app.post("/api/chat/test")
     async def chat_test(request: Request) -> dict:
         body = await _json(request)
         text = str(body.get("message") or "✅ cs2-roulette: тестовое сообщение").strip()[:450]
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, state.chat.send_now, text)
+        res = await loop.run_in_executor(None, state.chat.send_now, text)
+        if res.get("ok"):
+            res["response"] = state.chat.last_response
+            res["bot_problem"] = state.chat.bot_problem()
+        return res
 
     return app
 

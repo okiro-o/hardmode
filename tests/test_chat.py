@@ -107,3 +107,56 @@ def test_reject_messages_rate_limited_per_user():
     n.settings.on_reject = False
     assert n.notify_reject("Third", "x") is False
     n.stop()
+
+
+def test_verify_reads_bot_state_and_joins_when_absent(monkeypatch):
+    calls = []
+    state = {"joined": False}
+
+    def bot_info(*a, **k):
+        return {"bot": {"enabled": True, "name": "streamelements", "joined": state["joined"], "muted": False, "mod": True}}
+
+    def join(*a, **k):
+        state["joined"] = True
+        return {"status": 200, "message": "successfully joined your channel"}
+
+    def req(method, url, jwt, body=None, timeout=8.0):
+        calls.append((method, url.split("/kappa/v2")[1]))
+        if url.endswith("/channels/me"):
+            return {"_id": "c1", "username": "streamer", "provider": "twitch"}
+        if method == "GET" and url.endswith("/bot/c1"):
+            return bot_info()
+        if method == "POST" and url.endswith("/bot/c1/join"):
+            return join()
+        raise AssertionError(url)
+
+    n = ChatNotifier(ChatSettings(enabled=True, se_jwt=fake_jwt("c1")), lambda *a: None)
+    monkeypatch.setattr(ChatNotifier, "_request", staticmethod(req))
+    res = n.verify()
+    assert res["ok"] and res["bot"]["joined"] is True and res["bot_problem"] is None
+    assert ("POST", "/bot/c1/join") in calls
+    assert n.status()["bot"]["mod"] is True
+    assert any("подключ" in e["text"] for e in n.log)
+
+
+def test_bot_problem_reports_muted_and_join_already_ok(monkeypatch):
+    n = ChatNotifier(ChatSettings(enabled=True, se_jwt=fake_jwt("c1")), lambda *a: None)
+    n.bot = {"enabled": True, "joined": True, "muted": True, "mod": False}
+    assert "muted" in n.bot_problem()
+    n.bot = {"enabled": True, "joined": False, "muted": False}
+    assert n.bot_problem() == "бот не в канале"
+
+    def req(method, url, jwt, body=None, timeout=8.0):
+        if url.endswith("/join"):
+            raise RuntimeError("StreamElements HTTP 400: The bot is already in your channel")
+        return {"bot": {"enabled": True, "joined": True, "muted": False, "mod": True}}
+    monkeypatch.setattr(ChatNotifier, "_request", staticmethod(req))
+    assert n.join_bot()["ok"] is True and n.bot["joined"] is True
+
+
+def test_deliver_keeps_last_response():
+    n = ChatNotifier(ChatSettings(enabled=True, se_jwt=fake_jwt("c1")), lambda *a: None,
+                     sender=lambda jwt, cid, msg: {"status": 200, "channel": cid, "message": msg})
+    assert n.send_now("hi")["ok"]
+    assert n.last_response == {"status": 200, "channel": "c1", "message": "hi"}
+    assert n.status()["last_response"]["status"] == 200

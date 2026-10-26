@@ -4,7 +4,14 @@ Why StreamElements: its bot API only needs the channel's JWT token from the SE d
 (Account -> channel -> "Show secrets" -> JWT Token), no OAuth application, no device flow.
 
 * verify:  GET  https://api.streamelements.com/kappa/v2/channels/me   (Bearer JWT)
-* send:    POST https://api.streamelements.com/kappa/v2/bot/{channelId}/say  {"message": "..."}
+* bot:     GET  .../bot/{channelId}  -> {"bot": {enabled, joined, muted, mod, name}}
+* join:    POST .../bot/{channelId}/join  (400 "already in your channel" is fine)
+* send:    POST .../bot/{channelId}/say  {"message": "..."}  -> {status, channel, message}
+
+StreamElements answers 200 to "say" even when nothing shows up in Twitch chat: the bot is not
+joined to the channel, it is muted in the SE dashboard, or Twitch's spam filter hides bot
+messages after a long idle period (a few manual messages in chat restore visibility). That is why
+``verify`` also reads the bot state and joins the bot when it is not in the channel.
 
 The channel id is read from the JWT payload (claim ``channel``), so sending works even when
 the verify call is skipped. Messages are queued and sent from a worker thread with a minimum
@@ -16,6 +23,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import queue
 import threading
 import time
@@ -27,6 +35,7 @@ from typing import Any, Callable
 
 SE_API = "https://api.streamelements.com/kappa/v2"
 MAX_LOG = 30
+log = logging.getLogger("cs2roulette.chat")
 
 
 def _bool(v: Any) -> bool:
@@ -125,6 +134,8 @@ class ChatNotifier:
         self._queue: "queue.Queue[tuple[str, str] | None]" = queue.Queue()
         self._thread: threading.Thread | None = None
         self.channel: dict = {}
+        self.bot: dict = {}                      # {enabled, name, joined, muted, mod} from GET /bot/{channel}
+        self.last_response: dict | None = None   # last answer of /say
         self.sent_count = 0
         self.last_error: str | None = None
         self.last_sent_at: float | None = None
@@ -136,6 +147,9 @@ class ChatNotifier:
         return {
             "settings": self.settings.public_dict(),
             "channel": self.channel,
+            "bot": self.bot,
+            "bot_problem": self.bot_problem(),
+            "last_response": self.last_response,
             "sent_count": self.sent_count,
             "last_error": self.last_error,
             "last_sent_at": self.last_sent_at,
@@ -165,6 +179,7 @@ class ChatNotifier:
         new = ChatSettings.from_dict(merged)   # may raise ValueError
         if new.se_jwt != self.settings.se_jwt:
             self.channel = {}
+            self.bot = {}
             self.last_error = None
         self.settings = new
         self._publish("chat", self.status())
@@ -248,6 +263,7 @@ class ChatNotifier:
                     self._deliver(pending[k])
                 except Exception as e:  # noqa: BLE001
                     self.last_error = str(e)
+                    log.warning("chat: not sent: %s", e)
                     self._log("error", f"Не отправлено: {e}")
                 time.sleep(self.settings.min_interval_s)
 
@@ -255,10 +271,12 @@ class ChatNotifier:
         cid = self.channel_id()
         if not cid:
             raise RuntimeError("не удалось определить канал: проверьте JWT-токен StreamElements")
-        self._sender(self.settings.se_jwt, cid, message)
+        res = self._sender(self.settings.se_jwt, cid, message)
+        self.last_response = res if isinstance(res, dict) else None
         self.sent_count += 1
         self.last_sent_at = time.time()
         self.last_error = None
+        log.info("chat: sent %r -> %s", message, res)
         self._log("sent", message)
 
     # ------------------------------------------------------------- HTTP (SE)
@@ -287,8 +305,54 @@ class ChatNotifier:
             return {"raw": raw[:200]}
 
     @classmethod
-    def _send_streamelements(cls, jwt: str, channel_id: str, message: str) -> None:
-        cls._request("POST", f"{SE_API}/bot/{channel_id}/say", jwt, {"message": message})
+    def _send_streamelements(cls, jwt: str, channel_id: str, message: str) -> dict:
+        return cls._request("POST", f"{SE_API}/bot/{channel_id}/say", jwt, {"message": message})
+
+    # ------------------------------------------------------------- bot state
+    def bot_problem(self) -> str | None:
+        """Human-readable reason why messages would not show up, or None."""
+        b = self.bot
+        if not b:
+            return None
+        if b.get("enabled") is False:
+            return "бот выключен в настройках StreamElements"
+        if b.get("joined") is False:
+            return "бот не в канале"
+        if b.get("muted") is True:
+            return "бот заглушен (muted) в настройках StreamElements"
+        return None
+
+    def refresh_bot(self) -> dict:
+        """GET /bot/{channel}; remembers {enabled, name, joined, muted, mod}."""
+        cid = self.channel_id()
+        if not cid:
+            raise RuntimeError("не удалось определить канал: проверьте JWT-токен StreamElements")
+        res = self._request("GET", f"{SE_API}/bot/{cid}", self.settings.se_jwt)
+        bot = res.get("bot") if isinstance(res.get("bot"), dict) else res
+        self.bot = {k: bot.get(k) for k in ("enabled", "name", "joined", "muted", "mod") if k in bot}
+        return self.bot
+
+    def join_bot(self) -> dict:
+        """POST /bot/{channel}/join. Returns {ok, error?, bot}."""
+        cid = self.channel_id()
+        if not cid:
+            return {"ok": False, "error": "не удалось определить канал: проверьте JWT-токен StreamElements"}
+        try:
+            self._request("POST", f"{SE_API}/bot/{cid}/join", self.settings.se_jwt, {})
+        except RuntimeError as e:
+            if "already" not in str(e).lower():
+                self.last_error = str(e)
+                log.warning("chat: join failed: %s", e)
+                self._log("error", f"Не удалось подключить бота: {e}")
+                self._publish("chat", self.status())
+                return {"ok": False, "error": str(e)}
+        try:
+            self.refresh_bot()
+        except RuntimeError:
+            pass
+        self.last_error = None
+        self._log("verify", "Бот StreamElements подключён к каналу")
+        return {"ok": True, "bot": self.bot}
 
     def verify(self) -> dict:
         """Check the token and remember the channel. Returns {ok, channel|error}."""
@@ -309,4 +373,23 @@ class ChatNotifier:
             self.settings.channel_login = str(username).lower()
         self.last_error = None
         self._log("verify", f"Канал подтверждён: {self.channel.get('username') or cid}")
-        return {"ok": True, "channel": self.channel}
+        # bot state: join automatically when the bot is not in the channel
+        try:
+            self.refresh_bot()
+            if self.bot.get("joined") is False:
+                self._log("verify", "Бот не в канале — подключаю…")
+                self.join_bot()
+            flags = []
+            if self.bot.get("joined") is True:
+                flags.append("в канале")
+            flags.append("модератор" if self.bot.get("mod") else "не модератор")
+            if self.bot.get("muted"):
+                flags.append("заглушен (muted)")
+            if self.bot.get("enabled") is False:
+                flags.append("выключен")
+            self._log("verify", "Бот: " + ", ".join(flags))
+        except RuntimeError as e:
+            log.warning("chat: bot info failed: %s", e)
+            self._log("error", f"Состояние бота не прочитано: {e}")
+        self._publish("chat", self.status())
+        return {"ok": True, "channel": self.channel, "bot": self.bot, "bot_problem": self.bot_problem()}
