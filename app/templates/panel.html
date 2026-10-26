@@ -410,19 +410,24 @@
     <div class="col">
       <section>
         <h2>Подключение к CS2 (GSI)</h2>
-        <div class="hint">Игра сама шлёт состояние (килы, активное оружие, сторону, смерти) на <code id="gsi-uri"></code>. Нужен конфиг в папке <code>game/csgo/cfg</code>. Читается только при запуске CS2 — после установки перезапустите игру.</div>
+        <div class="hint">Игра сама шлёт состояние (килы, активное оружие, сторону, смерти). Нужен конфиг в папке CS2, он читается только при запуске игры: после установки перезапустите CS2.</div>
         <div class="row" style="margin-top:8px;">
           <button class="primary" onclick="installCfg()">Установить конфиг в CS2</button>
-          <a href="/api/gsi/cfg" download><button>Скачать конфиг</button></a>
-          <button onclick="post('/api/settings',{regenerate_token:true})">Новый токен</button>
+          <span class="hint" id="cfg-short"></span>
         </div>
         <div class="row" style="margin-top:10px; gap:10px;">
           <div class="stat" style="min-width:220px;"><div class="v" id="gsi-player" style="font-size:18px;">—</div><div class="l">игрок по данным CS2</div></div>
           <div class="stat" style="min-width:160px;"><div class="v" id="gsi-age" style="font-size:18px;">—</div><div class="l">последний пакет</div></div>
           <div class="stat" style="flex:1; min-width:220px;"><div class="v" id="gsi-state" style="font-size:14px; font-weight:600;">—</div><div class="l">состояние</div></div>
         </div>
-        <div class="hint" style="margin-top:8px;">Папка CS2: <code id="cs2-dir">ищу…</code><br>Конфиг: <code id="cfg-installed">—</code><br>Токен: <code id="gsi-token"></code></div>
         <div class="hint" style="margin-top:6px;" id="gsi-detail"></div>
+        <details style="margin-top:6px;"><summary>Дополнительно (если папка CS2 не нашлась или нужно сменить токен)</summary>
+          <div class="row" style="margin:6px 0;">
+            <a href="/api/gsi/cfg" download><button>Скачать конфиг</button></a>
+            <button onclick="if(confirm('Сменить токен? После этого нужно переустановить конфиг и перезапустить CS2.')) post('/api/settings',{regenerate_token:true})">Новый токен</button>
+          </div>
+          <div class="hint">Адрес приёма: <code id="gsi-uri"></code><br>Папка CS2: <code id="cs2-dir">ищу…</code><br>Конфиг: <code id="cfg-installed">—</code><br>Токен: <code id="gsi-token"></code></div>
+        </details>
       </section>
 
       <section>
@@ -716,6 +721,7 @@ function renderMisc() {
   $('gsi-uri').textContent = S.urls.gsi;
   $('cs2-dir').textContent = S.cs2_cfg_dir || 'не найдена автоматически — скачайте конфиг и положите в game/csgo/cfg вручную';
   $('cfg-installed').textContent = S.cfg_state === 'ok' ? 'установлен: ' + S.cfg_installed : S.cfg_state === 'stale' ? 'устарел (другой токен/порт) — нажмите «Установить конфиг в CS2»: ' + S.cfg_installed : 'не установлен';
+  $('cfg-short').textContent = S.cfg_state === 'ok' ? '✓ конфиг установлен' : S.cfg_state === 'stale' ? 'конфиг устарел, установите заново' : (S.cs2_cfg_dir ? 'конфиг ещё не установлен' : 'папка CS2 не найдена: см. «Дополнительно»');
   $('gsi-token').textContent = S.gsi_token;
   $('data-dir').textContent = S.data_dir; $('port').textContent = S.port; $('log-path').textContent = S.log_path || '';
   const a = S.autostart || {}; const at = $('autostart-toggle'); at.disabled = !a.available; if (document.activeElement !== at) at.checked = !!a.enabled;

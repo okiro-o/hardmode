@@ -31,7 +31,7 @@ from .modules.dpi import DpiService, DpiSettings
 from .roulette import Roulette
 from .twitch_irc import IrcMessage, TwitchChatReader
 
-VERSION = "0.8.1"
+VERSION = "0.8.2"
 KILL_ADVANCE_GRACE = 1.5   # seconds: ignore a manual "next" right after a kill already advanced
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 log = logging.getLogger("cs2roulette")
