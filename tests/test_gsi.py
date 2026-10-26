@@ -181,3 +181,14 @@ def test_cfg_has_no_bom_and_required_sections():
     for key in ("player_weapons", "player_state", "player_match_stats", "provider", "map", "round", "player_id"):
         assert f'"{key}"' in cfg
     assert '"token"  "tok"' in cfg
+
+
+def test_rejected_payload_keeps_player_name_for_diagnostics():
+    t = GsiTracker(token="good")
+    p = payload(rk=0)
+    p["auth"] = {"token": "old"}
+    t.handle(p, now=1.0)
+    assert t.status.rejected_name == "me" and t.status.name is None
+    p["auth"] = {"token": "good"}
+    t.handle(p, now=2.0)
+    assert t.status.name == "me" and t.status.last_name_at == 2.0

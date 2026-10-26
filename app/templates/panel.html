@@ -416,6 +416,11 @@
           <a href="/api/gsi/cfg" download><button>Скачать конфиг</button></a>
           <button onclick="post('/api/settings',{regenerate_token:true})">Новый токен</button>
         </div>
+        <div class="row" style="margin-top:10px; gap:10px;">
+          <div class="stat" style="min-width:220px;"><div class="v" id="gsi-player" style="font-size:18px;">—</div><div class="l">игрок по данным CS2</div></div>
+          <div class="stat" style="min-width:160px;"><div class="v" id="gsi-age" style="font-size:18px;">—</div><div class="l">последний пакет</div></div>
+          <div class="stat" style="flex:1; min-width:220px;"><div class="v" id="gsi-state" style="font-size:14px; font-weight:600;">—</div><div class="l">состояние</div></div>
+        </div>
         <div class="hint" style="margin-top:8px;">Папка CS2: <code id="cs2-dir">ищу…</code><br>Конфиг: <code id="cfg-installed">—</code><br>Токен: <code id="gsi-token"></code></div>
         <div class="hint" style="margin-top:6px;" id="gsi-detail"></div>
       </section>
@@ -647,10 +652,10 @@ function renderHeader() {
   const g = S.gsi, r = S.roulette;
   const chipG = $('chip-gsi');
   if (g.connected) {
-    const where = g.map_name ? `${g.map_name} · ${g.map_phase||''}${g.round!=null?' · R'+g.round:''}` : (g.activity||'в меню');
-    chipG.className = 'chip ok'; chipG.querySelector('b').textContent = where + (g.own_player===false?' · наблюдение':'');
-  } else if (g.rejected_auth && (g.rejected_age == null || g.rejected_age < 60)) { chipG.className = 'chip bad'; chipG.querySelector('b').textContent = 'токен не совпадает — переустановите конфиг и перезапустите CS2'; }
-  else { chipG.className = 'chip'; chipG.querySelector('b').textContent = g.payloads ? 'нет данных >30с' : 'не подключено'; }
+    const where = g.map_name ? `${g.map_name} · ${g.map_phase||''}${g.round!=null?' · R'+g.round:''}` : (g.activity === 'menu' || !g.activity ? 'в меню' : g.activity);
+    chipG.className = 'chip ok'; chipG.querySelector('b').textContent = (g.name ? g.name + ' · ' : '') + where + (g.own_player===false?' · наблюдение':'');
+  } else if (g.rejected_auth && (g.rejected_age == null || g.rejected_age < 60)) { chipG.className = 'chip bad'; chipG.querySelector('b').textContent = (g.rejected_name ? g.rejected_name + ': ' : '') + 'старый токен — перезапустите CS2'; }
+  else { chipG.className = 'chip'; chipG.querySelector('b').textContent = g.payloads ? (g.name ? g.name + ' · ' : '') + 'нет данных >30с' : 'не подключено'; }
   const chipS = $('chip-side'); chipS.className = 'chip ' + (r.side==='T'?'warn':'ok'); chipS.querySelector('b').textContent = r.side + (r.settings.side_source==='gsi' ? ' (авто)' : ' (вручную)');
   const chipH = $('chip-held'); const held = g.connected && g.held ? (weapons[g.held]?weapons[g.held].name:g.held) : (g.connected && g.held_raw ? g.held_raw.replace('weapon_','') : '—');
   chipH.querySelector('b').textContent = held; chipH.className = 'chip' + ((r.running && r.queue[0] && g.held===r.queue[0].id) ? ' ok' : '');
@@ -715,8 +720,18 @@ function renderMisc() {
   $('data-dir').textContent = S.data_dir; $('port').textContent = S.port; $('log-path').textContent = S.log_path || '';
   const a = S.autostart || {}; const at = $('autostart-toggle'); at.disabled = !a.available; if (document.activeElement !== at) at.checked = !!a.enabled;
   $('mode-info').textContent = (S.mode === 'tray' ? 'Запущено в трее: иконка рядом с часами, «Выход» там же.' : 'Запущено с консолью (режим отладки). Обычный запуск — run.bat, он уходит в трей.') + (a.available ? '' : ' Автозапуск доступен только в Windows.');
-  const g = S.gsi; const badTok = g.rejected_auth ? ` · отклонено по токену: ${g.rejected_auth} (переустановите конфиг и перезапустите CS2)` : '';
-  $('gsi-detail').textContent = g.payloads ? `Пакетов: ${g.payloads} · игрок: ${g.name||'?'} · режим: ${g.mode||'?'} · киллов в раунде: ${g.round_kills??'-'} · за матч: ${g.match_kills??'-'}` + badTok : (g.rejected_auth ? 'CS2 шлёт данные, но токен не совпадает' + badTok : '');
+  const g = S.gsi; const badTok = g.rejected_auth ? ` · отклонено по токену: ${g.rejected_auth}` : '';
+  $('gsi-detail').textContent = g.payloads ? `Пакетов: ${g.payloads} · режим: ${g.mode||'?'} · киллов в раунде: ${g.round_kills??'-'} · за матч: ${g.match_kills??'-'}` + badTok : '';
+  $('gsi-player').textContent = g.name || g.rejected_name || '—';
+  const fmtAge = a => a == null ? '—' : a < 60 ? `${Math.round(a)} с назад` : a < 3600 ? `${Math.round(a/60)} мин назад` : `${Math.round(a/3600)} ч назад`;
+  $('gsi-age').textContent = g.connected ? fmtAge(g.age) : (g.rejected_auth && g.rejected_age != null && g.rejected_age < 120 ? fmtAge(g.rejected_age) + ' (отклонён)' : (g.age != null ? fmtAge(g.age) : '—'));
+  let stateTxt;
+  if (g.connected) stateTxt = 'данные идут' + (g.map_name ? `, карта ${g.map_name}` : ', игра в меню');
+  else if (g.rejected_auth && g.rejected_age != null && g.rejected_age < 120) stateTxt = 'CS2 шлёт пакеты со старым токеном: конфиг обновлён, перезапустите игру';
+  else if (S.cfg_state !== 'ok') stateTxt = 'конфиг не установлен или устарел: нажмите «Установить конфиг в CS2», затем перезапустите игру';
+  else if (g.payloads) stateTxt = 'пакетов нет больше 30 с: игра закрыта?';
+  else stateTxt = 'конфиг на месте, пакетов ещё не было: запустите (или перезапустите) CS2';
+  $('gsi-state').textContent = stateTxt;
 }
 
 function renderDpi() {

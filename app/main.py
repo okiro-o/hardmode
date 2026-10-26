@@ -31,7 +31,7 @@ from .modules.dpi import DpiService, DpiSettings
 from .roulette import Roulette
 from .twitch_irc import IrcMessage, TwitchChatReader
 
-VERSION = "0.8.0"
+VERSION = "0.8.1"
 KILL_ADVANCE_GRACE = 1.5   # seconds: ignore a manual "next" right after a kill already advanced
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 log = logging.getLogger("cs2roulette")
@@ -235,7 +235,7 @@ class AppState:
     def publish_gsi(self, force: bool = False) -> None:
         st = self.gsi.status
         key = (st.connected, st.own_player, st.team, st.held, st.map_phase, st.round_phase, st.round,
-               st.activity, st.health, st.round_kills, st.match_kills, st.rejected_auth)
+               st.activity, st.health, st.round_kills, st.match_kills, st.rejected_auth, st.name, st.rejected_name)
         now = time.monotonic()
         if force or key != self._last_gsi_key or now - self._last_gsi_publish > 2.0:
             self._last_gsi_key = key

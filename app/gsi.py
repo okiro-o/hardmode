@@ -65,6 +65,8 @@ class GsiStatus:
     payloads: int = 0
     rejected_auth: int = 0
     last_rejected_at: float | None = None
+    rejected_name: str | None = None     # who is posting with a wrong token (diagnostics)
+    last_name_at: float | None = None
 
     def clear_player(self) -> None:
         self.own_player = None
@@ -164,6 +166,7 @@ class GsiTracker:
             if got != self.token:
                 st.rejected_auth += 1
                 st.last_rejected_at = now
+                st.rejected_name = _str(_obj(payload.get("player")).get("name")) or st.rejected_name
                 return events
 
         st.connected = True
@@ -187,8 +190,9 @@ class GsiTracker:
         st.round = _int(map_.get("round"))
         st.round_phase = _str(round_.get("phase"))
         st.steamid = provider_sid
-        if own:
+        if own and _str(player.get("name")):
             st.name = _str(player.get("name"))
+            st.last_name_at = now
 
         if not player or not map_:
             # main menu / loading: nothing to track, reset per-round memory and stale fields
