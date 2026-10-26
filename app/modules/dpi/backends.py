@@ -121,14 +121,15 @@ class HidppBackend:
                     dev = HidppDevice(cand, device_index=di)
                     try:
                         dev.open()
-                        dev.feature_index(0x2202)  # the thing we need; also proves the index is alive
+                        fid, _ = dev.dpi_feature()  # 0x2202 or 0x2201; also proves the index is alive
                         self._dev = dev
-                        self._info = {"candidate": cand.describe(), "device_index": di}
+                        self._info = {"candidate": cand.describe(), "device_index": di, "feature": f"0x{fid:04X}"}
                         return dev
                     except HidppError as e:
-                        errors.append(f"{cand.product or cand.product_id:#06x}@{di}: {e}")
+                        label = cand.product or f"{cand.product_id:#06x}"
+                        errors.append(f"{label}@{di}: {e}")
                         dev.close()
-            raise DeviceNotFound("Мышь с фичей 0x2202 не найдена: " + "; ".join(errors[-3:]))
+            raise DeviceNotFound("Мышь с управлением DPI (0x2202/0x2201) не найдена: " + "; ".join(errors[-3:]))
 
     def _drop(self) -> None:
         with self._lock:
@@ -153,14 +154,15 @@ class HidppBackend:
                     info["name"] = dev.device_name()
                 except HidppError:
                     info["name"] = ""
-                mode = dev.get_onboard_mode()
+                mode = dev.get_onboard_mode() if dev.has_feature(0x8100) else None
                 params = dev.dpi_parameters()
                 info.update({
                     "found": True,
                     "product": info.get("candidate", {}).get("product", ""),
                     "receiver": info.get("candidate", {}).get("receiver"),
                     "mode": mode,
-                    "mode_text": "host" if mode == HOST_MODE else "onboard",
+                    "mode_text": "host" if mode == HOST_MODE else ("onboard" if mode is not None else "n/a"),
+                    "feature": params.get("feature", info.get("feature")),
                     "dpi": params["dpi_x"],
                     "dpi_y": params["dpi_y"],
                     "lod": params["lod"],

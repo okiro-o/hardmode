@@ -343,3 +343,67 @@ def test_death_in_warmup_ignored():
     dead = payload(rk=0, phase="warmup")
     dead["player"]["state"]["health"] = 0
     assert deaths(t.handle(dead, now=1.1)) == []
+
+
+def test_legacy_0x2201_mouse_like_g304(monkeypatch):
+    """G304/G305: no 0x2202, DPI via 0x2201 (fn2 get, fn3 set, fn1 list), onboard profiles present."""
+    state = {"dpi": 400, "mode": 0x01}
+    words = [200, 0xE032, 12000, 0, 0, 0, 0, 0]   # 200..12000 step 50
+    stream = b"".join(bytes([w >> 8, w & 0xFF]) for w in words)
+    pages = {i: stream[i * 15:(i + 1) * 15] for i in range((len(stream) + 14) // 15)}
+
+    def script(req):
+        fidx, fn = req[2], req[3]
+        if fidx == 0x00:                                   # root getFeature
+            feat = (req[4] << 8) | req[5]
+            idx = {0x2201: 0x07, 0x8100: 0x0A}.get(feat, 0)
+            return bytes([0x11, 1, 0x00, fn, idx, 0, 0]) + bytes(13)
+        if fidx == 0x0A and fn >> 4 == 2:
+            return bytes([0x11, 1, 0x0A, fn, state["mode"]]) + bytes(15)
+        if fidx == 0x0A and fn >> 4 == 1:
+            state["mode"] = req[4]
+            return bytes([0x11, 1, 0x0A, fn]) + bytes(16)
+        if fidx == 0x07 and fn >> 4 == 2:                  # getSensorDpi
+            d = state["dpi"]
+            return bytes([0x11, 1, 0x07, fn, 0, d >> 8, d & 0xFF, 0x03, 0x20]) + bytes(11)
+        if fidx == 0x07 and fn >> 4 == 3:                  # setSensorDpi
+            state["dpi"] = (req[5] << 8) | req[6]
+            return bytes([0x11, 1, 0x07, fn]) + req[4:7] + bytes(13)
+        if fidx == 0x07 and fn >> 4 == 1:                  # getSensorDpiList (1 echoed byte)
+            page = req[6]
+            body = pages.get(page)
+            if body is None:
+                return bytes([0x11, 1, 0xFF, fidx, fn, 0x02]) + bytes(14)
+            return bytes([0x11, 1, 0x07, fn, 0]) + body + bytes(15 - len(body))
+        return None
+
+    dev = make_device(monkeypatch, script)
+    dev.open()
+    assert dev.dpi_feature() == (0x2201, 0x07)
+    assert dev.ensure_host_mode() is True and state["mode"] == 0x02
+    p = dev.dpi_parameters()
+    assert p["dpi_x"] == 400 and p["default_x"] == 800 and p["lod"] is None and p["feature"] == "0x2201"
+    assert dev.set_dpi(1600)["dpi_x"] == 1600
+    vals = dev.dpi_ranges()
+    assert vals[0] == 200 and vals[-1] == 12000 and 1650 in vals and 1620 not in vals
+
+
+def test_backend_connect_error_message_is_readable(monkeypatch):
+    import app.modules.dpi.backends as B
+    from app.modules.dpi.hidpp import Candidate
+
+    class Dev:
+        def __init__(self, cand, device_index=None, timeout=1.0):
+            self.is_open = False
+        def open(self):
+            self.is_open = True
+        def dpi_feature(self):
+            raise HidppError("нет фич")
+        def close(self):
+            pass
+
+    monkeypatch.setattr(B, "enumerate_candidates", lambda: [Candidate(0x046D, 0xC539, "Lightspeed Receiver", {2: b"p"})])
+    monkeypatch.setattr(B, "HidppDevice", Dev)
+    with pytest.raises(HidppError) as e:
+        B.HidppBackend()._connect()
+    assert "Lightspeed Receiver@1" in str(e.value) and "format" not in str(e.value)

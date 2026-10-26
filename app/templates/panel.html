@@ -681,7 +681,7 @@ function renderDpi() {
   else if (d.backend === 'fake') { chip.className = 'chip warn'; chip.querySelector('b').textContent = 'мышь: имитация'; }
   else { chip.className = 'chip'; chip.querySelector('b').textContent = 'мышь: не проверена'; }
   let info = '';
-  if (m.found) info = `${m.name || ''} ${m.product ? '(' + m.product + ')' : ''} · протокол ${m.protocol || '?'} · режим ${m.mode_text || '?'} · DPI ${m.dpi ?? '?'} · LOD ${m.lod ?? '?'} · ${m.grid || ''}`;
+  if (m.found) info = `${m.name || ''} ${m.product ? '(' + m.product + ')' : ''} · протокол ${m.protocol || '?'} · DPI через ${m.feature || '?'} · режим ${m.mode_text || '?'} · DPI ${m.dpi ?? '?'}${m.lod != null ? ' · LOD ' + m.lod : ''} · ${m.grid || ''}`;
   else if (m.error) info = 'Ошибка: ' + m.error;
   else if (d.backend === 'none') info = (d.last_error || 'Управление мышью недоступно') + '. Гонка вооружений работает без него.';
   if (d.last_error && m.found) info += ' · последняя ошибка: ' + d.last_error;

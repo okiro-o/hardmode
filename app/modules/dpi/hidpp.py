@@ -38,7 +38,8 @@ SOFTWARE_ID = 0x0C          # 4-bit tag so we recognise our own replies
 FEATURE_ROOT = 0x0000
 FEATURE_DEVICE_NAME = 0x0005
 FEATURE_ONBOARD_PROFILES = 0x8100
-FEATURE_EXT_ADJUSTABLE_DPI = 0x2202
+FEATURE_EXT_ADJUSTABLE_DPI = 0x2202   # HERO 2 mice (Superlight 2, G502 X, ...)
+FEATURE_ADJUSTABLE_DPI = 0x2201       # older mice (G304/G305, G Pro Wireless, G403, ...)
 
 ERROR_CODES = {
     0x01: "unknown",
@@ -139,6 +140,7 @@ class HidppDevice:
                     pass
             self._handles = []
             self._feature_cache = {}
+            self._dpi_feature = None
 
     @property
     def is_open(self) -> bool:
@@ -244,39 +246,75 @@ class HidppDevice:
         idx = self.feature_index(FEATURE_ONBOARD_PROFILES)
         self.request(idx, 1, bytes([mode & 0xFF]))
 
+    def has_feature(self, feature_id: int) -> bool:
+        try:
+            self.feature_index(feature_id)
+            return True
+        except HidppError:
+            return False
+
     def ensure_host_mode(self) -> bool:
-        """Returns True if the mode had to be switched."""
+        """Returns True if the mode had to be switched. Mice without onboard profiles need nothing."""
+        if not self.has_feature(FEATURE_ONBOARD_PROFILES):
+            return False
         if self.get_onboard_mode() == HOST_MODE:
             return False
         self.set_onboard_mode(HOST_MODE)
         return True
 
-    # extended adjustable DPI --------------------------------------------------
+    # DPI: 0x2202 Extended Adjustable DPI, or 0x2201 Adjustable DPI on older mice --------------
+    _dpi_feature: tuple[int, int] | None = None
+
+    def dpi_feature(self) -> tuple[int, int]:
+        """(feature id, feature index) of the DPI feature this mouse speaks."""
+        if self._dpi_feature is None:
+            for fid in (FEATURE_EXT_ADJUSTABLE_DPI, FEATURE_ADJUSTABLE_DPI):
+                try:
+                    self._dpi_feature = (fid, self.feature_index(fid))
+                    break
+                except HidppError:
+                    continue
+            else:
+                raise HidppError("Мышь не поддерживает управление DPI по HID++ (нет фич 0x2202/0x2201)")
+        return self._dpi_feature
+
     def sensor_count(self) -> int:
-        idx = self.feature_index(FEATURE_EXT_ADJUSTABLE_DPI)
+        _, idx = self.dpi_feature()
         return self.request(idx, 0)[0]
 
     def dpi_parameters(self, sensor: int = 0) -> dict:
-        """{dpi_x, default_x, dpi_y, default_y, lod}"""
-        idx = self.feature_index(FEATURE_EXT_ADJUSTABLE_DPI)
-        r = self.request(idx, 5, bytes([sensor]))
-        return {
-            "sensor": r[0],
-            "dpi_x": (r[1] << 8) | r[2],
-            "default_x": (r[3] << 8) | r[4],
-            "dpi_y": (r[5] << 8) | r[6],
-            "default_y": (r[7] << 8) | r[8],
-            "lod": r[9],
-        }
+        """{dpi_x, default_x, dpi_y, default_y, lod, feature}"""
+        fid, idx = self.dpi_feature()
+        if fid == FEATURE_EXT_ADJUSTABLE_DPI:
+            r = self.request(idx, 5, bytes([sensor]))
+            return {
+                "sensor": r[0],
+                "dpi_x": (r[1] << 8) | r[2],
+                "default_x": (r[3] << 8) | r[4],
+                "dpi_y": (r[5] << 8) | r[6],
+                "default_y": (r[7] << 8) | r[8],
+                "lod": r[9],
+                "feature": "0x2202",
+            }
+        # 0x2201 getSensorDpi(sensorIdx) -> [sensorIdx, dpi(2), defaultDpi(2)]
+        r = self.request(idx, 2, bytes([sensor]))
+        dpi = (r[1] << 8) | r[2]
+        default = (r[3] << 8) | r[4]
+        return {"sensor": r[0], "dpi_x": dpi, "default_x": default, "dpi_y": dpi, "default_y": default,
+                "lod": None, "feature": "0x2201"}
 
     def set_dpi(self, dpi: int, lod: int | None = None, sensor: int = 0, dpi_y: int | None = None) -> dict:
-        idx = self.feature_index(FEATURE_EXT_ADJUSTABLE_DPI)
-        if lod is None or lod == 0:
-            current = self.dpi_parameters(sensor)
-            lod = current["lod"] or 2
-        y = dpi if dpi_y is None else dpi_y
-        params = bytes([sensor, (dpi >> 8) & 0xFF, dpi & 0xFF, (y >> 8) & 0xFF, y & 0xFF, lod & 0xFF])
-        self.request(idx, 6, params)
+        fid, idx = self.dpi_feature()
+        if fid == FEATURE_EXT_ADJUSTABLE_DPI:
+            if lod is None or lod == 0:
+                current = self.dpi_parameters(sensor)
+                lod = current["lod"] or 2
+            y = dpi if dpi_y is None else dpi_y
+            params = bytes([sensor, (dpi >> 8) & 0xFF, dpi & 0xFF, (y >> 8) & 0xFF, y & 0xFF, lod & 0xFF])
+            self.request(idx, 6, params)
+        else:
+            # 0x2201 setSensorDpi(sensorIdx, dpi)
+            self.request(idx, 3, bytes([sensor, (dpi >> 8) & 0xFF, dpi & 0xFF]))
         return self.dpi_parameters(sensor)
 
     def dpi_ranges(self, sensor: int = 0, direction: int = 0) -> list[int]:
@@ -287,15 +325,18 @@ class HidppDevice:
         them. The list ends with a 0x0000 word (Solaar: produce_dpi_list). A word with the top
         three bits set encodes a step between the neighbouring values.
         """
-        idx = self.feature_index(FEATURE_EXT_ADJUSTABLE_DPI)
+        fid, idx = self.dpi_feature()
+        # 0x2202 fn2 getSensorDpiRanges(sensor, direction, page) echoes 3 bytes;
+        # 0x2201 fn1 getSensorDpiList(sensor, ..., page) echoes 1 byte (Solaar: ignore=3 / ignore=1)
+        fn, skip = (2, 3) if fid == FEATURE_EXT_ADJUSTABLE_DPI else (1, 1)
         data = b""
         words: list[int] = []
         for page in range(0, 32):
             try:
-                r = self.request(idx, 2, bytes([sensor, direction, page]))
+                r = self.request(idx, fn, bytes([sensor, direction, page]))
             except HidppError:
                 break
-            body = bytes(r[3:])          # 13 payload bytes per page, a continuous byte stream
+            body = bytes(r[skip:])       # payload bytes per page form one continuous byte stream
             if not body or not any(body):
                 break
             data += body
