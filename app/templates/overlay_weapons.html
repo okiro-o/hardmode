@@ -105,26 +105,40 @@
   if (qs.has('bg') && hex(qs.get('bg'))) document.body.style.background = hex(qs.get('bg'));
 
   // ---- geometry ---------------------------------------------------------------
-  const CUR = { w: 320, h: 120, ih: 120 };        // current weapon box (pre-scale)
-  const NXT = { s: 0.52 };                         // next cards: same box, scaled down
-  const GAP = 26;
-  function layoutFor(index, labels, layout) {
-    const labelH = labels ? 42 : 0;   // label line below the icon box (30px font + margin, pre-scale)
-    const s = index === 0 ? 1 : NXT.s;
+  // Every card box is as wide as its silhouette really is (icon height x aspect ratio), so the
+  // gaps between weapons look the same whatever the weapon (a pistol box is not AWP-wide).
+  const CUR = { h: 120, maxW: 400, minW: 90 };   // current weapon (pre-scale)
+  const NXT = { s: 0.52 };                        // next cards: same geometry, scaled down
+  const GAP = 30;
+  function cardWidth(item) { const a = (item && +item.aspect) || 2.5; return Math.max(CUR.minW, Math.min(CUR.maxW, CUR.h * a)); }
+  // positions for the current list of items -> array of {x, y, s, w, h}
+  function layoutItems(items, labels, layout) {
+    const labelH = labels ? 42 : 0;
+    const out = [];
     if (layout === 'vertical') {
-      const nextH = (CUR.h + labelH) * NXT.s;
-      const y = index === 0 ? 0 : (CUR.h + labelH + GAP) + (index - 1) * (nextH + GAP * 0.8);
-      const x = index === 0 ? 0 : (CUR.w - CUR.w * NXT.s) / 2;   // centre next cards under the current one
-      return { x, y, s, w: CUR.w * s, h: (CUR.h + labelH) * s };
+      const widest = Math.max(...items.map(cardWidth), CUR.minW);
+      let y = 0;
+      items.forEach((item, i) => {
+        const s = i === 0 ? 1 : NXT.s, w = cardWidth(item);
+        if (i === 1) y += GAP;
+        out.push({ x: (widest - w * s) / 2, y, s, w: w * s, h: (CUR.h + labelH) * s, boxW: w });
+        y += (CUR.h + labelH) * s + (i === 0 ? 0 : GAP * 0.8);
+      });
+      return out;
     }
-    const x = index === 0 ? 0 : (CUR.w + GAP) + (index - 1) * (CUR.w * NXT.s + GAP * 0.7);
-    const y = index === 0 ? 0 : (CUR.h - CUR.h * NXT.s) / 2;      // vertically centre next cards on the icon row
-    return { x, y, s, w: CUR.w * s, h: (CUR.h + labelH) * s };
+    let x = 0;
+    items.forEach((item, i) => {
+      const s = i === 0 ? 1 : NXT.s, w = cardWidth(item);
+      const y = i === 0 ? 0 : (CUR.h - CUR.h * NXT.s) / 2;   // vertically centre next cards on the icon row
+      out.push({ x, y, s, w: w * s, h: (CUR.h + labelH) * s, boxW: w });
+      x += w * s + (i === 0 ? GAP : GAP * 0.7);
+    });
+    return out;
   }
-  function stripSize(count, labels, layout) {
+  function stripSize(positions) {
     let w = 0, h = 0;
-    for (let i = 0; i < count; i++) { const p = layoutFor(i, labels, layout); w = Math.max(w, p.x + p.w); h = Math.max(h, p.y + p.h); }
-    return { w, h };
+    for (const p of positions) { w = Math.max(w, p.x + p.w); h = Math.max(h, p.y + p.h); }
+    return { w: w || CUR.minW, h: h || CUR.h };
   }
 
   // ---- state -----------------------------------------------------------------
@@ -136,9 +150,9 @@
     el.className = 'card enter';
     el.dataset.uid = item.uid;
     el.dataset.id = item.id;
-    el.style.setProperty('--w', CUR.w + 'px');
+    el.style.setProperty('--w', cardWidth(item) + 'px');
     el.style.setProperty('--h', CUR.h + 'px');
-    el.style.setProperty('--ih', CUR.ih + 'px');
+    el.style.setProperty('--ih', CUR.h + 'px');
     el.innerHTML = `<div class="iconwrap"><div class="icon" style="--mask:url('${item.icon}')"></div></div>
                     <div class="label"></div>
                     <div class="kills"></div>`;
@@ -149,8 +163,8 @@
 
   // Positions a card. Idempotent: a non-animated call never touches a card that is already
   // targeted at the same slot (so SSE status updates cannot cancel a running slide).
-  function place(el, index, animate) {
-    const p = layoutFor(index, c.labels, c.layout);
+  function place(el, index, animate, positions) {
+    const p = positions[index];
     const key = `${p.x}|${p.y}|${p.s}`;
     if (el.dataset.pos !== key) {
       el.dataset.pos = key;
@@ -187,6 +201,9 @@
     root.style.setProperty('--accent', c.accent);
     root.style.setProperty('--match', c.match_color || '#ff6b6b');
     const items = roulette.running ? roulette.queue : [];
+    const positions = layoutItems(items, c.labels, c.layout);
+    const last = positions[positions.length - 1];
+    const spawnPos = last ? { x: c.layout === 'vertical' ? last.x : last.x + last.w + GAP, y: c.layout === 'vertical' ? last.y + last.h + GAP : last.y } : { x: 0, y: 0 };
     const seen = new Set();
     items.forEach((item, index) => {
       seen.add(item.uid);
@@ -195,9 +212,8 @@
         el = makeCard(item);
         cards.set(item.uid, el);
         // spawn just beyond the last slot and slide in
-        const spawn = layoutFor(Math.max(index, 1) + 1, c.labels, c.layout);
         el.style.transition = 'none';
-        el.style.transform = `translate(${spawn.x}px, ${spawn.y}px) scale(${NXT.s})`;
+        el.style.transform = `translate(${spawnPos.x}px, ${spawnPos.y}px) scale(${NXT.s})`;
         void el.offsetWidth; el.style.transition = '';
       }
       el.classList.toggle('hidden-label', !c.labels);
@@ -205,13 +221,14 @@
       // transition still runs, and we do not depend on requestAnimationFrame (which browsers pause
       // for background tabs - OBS keeps rendering, but a paused page must not stay invisible)
       el.classList.remove('enter');
-      place(el, index, animate);
+      place(el, index, animate, positions);
     });
     for (const [uid, el] of cards) {
       if (!seen.has(uid)) {
         cards.delete(uid);
         const idx = parseInt(el.dataset.idx || '0', 10);
-        const p = layoutFor(idx, c.labels, c.layout);
+        const px = parseFloat(el.dataset.px || '0'), py = parseFloat(el.dataset.py || '0');
+        const p = { x: px, y: py };
         el.classList.add('out');
         el.style.transform = idx > 0
           ? `translate(${p.x}px, ${p.y}px) scale(${NXT.s * 0.9})`          // dropped upcoming card: fade in place
@@ -221,11 +238,11 @@
         setTimeout(() => el.remove(), 650);
       }
     }
-    items.forEach((item, index) => { const el = cards.get(item.uid); if (el) el.dataset.idx = index; });
+    items.forEach((item, index) => { const el = cards.get(item.uid); if (el) { el.dataset.idx = index; el.dataset.px = positions[index].x; el.dataset.py = positions[index].y; } });
 
     // strip scale + alignment. The panel offers left|center|right for both layouts
     // ("слева / сверху", "справа / снизу"); URL users may also type top|middle|bottom.
-    const size = stripSize(Math.max(items.length, 1), c.labels, c.layout);
+    const size = stripSize(positions);
     const sc = +c.scale;
     strip.style.transform = `scale(${sc})`;
     const W = window.innerWidth, H = window.innerHeight;

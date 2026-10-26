@@ -88,7 +88,7 @@ def test_bag_boundary_and_side_switch_show_no_duplicates_in_strip():
         r.queue[0] = both
         r.set_side("CT")
         assert len(set(r.queue)) == len(r.queue), (seed, r.queue)
-        r.update_settings({"include_extras": True})
+        r.update_settings({"include_knife": True, "include_zeus": True})
         assert len(set(r.queue)) == len(r.queue)
 
 

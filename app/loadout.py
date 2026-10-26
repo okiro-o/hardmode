@@ -96,16 +96,21 @@ def validate(loadout: dict) -> list[str]:
     return problems
 
 
-def side_pool_ids(loadout: dict, side: str, include_starting: bool = True, include_extras: bool = False) -> list[str]:
+def side_pool_ids(loadout: dict, side: str, include_starting: bool = True, include_knife: bool = False,
+                  include_zeus: bool = False) -> list[str]:
     """Flat list of weapon ids the roulette may draw from for a side."""
-    side_lo = loadout[side]
+    side_lo = loadout.get(side) or {}
+    if not side_lo:
+        return []
     ids: list[str] = []
     if include_starting:
         ids.append(side_lo[W.CATEGORY_STARTING])
     for category in (W.CATEGORY_PISTOL, W.CATEGORY_MID, W.CATEGORY_RIFLE):
         ids.extend(side_lo[category])
-    if include_extras:
-        ids.extend(w.id for w in W.pool(side, W.CATEGORY_EXTRA))
+    if include_zeus:
+        ids.append("taser")
+    if include_knife:
+        ids.append("knife")
     return W.sort_ids(dict.fromkeys(ids))
 
 

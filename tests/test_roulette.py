@@ -171,3 +171,8 @@ def test_replace_loadout_weapon_during_session_rebuilds_queue():
     r.replace_weapon("T", cat, cur)
     assert cur not in r.pool_ids()
     assert all(q in r.pool_ids() for q in r.queue)
+
+
+def test_legacy_include_extras_maps_to_both_toggles():
+    s = RouletteSettings.from_dict({"include_extras": True})
+    assert s.include_knife and s.include_zeus

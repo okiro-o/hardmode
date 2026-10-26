@@ -14,7 +14,10 @@ notes, still valid as of the 2026-10-22 patch):
 """
 from __future__ import annotations
 
+import os
+import re
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Iterable
 
 T, CT, BOTH = "T", "CT", "BOTH"
@@ -58,6 +61,11 @@ class Weapon:
     def usable_by(self, side: str) -> bool:
         return self.team == BOTH or self.team == side
 
+    @property
+    def aspect(self) -> float:
+        """width / height of the silhouette (from the SVG viewBox), used for tight overlay layout."""
+        return icon_aspect(self.id)
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
@@ -67,6 +75,7 @@ class Weapon:
             "kind": self.kind,
             "gsi": self.gsi_name,
             "icon": self.icon,
+            "aspect": round(self.aspect, 4),
         }
 
 
@@ -132,6 +141,24 @@ GRENADE_GSI_NAMES = {
 }
 LETHAL_GRENADES_HE = {"weapon_hegrenade"}
 LETHAL_GRENADES_FIRE = {"weapon_molotov", "weapon_incgrenade"}
+
+
+@lru_cache(maxsize=None)
+def icon_aspect(weapon_id: str) -> float:
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "icons", f"{weapon_id}.svg")
+    try:
+        with open(path, encoding="utf-8", errors="ignore") as f:
+            head = f.read(4000)
+    except OSError:
+        return 2.5
+    m = re.search(r'viewBox="\s*[\d.]+\s+[\d.]+\s+([\d.]+)\s+([\d.]+)', head)
+    if not m:
+        return 2.5
+    try:
+        w, h = float(m.group(1)), float(m.group(2))
+        return max(0.5, min(5.0, w / h)) if h > 0 else 2.5
+    except ValueError:
+        return 2.5
 
 
 def get(weapon_id: str) -> Weapon:

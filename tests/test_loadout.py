@@ -76,7 +76,8 @@ def test_side_pool_ids():
     ids = L.side_pool_ids(lo, "T")
     assert len(ids) == 1 + 4 + 5 + 5
     assert "glock" in ids
-    ids2 = L.side_pool_ids(lo, "T", include_starting=False, include_extras=True)
+    ids2 = L.side_pool_ids(lo, "T", include_starting=False, include_knife=True, include_zeus=True)
+    assert "knife" not in L.side_pool_ids(lo, "T", include_zeus=True) and "taser" in L.side_pool_ids(lo, "T", include_zeus=True)
     assert "glock" not in ids2 and "knife" in ids2 and "taser" in ids2
 
 
@@ -98,3 +99,10 @@ def test_every_catalog_weapon_has_an_icon_file():
     icons = os.path.join(config.package_dir(), "static", "icons")
     for w in W.CATALOG:
         assert os.path.isfile(os.path.join(icons, w.id + ".svg")), w.id
+
+
+def test_icon_aspect_from_svg():
+    assert abs(W.icon_aspect("ak47") - 88.5 / 32) < 0.01
+    assert abs(W.icon_aspect("hkp2000") - 32.167 / 32) < 0.01
+    assert W.icon_aspect("nope") == 2.5
+    assert W.get("awp").to_dict()["aspect"] > 3

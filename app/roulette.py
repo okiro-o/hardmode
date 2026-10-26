@@ -34,7 +34,8 @@ def _to_int(value: Any, name: str) -> int:
 class RouletteSettings:
     pool_mode: str = "bag"              # "bag" (shuffle bag, no repeats until exhausted) | "random"
     include_starting: bool = True       # starting pistol is part of the pool
-    include_extras: bool = False        # knife / zeus in the pool
+    include_knife: bool = False         # knife in the pool
+    include_zeus: bool = False          # Zeus x27 in the pool
     kills_per_weapon: int = 1           # kills needed before the weapon is "done"
     auto_advance: str = "strict"        # "off" | "strict" (kill with assigned weapon) | "any"
     visible_next: int = 2               # upcoming weapons shown on the overlay
@@ -51,10 +52,13 @@ class RouletteSettings:
         for k, v in (d or {}).items():
             if k in names:
                 setattr(s, k, v)
+            elif k == "include_extras":   # legacy single toggle (< 0.4)
+                s.include_knife = s.include_zeus = bool(v)
         s.kills_per_weapon = max(1, min(20, _to_int(s.kills_per_weapon, "kills_per_weapon")))
         s.visible_next = max(0, min(5, _to_int(s.visible_next, "visible_next")))
         s.include_starting = bool(s.include_starting)
-        s.include_extras = bool(s.include_extras)
+        s.include_knife = bool(s.include_knife)
+        s.include_zeus = bool(s.include_zeus)
         if s.pool_mode not in ("bag", "random"):
             s.pool_mode = "bag"
         if s.auto_advance not in ("off", "strict", "any"):
@@ -140,7 +144,8 @@ class Roulette:
             self.loadout,
             side or self.side,
             include_starting=self.settings.include_starting,
-            include_extras=self.settings.include_extras,
+            include_knife=self.settings.include_knife,
+            include_zeus=self.settings.include_zeus,
         )
 
     # ----------------------------------------------------------------- loadout
@@ -465,7 +470,8 @@ class Roulette:
         self.settings = new
         pool_changed = (
             old.include_starting != new.include_starting
-            or old.include_extras != new.include_extras
+            or old.include_knife != new.include_knife
+            or old.include_zeus != new.include_zeus
             or old.pool_mode != new.pool_mode
         )
         if self.running or self.queue:
