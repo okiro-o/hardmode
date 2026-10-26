@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import config, loadout as L, steam, weapons as W
+from . import autostart, config, loadout as L, steam, weapons as W
 from .events import Broker
 from .gsi import GsiTracker, build_cfg
 from .hotkeys import HotkeyManager
@@ -31,7 +31,7 @@ from .modules.dpi import DpiService, DpiSettings
 from .roulette import Roulette
 from .twitch_irc import IrcMessage, TwitchChatReader
 
-VERSION = "0.7.0"
+VERSION = "0.8.0"
 KILL_ADVANCE_GRACE = 1.5   # seconds: ignore a manual "next" right after a kill already advanced
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 log = logging.getLogger("cs2roulette")
@@ -218,6 +218,9 @@ class AppState:
             "gsi_token": self.settings.gsi_token,
             "port": self.settings.port,
             "data_dir": config.data_dir(),
+            "log_path": os.path.join(config.data_dir(), "app.log"),
+            "mode": "tray" if os.environ.get("CS2R_MODE") == "tray" else "console",
+            "autostart": {"available": autostart.available(), "enabled": autostart.is_enabled()},
             "cs2_cfg_dir": steam.cs2_cfg_dir(),
             "cfg_installed": cfg["path"],
             "cfg_state": cfg["state"],
@@ -607,6 +610,17 @@ def create_app() -> FastAPI:
     @app.get("/api/hotkeys")
     async def api_hotkeys() -> dict:
         return state.hotkeys.describe()
+
+    @app.post("/api/autostart")
+    async def api_autostart(request: Request) -> dict:
+        body = await _json(request)
+        if not autostart.available():
+            raise HTTPException(400, "Автозапуск доступен только в Windows")
+        try:
+            enabled = autostart.set_enabled(bool(body.get("enabled")))
+        except OSError as e:
+            raise HTTPException(500, f"Не удалось изменить автозапуск: {e}")
+        return {"enabled": enabled, "command": autostart.launch_command()}
 
     # ------------------------------------------------------------------- chat
     @app.post("/api/chat/verify")

@@ -471,7 +471,11 @@
 
       <section>
         <h2>Разное</h2>
-        <div class="hint">Папка данных: <code id="data-dir"></code><br>Порт: <code id="port"></code> (меняется в <code>data/settings.json</code>, нужен перезапуск)</div>
+        <div class="form">
+          <label class="inline"><input type="checkbox" id="autostart-toggle" onchange="toggleAutostart(this)"> Автозапуск с Windows (в трее)</label>
+          <div class="hint" id="mode-info" style="align-self:center;"></div>
+        </div>
+        <div class="hint" style="margin-top:8px;">Папка данных: <code id="data-dir"></code><br>Лог: <code id="log-path"></code><br>Порт: <code id="port"></code> (меняется в <code>data/settings.json</code>, нужен перезапуск)</div>
       </section>
     </div>
 
@@ -583,6 +587,7 @@ document.addEventListener('click', closeAllDd);
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAllDd(); });
 enhanceSelects();
 
+async function toggleAutostart(el) { const r = await post('/api/autostart', {enabled: el.checked}); if (!r) { el.checked = !el.checked; return; } toast(r.enabled ? 'Автозапуск включён' : 'Автозапуск выключен'); }
 async function saveJwt() { const v = $('chat-jwt').value.trim(); if (!v) return toast('Вставьте токен', true); const r = await post('/api/settings', {chat: {se_jwt: v}}); if (r) { $('chat-jwt').value = ''; toast('Токен сохранён, нажмите «Проверить токен»'); refreshState(); } }
 async function clearJwt() { if (!confirm('Удалить токен StreamElements из настроек?')) return; const r = await post('/api/settings', {chat: {se_jwt: ''}}); if (r) { toast('Токен удалён'); refreshState(); } }
 async function verifyChat() { toast('Проверяю…'); const r = await post('/api/chat/verify', {}); if (!r) return; if (r.ok) toast('Канал: ' + (r.channel.username || r.channel.id)); else toast(r.error || 'Ошибка', true); refreshState(); }
@@ -707,7 +712,9 @@ function renderMisc() {
   $('cs2-dir').textContent = S.cs2_cfg_dir || 'не найдена автоматически — скачайте конфиг и положите в game/csgo/cfg вручную';
   $('cfg-installed').textContent = S.cfg_state === 'ok' ? 'установлен: ' + S.cfg_installed : S.cfg_state === 'stale' ? 'устарел (другой токен/порт) — нажмите «Установить конфиг в CS2»: ' + S.cfg_installed : 'не установлен';
   $('gsi-token').textContent = S.gsi_token;
-  $('data-dir').textContent = S.data_dir; $('port').textContent = S.port;
+  $('data-dir').textContent = S.data_dir; $('port').textContent = S.port; $('log-path').textContent = S.log_path || '';
+  const a = S.autostart || {}; const at = $('autostart-toggle'); at.disabled = !a.available; if (document.activeElement !== at) at.checked = !!a.enabled;
+  $('mode-info').textContent = (S.mode === 'tray' ? 'Запущено в трее: иконка рядом с часами, «Выход» там же.' : 'Запущено с консолью (режим отладки). Обычный запуск — run.bat, он уходит в трей.') + (a.available ? '' : ' Автозапуск доступен только в Windows.');
   const g = S.gsi; const badTok = g.rejected_auth ? ` · отклонено по токену: ${g.rejected_auth} (переустановите конфиг и перезапустите CS2)` : '';
   $('gsi-detail').textContent = g.payloads ? `Пакетов: ${g.payloads} · игрок: ${g.name||'?'} · режим: ${g.mode||'?'} · киллов в раунде: ${g.round_kills??'-'} · за матч: ${g.match_kills??'-'}` + badTok : (g.rejected_auth ? 'CS2 шлёт данные, но токен не совпадает' + badTok : '');
 }

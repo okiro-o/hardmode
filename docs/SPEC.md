@@ -2,7 +2,7 @@
 
 Этот документ — источник правды о приложении: зачем оно, как устроено, какие решения приняты
 и почему, что отклонено, что в бэклоге. Обновляется при каждом значимом изменении.
-Последнее обновление: 2026-10-26, версия приложения 0.7.0.
+Последнее обновление: 2026-10-26, версия приложения 0.8.0.
 
 ## 1. Назначение и пользователь
 
@@ -39,9 +39,13 @@ push-обновлений, обычные HTML/JS-страницы без сбо
 
 | Путь | Назначение |
 |---|---|
-| `run.bat` / `run.sh` | создают venv, ставят зависимости, запускают `python -m app`; `chcp 65001`, пауза при ошибке |
-| `build.bat`, `tools/entry.py` | PyInstaller `--onedir` сборка (опционально) |
-| `app/__main__.py` | точка входа; если порт занят — открывает панель и выходит |
+| `run.bat` | создаёт venv, ставит зависимости, запускает трей-режим через `pythonw.exe start_tray.pyw` (без консоли) |
+| `run-console.bat` / `run.sh` | консольный режим (`python -m app --console`), лог на экране |
+| `start_tray.pyw` | лаунчер для pythonw и автозапуска |
+| `build.bat`, `tools/entry.py` | PyInstaller `--onedir --noconsole` сборка `dist/cs2-roulette/cs2-roulette.exe` (иконка `app/static/icon.ico`, `--hidden-import hid`, pystray/PIL) |
+| `app/__main__.py` | точка входа: режим трей/консоль (`want_tray`: `--tray`, frozen → трей, `--console` отменяет), лог `data/app.log` (RotatingFileHandler 1 МБ×3), занятый порт → открыть панель и выйти |
+| `app/tray.py` | pystray-иконка (глиф рисуется Pillow), uvicorn в потоке, меню: панель, автозапуск, папка данных, выход; watchdog уведомляет при падении сервера |
+| `app/autostart.py` | HKCU\...\Run `cs2-roulette` → `pythonw start_tray.pyw` или `cs2-roulette.exe --tray` |
 | `app/main.py` | FastAPI: панель, оверлеи, `/events` (SSE), `/gsi`, API, middleware same-origin, lifespan |
 | `app/config.py` | `AppSettings` (port, gsi_token, roulette, dpi, overlay, hotkeys), пути `data/` |
 | `app/events.py` | SSE-брокер (очереди на подписчика, первое событие — полный снапшот) |
@@ -258,6 +262,16 @@ current, home, homecolor, color, accent, bg, debug`.
   Persistent Profile), реальные значения `map.mode` в Premier.
 - Возможные улучшения: пул «обе стороны» для Deathmatch; экспорт статистики сессии; звук при
   килле/кручении; PyInstaller-сборка без Python.
+
+## 9a. Запуск, трей, сборка
+
+- Обычный запуск — трей (`run.bat` → `pythonw start_tray.pyw`); uvicorn работает в фоновом
+  потоке (`uvicorn.Server`, `capture_signals` вне главного потока ничего не делает), иконка
+  pystray держит главный поток. `print()` в windowed-режиме безопасен (stdout None).
+- `--console` возвращает консоль и StreamHandler; frozen exe по умолчанию трей.
+- Автозапуск: переключатель в трее и в панели («Общее → Разное», `POST /api/autostart`).
+- Сборка только на Windows (`build.bat`); на macOS кросс-сборка невозможна. SmartScreen без
+  подписи предупреждает один раз. `--onedir` ради антивирусов.
 
 ## 10a. Производительность (замер 2026-10-26, macOS, фоновый режим)
 
