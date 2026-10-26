@@ -125,7 +125,7 @@ class HotkeySettings:
     reroll: str = "F8"
     undo: str = "F7"
     dpi_spin: str = "F6"
-    enabled: bool = True
+    enabled: bool = False       # off by default: kills/deaths drive everything through GSI
 
     ACTIONS = ("next", "reroll", "undo", "dpi_spin")
 

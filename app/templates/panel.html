@@ -431,15 +431,17 @@
       </section>
 
       <section>
-        <h2>Хоткеи</h2>
-        <div class="form">
-          <label class="f"><span>Следующее оружие</span><input type="text" data-key="hotkeys.next" placeholder="F9"></label>
-          <label class="f"><span>Перекрутить оружие</span><input type="text" data-key="hotkeys.reroll" placeholder="F8"></label>
-          <label class="f"><span>Отмена</span><input type="text" data-key="hotkeys.undo" placeholder="F7"></label>
-          <label class="f"><span>Крутить DPI</span><input type="text" data-key="hotkeys.dpi_spin" placeholder="F6"></label>
-          <label class="inline full"><input type="checkbox" data-key="hotkeys.enabled"> Хоткеи включены</label>
-        </div>
-        <div class="hint" style="margin-top:8px;">Формат: <span class="kbd">F9</span>, <span class="kbd">ctrl+alt+K</span>, <span class="kbd">numpad+</span>, <span class="kbd">F13</span>… Клавиша перехватывается глобально, игра её не увидит. При автопереходе после килла нажимать «Следующее» не нужно: нажатие в течение 1,5 с после килла игнорируется. Если Steam/CS2 запущены от администратора, запускайте run.bat тоже от администратора. Статус: <span id="hk-status">—</span></div>
+        <h2>Хоткеи <span class="right hint">необязательно: килл и смерть обрабатываются сами</span></h2>
+        <label class="inline"><input type="checkbox" data-key="hotkeys.enabled"> Глобальные хоткеи включены (срабатывают в игре, не только в панели)</label>
+        <details style="margin-top:6px;"><summary>Клавиши и статус</summary>
+          <div class="form" style="margin-top:8px;">
+            <label class="f"><span>Следующее оружие</span><input type="text" data-key="hotkeys.next" placeholder="F9"></label>
+            <label class="f"><span>Перекрутить оружие</span><input type="text" data-key="hotkeys.reroll" placeholder="F8"></label>
+            <label class="f"><span>Отмена</span><input type="text" data-key="hotkeys.undo" placeholder="F7"></label>
+            <label class="f"><span>Крутить DPI</span><input type="text" data-key="hotkeys.dpi_spin" placeholder="F6"></label>
+          </div>
+          <div class="hint" style="margin-top:8px;">Формат: <span class="kbd">F9</span>, <span class="kbd">ctrl+alt+K</span>, <span class="kbd">numpad+</span>, <span class="kbd">F13</span>… Клавиша перехватывается на уровне Windows (как хоткеи OBS), игра её не видит. Если срабатывает только при свёрнутой игре, значит Steam/CS2 запущены от администратора: запускайте run.bat тоже от администратора или уберите запуск от админа у Steam. Статус: <span id="hk-status">—</span></div>
+        </details>
       </section>
 
       <section id="sec-chat">
@@ -665,9 +667,14 @@ function renderHeader() {
   const chipH = $('chip-held'); const held = g.connected && g.held ? (weapons[g.held]?weapons[g.held].name:g.held) : (g.connected && g.held_raw ? g.held_raw.replace('weapon_','') : '—');
   chipH.querySelector('b').textContent = held; chipH.className = 'chip' + ((r.running && r.queue[0] && g.held===r.queue[0].id) ? ' ok' : '');
   const hk = S.hotkeys; const chipK = $('chip-hk');
-  if (!hk.available) { chipK.className='chip bad'; chipK.querySelector('b').textContent='недоступны на этой ОС'; }
-  else if (!hk.enabled) { chipK.className='chip'; chipK.querySelector('b').textContent='выключены'; }
-  else { const vals = Object.values(hk.status||{}); const ok = vals.filter(v=>v==='ok'||String(v).startsWith('polling')).length; chipK.className='chip '+(ok?'ok':'warn'); chipK.querySelector('b').textContent = ok ? `${hk.bindings.next||'—'} / ${hk.bindings.reroll||'—'} / ${hk.bindings.dpi_spin||'—'}` : 'не назначены'; }
+  if (!hk.enabled) { chipK.style.display = 'none'; }
+  else {
+    chipK.style.display = '';
+    if (!hk.available) { chipK.className='chip bad'; chipK.querySelector('b').textContent='недоступны на этой ОС'; }
+    else { const vals = Object.values(hk.status||{}); const ok = vals.filter(v=>v==='ok'||String(v).startsWith('polling')).length; chipK.className='chip '+(ok?'ok':'warn'); chipK.querySelector('b').textContent = ok ? `${hk.bindings.next||'—'} / ${hk.bindings.reroll||'—'} / ${hk.bindings.dpi_spin||'—'}` : 'не назначены'; }
+  }
+  const showKbd = hk.enabled && hk.available;
+  document.querySelectorAll('#kbd-next, #kbd-reroll, #kbd-undo, #kbd-dpi').forEach(el => el.style.display = showKbd ? '' : 'none');
   $('hk-status').textContent = Object.entries(hk.status||{}).map(([k,v])=>`${HK_NAMES[k]||k}: ${v}`).join(' · ') || '—';
   const chipE = $('chip-elev'); if (hk.elevation_warning) { chipE.style.display=''; chipE.querySelector('b').textContent = hk.elevation_warning; } else chipE.style.display='none';
   document.querySelectorAll('.sidebtn').forEach(b => b.classList.toggle('active', b.dataset.side===r.side));
