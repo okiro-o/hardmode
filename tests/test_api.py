@@ -287,3 +287,26 @@ def test_slot_api_and_reject_notification(client):
     while _t.time() < end and not sent:
         _t.sleep(0.05)
     assert sent and sent[0].startswith("❌ Eve") and "вне диапазона" in sent[0]
+
+
+def test_sse_clients_tracked_with_obs_detection(client):
+    import threading, time as _t
+    stop = threading.Event()
+
+    def listen(ua, ref):
+        with client.stream("GET", "/events", headers={"User-Agent": ua, "Referer": ref}) as r:
+            for line in r.iter_lines():
+                if stop.is_set():
+                    break
+    t1 = threading.Thread(target=listen, args=("Mozilla/5.0 Chrome/150 OBS/33.0.0", "http://127.0.0.1:17890/overlay/weapons"), daemon=True)
+    t2 = threading.Thread(target=listen, args=("Mozilla/5.0 Chrome/150", "http://127.0.0.1:17890/"), daemon=True)
+    t1.start(); t2.start()
+    end = _t.time() + 3
+    cl = {}
+    while _t.time() < end:
+        cl = client.get("/api/state").json()["clients"]
+        if cl.get("weapons", {}).get("obs") == 1 and cl.get("panel", {}).get("browser") == 1:
+            break
+        _t.sleep(0.05)
+    assert cl.get("weapons", {}).get("obs") == 1 and cl.get("panel", {}).get("browser") == 1
+    stop.set()

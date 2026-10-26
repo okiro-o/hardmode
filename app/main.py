@@ -31,7 +31,7 @@ from .modules.dpi import DpiService, DpiSettings
 from .roulette import Roulette
 from .twitch_irc import IrcMessage, TwitchChatReader
 
-VERSION = "0.8.3"
+VERSION = "0.9.0"
 KILL_ADVANCE_GRACE = 1.5   # seconds: ignore a manual "next" right after a kill already advanced
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 log = logging.getLogger("cs2roulette")
@@ -84,6 +84,7 @@ class AppState:
         self._last_kill_advance = 0.0
         self._last_gsi_error_log = 0.0
         self.roulette.bind(self._on_roulette_change)
+        self.broker.on_clients_changed = lambda: self.broker.publish("clients", self.broker.clients())
 
     # --------------------------------------------------------------- helpers
     def save_state(self) -> None:
@@ -211,6 +212,7 @@ class AppState:
             "dpi": self.dpi.snapshot(),
             "chat": self.chat.status(),
             "twitch": self.twitch.status(),
+            "clients": self.broker.clients(),
             "gsi": self.gsi.status.to_dict(),
             "hotkeys": self.hotkeys.describe(),
             "overlay": self.settings.overlay.__dict__,
@@ -379,8 +381,14 @@ def create_app() -> FastAPI:
 
     # -------------------------------------------------------------------- SSE
     @app.get("/events")
-    async def events() -> StreamingResponse:
-        gen = state.broker.stream(state.full_snapshot)
+    async def events(request: Request) -> StreamingResponse:
+        # Who is listening: which page (from the Referer) and whether it is an OBS browser source
+        # (obs-browser appends "OBS/x.y.z" to its user agent). Used by the Startup checklist.
+        ua = request.headers.get("user-agent", "")
+        ref = urlsplit(request.headers.get("referer", "")).path
+        page = "panel" if ref in ("", "/") else ref.rsplit("/", 1)[-1] or "other"
+        meta = {"page": page, "obs": "OBS/" in ua}
+        gen = state.broker.stream(state.full_snapshot, meta=meta)
         return StreamingResponse(gen, media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 

@@ -89,6 +89,26 @@
   .tokenbox button:hover { background:var(--panel3); }
   .tokenbox button.eye { width:44px; padding:0; font-size:16px; }
   .tokenbox button.primary { background:var(--accent); color:#1a1a1a; }
+  /* button groups */
+  .controls { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:10px; margin-top:10px; min-width:0; }
+  .bg { background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:8px 10px 10px; min-width:0; }
+  .bg .bg-l { font-size:11px; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); margin-bottom:6px; }
+  .bg .bg-b { display:flex; gap:8px; flex-wrap:wrap; }
+  .bg .bg-b > button { flex:1 1 auto; min-width:0; }
+  .bg .bg-b > button.primary { flex:1.4 1 auto; }
+  .bg .bg-b input { flex:1 1 160px; min-width:0; }
+  /* startup checklist */
+  .check { display:flex; align-items:flex-start; gap:14px; padding:12px 14px; border:1px solid var(--line); border-radius:10px; background:var(--panel2); margin-bottom:8px; }
+  .check .mark { width:28px; height:28px; border-radius:50%; flex:0 0 auto; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:15px; background:#2a3040; color:var(--muted); }
+  .check.ok .mark { background:rgba(76,217,100,.18); color:var(--ok); }
+  .check.warn .mark { background:rgba(255,209,102,.18); color:var(--accent); }
+  .check.bad .mark { background:rgba(255,94,94,.18); color:var(--bad); }
+  .check .body { flex:1; min-width:0; }
+  .check .t { font-weight:700; }
+  .check .t small { color:var(--muted); font-weight:500; margin-left:6px; }
+  .check .s { font-size:12.5px; color:var(--muted); margin-top:2px; }
+  .check .acts { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; flex:0 0 auto; }
+  .check .acts button { padding:6px 10px; font-size:13px; }
   /* weapon picker popover */
   .picker { position:absolute; z-index:40; background:var(--panel2); border:1px solid var(--line2); border-radius:12px; padding:10px; box-shadow:0 16px 40px rgba(0,0,0,.6); width:440px; display:none; }
   .picker.open { display:block; animation: ddin .12s ease-out; }
@@ -183,6 +203,7 @@
     <span class="chip bad" id="chip-elev" style="display:none"><span class="dot"></span><b></b></span>
   </div>
   <nav class="maintabs">
+    <button data-tab="startup" onclick="showMainTab('startup')">⚡ Startup</button>
     <button data-tab="weapons" onclick="showMainTab('weapons')">🔫 Оружие</button>
     <button data-tab="dpi" onclick="showMainTab('dpi')">🎡 DPI</button>
     <button data-tab="general" onclick="showMainTab('general')">⚙ Общее</button>
@@ -190,6 +211,22 @@
 </header>
 
 <main>
+  <!-- ================= TAB: STARTUP ================= -->
+  <div class="tabpage" id="tab-startup">
+    <div class="col">
+      <section>
+        <h2>Startup <span class="right hint" id="startup-summary"></span></h2>
+        <div id="checks"></div>
+      </section>
+    </div>
+    <div class="col">
+      <section>
+        <h2>По желанию</h2>
+        <div id="checks-optional"></div>
+      </section>
+    </div>
+  </div>
+
   <!-- ================= TAB: WEAPONS ================= -->
   <div class="tabpage" id="tab-weapons">
     <div class="col">
@@ -201,14 +238,16 @@
           </span>
         </h2>
         <div class="queue" id="queue"><span class="muted">Сгенерируйте лоадаут и нажмите «Старт»</span></div>
-        <div class="row" style="margin-top:10px;">
-          <button class="primary big" id="btn-start" onclick="post('/api/session/start')">▶ Старт</button>
-          <button class="big" id="btn-next" onclick="post('/api/roulette/next')">Следующее <span class="kbd" id="kbd-next">F9</span></button>
-          <button id="btn-reroll" onclick="post('/api/roulette/reroll')">Перекрутить <span class="kbd" id="kbd-reroll">F8</span></button>
-          <button id="btn-undo" onclick="post('/api/roulette/undo')">↶ Отмена <span class="kbd" id="kbd-undo">F7</span></button>
-          <span style="flex:1"></span>
-          <button id="btn-stop" onclick="post('/api/session/stop')" title="Пауза: очередь и статистика сохраняются">⏸ Пауза</button>
-          <button class="danger" onclick="if(confirm('Начать заново? Очередь и статистика будут сброшены.')) post('/api/session/reset')" title="Сбросить очередь и статистику">⟲ Сброс</button>
+        <div class="controls">
+          <div class="bg"><div class="bg-l">Сессия</div><div class="bg-b">
+            <button class="primary big" id="btn-start" onclick="post('/api/session/start')">▶ Старт</button>
+            <button class="big" id="btn-stop" onclick="post('/api/session/stop')" title="Пауза: очередь и статистика сохраняются">⏸ Пауза</button>
+            <button class="big danger" onclick="if(confirm('Начать заново? Очередь и статистика будут сброшены.')) post('/api/session/reset')" title="Сбросить очередь и статистику">⟲ Сброс</button>
+          </div></div>
+          <div class="bg"><div class="bg-l">Оружие</div><div class="bg-b">
+            <button class="primary big" id="btn-next" onclick="post('/api/roulette/next')">Следующее <span class="kbd" id="kbd-next">F9</span></button>
+            <button class="big" id="btn-reroll" onclick="post('/api/roulette/reroll')">Перекрутить <span class="kbd" id="kbd-reroll">F8</span></button>
+          </div></div>
         </div>
         <div class="stats">
           <div class="stat"><div class="v" id="st-completed">0</div><div class="l">оружий пройдено</div></div>
@@ -229,10 +268,10 @@
       <section id="sec-loadout">
         <h2>Лоадаут
           <span class="right">
-            <button class="primary" onclick="post('/api/loadout/generate',{sides:['T','CT']})">🎲 Сгенерировать весь</button>
-            <button onclick="post('/api/loadout/generate',{sides:['T']})">Только T</button>
-            <button onclick="post('/api/loadout/generate',{sides:['CT']})">Только CT</button>
-            <button onclick="copyLoadout()">Копировать текстом</button>
+            <button class="primary" onclick="post('/api/loadout/generate',{sides:['T','CT']})">🎲 Сгенерировать</button>
+            <button onclick="post('/api/loadout/generate',{sides:['T']})">только T</button>
+            <button onclick="post('/api/loadout/generate',{sides:['CT']})">только CT</button>
+            <button onclick="copyLoadout()" title="Скопировать список оружия текстом">⧉</button>
           </span>
         </h2>
         <div class="row" style="margin-bottom:6px;">
@@ -304,20 +343,24 @@
     <div class="col">
       <section id="sec-dpi">
         <h2>DPI-рулетка</h2>
-        <div class="row" style="align-items:stretch; gap:14px;">
+        <div class="row" style="align-items:stretch; gap:14px; flex-wrap:wrap;">
           <div class="dpibox"><div class="l">сейчас</div><div class="v" id="dpi-current">—</div><div class="l">DPI</div></div>
-          <div style="flex:1; display:flex; flex-direction:column; gap:8px; min-width:0;">
-            <div class="row">
-              <button class="primary big" id="btn-dpi-spin" onclick="post('/api/dpi/spin',{reason:'manual'})">🎡 Крутить <span class="kbd" id="kbd-dpi">F6</span></button>
-              <button onclick="post('/api/dpi/home')" title="Применить обычный DPI из настроек">Вернуть мой DPI</button>
-              <input type="number" id="dpi-manual" class="inlinefield" min="100" max="44000" step="10" placeholder="DPI">
-              <button onclick="applyManualDpi()">Применить</button>
+          <div style="flex:1 1 320px; display:flex; flex-direction:column; gap:8px; min-width:0;">
+            <div class="controls" style="margin-top:0;">
+              <div class="bg"><div class="bg-l">Колесо</div><div class="bg-b">
+                <button class="primary big" id="btn-dpi-spin" onclick="post('/api/dpi/spin',{reason:'manual'})">🎡 Крутить <span class="kbd" id="kbd-dpi">F6</span></button>
+                <button class="big" onclick="post('/api/dpi/home')" title="Применить обычный DPI из настроек">Вернуть мой DPI</button>
+              </div></div>
+              <div class="bg"><div class="bg-l">Мышь</div><div class="bg-b">
+                <button onclick="probeMouse()">🔍 Проверить</button>
+                <button onclick="post('/api/dpi/hostmode')" title="Перевести мышь в host-режим: сенсор принимает DPI от программ только в нём (в G HUB это «On-Board Memory Mode» выкл.)">Host-режим</button>
+              </div></div>
+              <div class="bg" style="grid-column:1 / -1;"><div class="bg-l">Поставить DPI вручную</div><div class="bg-b">
+                <input type="number" id="dpi-manual" min="100" max="44000" step="10" placeholder="например, 1600" onkeydown="if(event.key==='Enter') applyManualDpi()">
+                <button onclick="applyManualDpi()" style="flex:0 0 auto;">Применить</button>
+              </div></div>
             </div>
-            <div class="row">
-              <button onclick="probeMouse()">🔍 Проверить мышь</button>
-              <button onclick="post('/api/dpi/hostmode')" title="Перевести мышь в host-режим: сенсор принимает DPI от программ только в нём (в G HUB это «On-Board Memory Mode» выкл.)">Host-режим</button>
-            </div>
-            <div class="hint" id="dpi-mouse-info">Нажмите «Проверить мышь», чтобы найти Superlight 2 и прочитать текущий DPI.</div>
+            <div class="hint" id="dpi-mouse-info">Нажмите «Проверить», чтобы найти мышь и прочитать текущий DPI.</div>
           </div>
         </div>
         <div class="log" id="dpi-log" style="margin-top:10px; max-height:180px;"></div>
@@ -649,9 +692,10 @@ function showMainTab(name) {
 }
 (function initTab() {
   let name = (location.hash || '').replace('#', '');
-  if (!['weapons', 'dpi', 'general'].includes(name)) { try { name = localStorage.getItem('cs2r.tab') || 'weapons'; } catch (e) { name = 'weapons'; } }
-  if (!['weapons', 'dpi', 'general'].includes(name)) name = 'weapons';
-  showMainTab(name);
+  if (!['startup', 'weapons', 'dpi', 'general'].includes(name)) { try { name = localStorage.getItem('cs2r.tab') || ''; } catch (e) { name = ''; } }
+  if (!['startup', 'weapons', 'dpi', 'general'].includes(name)) name = '';
+  showMainTab(name || 'weapons');
+  window.__tabChosen = !!name;
 })();
 
 // ------------------------------------------------------------------ render
@@ -678,7 +722,7 @@ function renderHeader() {
   $('hk-status').textContent = Object.entries(hk.status||{}).map(([k,v])=>`${HK_NAMES[k]||k}: ${v}`).join(' · ') || '—';
   const chipE = $('chip-elev'); if (hk.elevation_warning) { chipE.style.display=''; chipE.querySelector('b').textContent = hk.elevation_warning; } else chipE.style.display='none';
   document.querySelectorAll('.sidebtn').forEach(b => b.classList.toggle('active', b.dataset.side===r.side));
-  $('kbd-next').textContent = hk.bindings.next || '—'; $('kbd-reroll').textContent = hk.bindings.reroll || '—'; $('kbd-undo').textContent = hk.bindings.undo || '—';
+  $('kbd-next').textContent = hk.bindings.next || '—'; $('kbd-reroll').textContent = hk.bindings.reroll || '—';
 }
 
 function renderQueue() {
@@ -690,7 +734,7 @@ function renderQueue() {
     q.innerHTML = r.queue.map((w,i) => `<div class="q ${i===0?'cur':'nxt'}"><div class="tag">${i===0?'сейчас'+(r.kills_per_weapon>1?` · ${r.current_kills}/${r.kills_per_weapon}`:''):'далее'}</div><div class="icon" style="--mask:url('${w.icon}')"></div><div class="name">${esc(w.name)}</div></div>${i===0?'<div style="font-size:28px;color:var(--muted)">›</div>':''}`).join('');
   }
   $('btn-start').disabled = !r.loadout || r.running; $('btn-start').textContent = r.paused ? '▶ Продолжить' : '▶ Старт';
-  $('btn-next').disabled = !r.running; $('btn-reroll').disabled = !r.running; $('btn-undo').disabled = !r.can_undo; $('btn-stop').disabled = !r.running;
+  $('btn-next').disabled = !r.running; $('btn-reroll').disabled = !r.running; $('btn-stop').disabled = !r.running;
   $('st-completed').textContent = r.completed; $('st-kills').textContent = r.kills_total; $('st-wrong').textContent = r.kills_wrong_weapon; $('st-amb').textContent = r.kills_ambiguous;
   const log = $('log');
   log.innerHTML = (r.log||[]).slice().reverse().map(e => { let cls = e.kind; if (e.kind==='kill') cls += e.matched ? ' ok' : ' no'; return `<div class="${esc(cls)}"><span class="t">${fmtTime(e.t)}</span><span>${esc(e.text)}</span></div>`; }).join('');
@@ -808,7 +852,59 @@ function renderSizes() {
   $('size-dpi').textContent = '600×750'; $('size-dpi-2').textContent = '600×750';
 }
 
-function renderAll() { if (!S) return; renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); renderChat(); renderWheel(); }
+function renderChecks() {
+  const g = S.gsi || {}, d = S.dpi || {}, c = S.chat || {}, t = S.twitch || {}, cl = S.clients || {}, r = S.roulette || {};
+  const obs = p => (cl[p] && cl[p].obs) || 0, brw = p => (cl[p] && cl[p].browser) || 0;
+  const item = (cls, title, sub, acts, note) => `<div class="check ${cls}"><div class="mark">${cls==='ok'?'✓':cls==='bad'?'!':cls==='warn'?'•':'–'}</div><div class="body"><div class="t">${title}${note?`<small>${note}</small>`:''}</div><div class="s">${sub}</div></div><div class="acts">${acts||''}</div></div>`;
+  const req = [];
+  // 1. GSI config + data
+  let cls = 'bad', sub = '', acts = `<button class="primary" onclick="installCfg()">Установить конфиг</button>`;
+  if (g.connected) { cls = 'ok'; sub = `данные идут от ${g.name || 'игрока'}${g.map_name ? ', карта ' + g.map_name : ', игра в меню'}`; acts = ''; }
+  else if (g.rejected_auth && g.rejected_age != null && g.rejected_age < 120) { cls = 'warn'; sub = 'CS2 шлёт пакеты со старым токеном: перезапустите игру'; acts = ''; }
+  else if (S.cfg_state === 'ok') { cls = 'warn'; sub = g.payloads ? 'конфиг на месте, но пакетов нет больше 30 с: игра закрыта?' : 'конфиг на месте, пакетов ещё не было: запустите или перезапустите CS2'; acts = ''; }
+  else if (S.cfg_state === 'stale') { sub = 'конфиг устарел (другой токен или порт)'; }
+  else if (!S.cs2_cfg_dir) { sub = 'папка CS2 не найдена: скачайте конфиг на вкладке «Общее → Дополнительно» и положите в game/csgo/cfg'; acts = ''; }
+  else { sub = 'конфиг ещё не установлен; после установки перезапустите CS2'; }
+  req.push(item(cls, 'CS2: данные из игры', sub, acts));
+  // 2. Loadout
+  if (r.loadout) req.push(item('ok', 'Лоадаут', r.running ? 'сгенерирован, гонка идёт' : 'сгенерирован, выставьте его в игре и нажмите «Старт»', `<button onclick="showMainTab('weapons')">Открыть</button>`));
+  else req.push(item('warn', 'Лоадаут', 'ещё не сгенерирован', `<button class="primary" onclick="post('/api/loadout/generate',{sides:['T','CT']})">Сгенерировать</button>`));
+  // 3. OBS: weapon widget
+  const wObs = obs('weapons'), lObs = obs('loadout'), dObs = obs('dpi');
+  req.push(item(wObs ? 'ok' : 'warn', 'OBS: виджет оружия', wObs ? `подключён из OBS (${wObs})` : (brw('weapons') ? 'открыт только в браузере, в OBS источника пока нет' : 'добавьте источник «Браузер» с этой ссылкой: ' + (S.urls ? S.urls.overlay_weapons : '')), `<button onclick="copyText('url-weapons')">Скопировать ссылку</button>`));
+  // 4. Mouse (if DPI enabled)
+  const ds = d.settings || {}, m = d.mouse || {};
+  if (ds.enabled) {
+    let mc = 'warn', ms = 'нажмите «Проверить», чтобы найти мышь', ma = `<button class="primary" onclick="probeMouse()">Проверить</button>`;
+    if (d.backend === 'none') { mc = 'bad'; ms = d.last_error || 'управление мышью недоступно (hidapi не установлен?)'; ma = ''; }
+    else if (d.backend === 'fake') { mc = 'warn'; ms = 'включена имитация мыши (настройка «Управление мышью»)'; }
+    else if (m.found && m.mode_text === 'onboard') { mc = 'warn'; ms = `${m.name || m.product}: ONBOARD-режим, переведите в host`; ma = `<button class="primary" onclick="post('/api/dpi/hostmode')">Host-режим</button>`; }
+    else if (m.found) { mc = 'ok'; ms = `${m.name || m.product || 'мышь'} · DPI ${m.dpi ?? '?'} · host-режим`; ma = `<button onclick="probeMouse()">Проверить снова</button>`; }
+    else if (m.error) { mc = 'bad'; ms = m.error; }
+    req.push(item(mc, 'Мышь для DPI-рулетки', ms, ma));
+    req.push(item(dObs ? 'ok' : 'warn', 'OBS: колесо DPI', dObs ? `подключено из OBS (${dObs})` : 'добавьте источник «Браузер» с этой ссылкой: ' + (S.urls ? S.urls.overlay_dpi : ''), `<button onclick="copyText('url-dpi')">Скопировать ссылку</button>`));
+  } else {
+    req.push(item('off', 'DPI-рулетка', 'выключена', `<button onclick="showMainTab('dpi')">Включить</button>`));
+  }
+  $('checks').innerHTML = req.join('');
+  // optional
+  const opt = [];
+  opt.push(item(lObs ? 'ok' : 'off', 'OBS: виджет лоадаута', lObs ? `подключён из OBS (${lObs})` : 'для предматчевой паузы: ' + (S.urls ? S.urls.overlay_loadout : ''), `<button onclick="copyText('url-loadout')">Скопировать ссылку</button>`));
+  const cs = c.settings || {};
+  if (cs.enabled) opt.push(item(cs.se_jwt_set && !c.last_error ? 'ok' : 'warn', 'Чат через StreamElements', !cs.se_jwt_set ? 'нет токена' : c.last_error ? 'ошибка: ' + c.last_error : (c.channel && c.channel.username ? `канал ${c.channel.username}` : 'токен сохранён, нажмите «Проверить»'), `<button onclick="verifyChat()">Проверить</button><button onclick="showMainTab('general')">Настроить</button>`));
+  else opt.push(item('off', 'Чат через StreamElements', 'сообщения о старте, оружии и DPI в чат', `<button onclick="showMainTab('general')">Настроить</button>`));
+  if (ds.viewer_enabled) opt.push(item(t.connected ? (ds.viewer_reward_id ? 'ok' : 'warn') : 'warn', 'Зрители: DPI за баллы канала', !cs.channel_login ? 'укажите логин канала' : !t.connected ? (t.last_error ? 'чат: ' + t.last_error : 'подключаюсь к чату…') : (ds.viewer_reward_id ? `чат #${t.channel} читается, награда задана` : `чат #${t.channel} читается; нажмите «Определить» и выкупите награду`), `<button onclick="showMainTab('dpi')">Настроить</button>`));
+  else opt.push(item('off', 'Зрители: DPI за баллы канала', 'зрители добавляют значения на колесо', `<button onclick="showMainTab('dpi')">Настроить</button>`));
+  const a = S.autostart || {};
+  opt.push(item(a.enabled ? 'ok' : 'off', 'Автозапуск с Windows', a.available ? (a.enabled ? 'включён' : 'выключен') : 'только в Windows', a.available ? `<button onclick="post('/api/autostart',{enabled:${!a.enabled}}).then(()=>refreshState())">${a.enabled ? 'Выключить' : 'Включить'}</button>` : ''));
+  $('checks-optional').innerHTML = opt.join('');
+  const bad = (req.join('').match(/class="check (bad|warn)"/g) || []).length;
+  $('startup-summary').textContent = bad ? `${bad} из ${req.length} пунктов требуют внимания` : 'всё готово';
+  // first run: open Startup until the required items are green (unless the user picked a tab)
+  if (!window.__tabChosen && bad && !window.__autoStartup) { window.__autoStartup = true; showMainTab('startup'); }
+}
+
+function renderAll() { if (!S) return; renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); renderChat(); renderWheel(); renderChecks(); }
 
 // ------------------------------------------------------------------ settings form
 document.querySelectorAll('[data-key]').forEach(el => {
@@ -834,13 +930,14 @@ fetch('/api/weapons').then(r=>r.json()).then(d => { d.weapons.forEach(w => weapo
 
 const es = new EventSource('/events');
 es.addEventListener('snapshot', e => { S = JSON.parse(e.data); renderAll(); $('chip-sse').className='chip ok'; });
-es.addEventListener('roulette', e => { if (!S) return; S.roulette = JSON.parse(e.data); renderHeader(); renderQueue(); renderLoadout(); renderSettings(); });
-es.addEventListener('gsi', e => { if (!S) return; S.gsi = JSON.parse(e.data); renderHeader(); renderMisc(); });
+es.addEventListener('roulette', e => { if (!S) return; S.roulette = JSON.parse(e.data); renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderChecks(); });
+es.addEventListener('gsi', e => { if (!S) return; S.gsi = JSON.parse(e.data); renderHeader(); renderMisc(); renderChecks(); });
 es.addEventListener('settings', e => { if (!S) return; const d = JSON.parse(e.data); S.overlay = d.overlay; S.hotkeys = d.hotkeys; S.gsi_token = d.gsi_token; S.port = d.port; if (S.dpi && d.dpi) S.dpi.settings = d.dpi; if (S.chat && d.chat) S.chat.settings = d.chat; if (d.roulette) S.roulette.settings = d.roulette; renderHeader(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); refreshState(); });
 es.addEventListener('hotkeys', e => { if (!S) return; S.hotkeys = JSON.parse(e.data); renderHeader(); renderSettings(); renderDpi(); });
-es.addEventListener('dpi', e => { if (!S) return; S.dpi = JSON.parse(e.data); renderDpi(); renderSettings(); renderWheel(); });
-es.addEventListener('twitch', e => { if (!S) return; S.twitch = JSON.parse(e.data); renderWheel(); });
-es.addEventListener('chat', e => { if (!S) return; S.chat = JSON.parse(e.data); renderChat(); renderSettings(); renderWheel(); });
+es.addEventListener('dpi', e => { if (!S) return; S.dpi = JSON.parse(e.data); renderDpi(); renderSettings(); renderWheel(); renderChecks(); });
+es.addEventListener('twitch', e => { if (!S) return; S.twitch = JSON.parse(e.data); renderWheel(); renderChecks(); });
+es.addEventListener('clients', e => { if (!S) return; S.clients = JSON.parse(e.data); renderChecks(); });
+es.addEventListener('chat', e => { if (!S) return; S.chat = JSON.parse(e.data); renderChat(); renderSettings(); renderWheel(); renderChecks(); });
 es.addEventListener('dpi_spin', e => { const sp = JSON.parse(e.data); toast('DPI-рулетка: ' + sp.value + (sp.reason === 'death' ? ' (смерть)' : '')); });
 es.addEventListener('kill', e => { const k = JSON.parse(e.data); if (k.ambiguous) toast('Килл: возможно граната — не засчитан'); else if (k.counted) toast(k.advanced ? 'Килл засчитан → следующее оружие' : 'Килл засчитан'); else if (S && S.roulette.running) toast('Килл не тем оружием', true); });
 es.addEventListener('hotkey', e => { const h = JSON.parse(e.data); toast('Хоткей «' + (HK_NAMES[h.action]||h.action) + '»' + (h.ignored ? ' — проигнорирован (килл уже переключил оружие)' : '')); });
