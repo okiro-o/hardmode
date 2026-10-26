@@ -31,7 +31,7 @@ from .modules.dpi import DpiService, DpiSettings
 from .roulette import Roulette
 from .twitch_irc import IrcMessage, TwitchChatReader
 
-VERSION = "0.6.2"
+VERSION = "0.7.0"
 KILL_ADVANCE_GRACE = 1.5   # seconds: ignore a manual "next" right after a kill already advanced
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 log = logging.getLogger("cs2roulette")
@@ -173,15 +173,21 @@ class AppState:
                 return
             res = self.dpi.add_viewer_value(text, user, source="reward")
             if not res["ok"]:
-                self.dpi._log("viewer", f"{user}: «{text[:30]}» не принято ({res['error']})")
-                self.dpi._changed()
+                self._viewer_rejected(user, text, res["error"])
             return
         cmd = s.viewer_command.lower()
         if cmd and text.lower().startswith(cmd) and (len(text) == len(cmd) or text[len(cmd)] == " "):
             res = self.dpi.add_viewer_value(text[len(cmd):].strip(), user, source="command")
             if not res["ok"]:
-                self.dpi._log("viewer", f"{user}: «{text[:30]}» не принято ({res['error']})")
-                self.dpi._changed()
+                self._viewer_rejected(user, text, res["error"])
+
+    def _viewer_rejected(self, user: str, text: str, error: str) -> None:
+        self.dpi._log("viewer", f"{user}: «{text[:30]}» не принято ({error})")
+        self.dpi._changed()
+        if self.dpi.settings.viewer_announce:
+            s = self.dpi.settings
+            reason = {"не число": f"нужно число от {s.viewer_min} до {s.viewer_max}"}.get(error, error)
+            self.chat.notify_reject(user, reason)
 
     def urls(self) -> dict:
         base = f"http://127.0.0.1:{self.settings.port}"
@@ -404,6 +410,16 @@ def create_app() -> FastAPI:
         body = await _json(request)
         try:
             state.roulette.replace_weapon(str(body.get("side")), str(body.get("category")), str(body.get("weapon")))
+        except (ValueError, KeyError) as e:
+            raise HTTPException(400, str(e))
+        return {"loadout": state.roulette.loadout}
+
+    @app.post("/api/loadout/slot")
+    async def api_loadout_slot(request: Request) -> dict:
+        body = await _json(request)
+        try:
+            state.roulette.set_slot(str(body.get("side")), str(body.get("category")), str(body.get("old")),
+                                    str(body.get("new")))
         except (ValueError, KeyError) as e:
             raise HTTPException(400, str(e))
         return {"loadout": state.roulette.loadout}

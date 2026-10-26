@@ -185,6 +185,14 @@ class Roulette:
         self.set_loadout(new)  # publishes the change (log entry included)
         return new
 
+    def set_slot(self, side: str, category: str, old_id: str, new_id: str) -> dict:
+        if not self.loadout:
+            raise ValueError("Сначала сгенерируйте лоадаут")
+        new = L.set_slot(self.loadout, side, category, old_id, new_id)
+        self._log("loadout", f"{W.get(old_id).name} → {W.get(new_id).name} ({side})")
+        self.set_loadout(new)
+        return new
+
     # -------------------------------------------------------------------- queue
     def _new_bag(self, exclude: set[str]) -> list[str]:
         """A shuffled bag of the side's pool, leaving out weapons that are still visible."""

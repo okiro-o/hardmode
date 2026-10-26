@@ -61,13 +61,24 @@ def steam_libraries(root: str | None = None) -> list[str]:
     return libs
 
 
-def cs2_cfg_dir() -> str | None:
-    """``.../Counter-Strike Global Offensive/game/csgo/cfg`` or None."""
+_cfg_cache: tuple[float, str | None] = (0.0, None)
+
+
+def cs2_cfg_dir(max_age: float = 30.0) -> str | None:
+    """``.../Counter-Strike Global Offensive/game/csgo/cfg`` or None (cached for ``max_age`` s)."""
+    global _cfg_cache
+    import time
+    now = time.monotonic()
+    if now - _cfg_cache[0] < max_age:
+        return _cfg_cache[1]
+    found = None
     for lib in steam_libraries():
         cfg = os.path.join(lib, "steamapps", "common", CS2_FOLDER, CFG_SUBDIR)
         if os.path.isdir(cfg):
-            return cfg
-    return None
+            found = cfg
+            break
+    _cfg_cache = (now, found)
+    return found
 
 
 def install_cfg(content: str, cfg_dir: str | None = None) -> str:

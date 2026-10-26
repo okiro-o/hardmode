@@ -199,7 +199,8 @@
       if (nowMs < endMs) { startSpin(spin, nowMs); return; }
       anim = null; values = spin.values; rotation = norm(targetRotation(spin));
       draw();
-      if (cfg.showCurrent || (nowMs - endMs) / 1000 < 15) rest(spin, (nowMs - endMs) / 1000); else idle();
+      const shown = (dpi.current_dpi && spin.applied) ? { ...spin, value: dpi.current_dpi } : spin;
+      if (cfg.showCurrent || (nowMs - endMs) / 1000 < 15) rest(shown, (nowMs - endMs) / 1000); else idle();
     } else {
       draw(); idle();
     }
@@ -220,6 +221,9 @@
     if (dpi && dpi.now) serverOffset = dpi.now * 1000 - Date.now();
     sync(Date.now() + serverOffset);
   });
+  let shownValue = null;   // what the big number currently displays
+  const origShowNumber = showNumber;
+  showNumber = function (value, reasonText) { shownValue = value; origShowNumber(value, reasonText); };
   es.addEventListener('dpi', e => {
     dpi = JSON.parse(e.data);
     if (dpi.now) serverOffset = dpi.now * 1000 - Date.now();
@@ -228,7 +232,10 @@
       // settings may have changed (wheel mode, values); redraw without disturbing a shown result
       values = (dpi.last_spin && dpi.last_spin.values) || dpi.values || values;
       draw();
-      if (!resultEl.classList.contains('show') && !lingerTimer) idle();
+      if (resultEl.classList.contains('show')) {
+        // "вернуть мой DPI" / manual apply: the number must follow the value really on the mouse
+        if (dpi.current_dpi && dpi.current_dpi !== shownValue) showNumber(dpi.current_dpi, '');
+      } else if (!lingerTimer) idle();
     }
     debug();
   });

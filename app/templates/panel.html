@@ -89,6 +89,17 @@
   .tokenbox button:hover { background:var(--panel3); }
   .tokenbox button.eye { width:44px; padding:0; font-size:16px; }
   .tokenbox button.primary { background:var(--accent); color:#1a1a1a; }
+  /* weapon picker popover */
+  .picker { position:absolute; z-index:40; background:var(--panel2); border:1px solid var(--line2); border-radius:12px; padding:10px; box-shadow:0 16px 40px rgba(0,0,0,.6); width:440px; display:none; }
+  .picker.open { display:block; animation: ddin .12s ease-out; }
+  .picker .ptitle { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; margin:0 2px 8px; display:flex; justify-content:space-between; }
+  .picker .ptitle button { padding:0 6px; border:0; background:transparent; color:var(--muted); font-size:16px; }
+  .pgrid { display:grid; grid-template-columns: repeat(3, 1fr); gap:6px; }
+  .pick { cursor:pointer; border:1px solid var(--line); border-radius:8px; padding:8px 6px 6px; text-align:center; background:var(--panel); transition: border-color .15s, transform .15s; }
+  .pick:hover { border-color:var(--accent); transform:translateY(-1px); }
+  .pick .icon { width:100px; height:36px; margin:0 auto; background:#fff; -webkit-mask: var(--mask) no-repeat center / contain; mask: var(--mask) no-repeat center / contain; }
+  .pick .name { font-size:12px; margin-top:5px; }
+  .pick.random { grid-column: 1 / -1; padding:8px; color:var(--muted); }
   /* toggles */
   label.inline { display:flex; align-items:center; gap:10px; color:var(--text); font-size:13px; padding:7px 10px; border-radius:8px; cursor:pointer; user-select:none; border:1px solid transparent; }
   label.inline:hover { background:rgba(255,255,255,.03); border-color:var(--line); }
@@ -226,7 +237,7 @@
         </h2>
         <div class="row" style="margin-bottom:6px;">
           <div class="tabs"><button class="T" data-tab="T" onclick="showTab('T')">T</button><button class="CT" data-tab="CT" onclick="showTab('CT')">CT</button></div>
-          <span class="hint">Вкладка T/CT переключает и виджет лоадаута в OBS. Клик по оружию — заменить его на случайное другое. Выставьте этот лоадаут в игре перед матчем. «Только T/CT» перегенерируют одну сторону.</span>
+          <span class="hint">Вкладка T/CT переключает и виджет лоадаута в OBS. Клик по оружию — выбрать вместо него другое (или случайное). Так можно собрать свой лоадаут вручную. «Только T/CT» перегенерируют одну сторону.</span>
         </div>
         <div id="loadout"></div>
       </section>
@@ -437,18 +448,23 @@
           <div class="row full">
             <button onclick="verifyChat()">Проверить токен</button>
             <button onclick="testChat()">Отправить тест в чат</button>
-            <span class="hint" id="chat-status"></span>
           </div>
+          <div class="hint full" id="chat-status"></div>
           <h3 class="full">Когда писать</h3>
           <label class="inline"><input type="checkbox" data-key="chat.on_start"> Старт гонки вооружений</label>
           <label class="inline"><input type="checkbox" data-key="chat.on_weapon"> Новое оружие</label>
           <label class="inline"><input type="checkbox" data-key="chat.on_dpi"> Новый DPI</label>
+          <label class="inline"><input type="checkbox" data-key="chat.on_viewer"> Зритель добавил DPI</label>
+          <label class="inline"><input type="checkbox" data-key="chat.on_reject"> Отказ зрителю (почему не принято)</label>
           <label class="f"><span>Минимум между сообщениями, с</span><input type="number" min="0.5" max="60" step="0.5" data-key="chat.min_interval_s"></label>
+          <label class="f"><span>Не чаще одного отказа на зрителя, с</span><input type="number" min="0" max="3600" step="5" data-key="chat.reject_cooldown_s"></label>
           <h3 class="full">Тексты сообщений</h3>
-          <div class="hint full">Подстановки: <span class="kbd">{weapon}</span> <span class="kbd">{completed}</span> <span class="kbd">{kills}</span> <span class="kbd">{side}</span> <span class="kbd">{dpi}</span> <span class="kbd">{reason}</span></div>
+          <div class="hint full">Подстановки: <span class="kbd">{weapon}</span> <span class="kbd">{completed}</span> <span class="kbd">{kills}</span> <span class="kbd">{side}</span> <span class="kbd">{dpi}</span> <span class="kbd">{user}</span> <span class="kbd">{reason}</span></div>
           <label class="f full"><span>Старт</span><input type="text" data-key="chat.start_template"></label>
           <label class="f full"><span>Новое оружие</span><input type="text" data-key="chat.weapon_template"></label>
           <label class="f full"><span>Новый DPI</span><input type="text" data-key="chat.dpi_template"></label>
+          <label class="f full"><span>Зритель добавил DPI</span><input type="text" data-key="chat.viewer_template"></label>
+          <label class="f full"><span>Отказ зрителю</span><input type="text" data-key="chat.reject_template"></label>
         </div>
         <div class="log" id="chat-log" style="margin-top:10px; max-height:140px;"></div>
       </section>
@@ -485,6 +501,7 @@
     </div>
   </div>
 </main>
+<div class="picker" id="picker"><div class="ptitle"><span id="picker-title"></span><button onclick="closePicker()" title="Закрыть">×</button></div><div class="pgrid" id="picker-grid"></div></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -507,6 +524,28 @@ async function post(url, body) {
 function copyText(id) { navigator.clipboard.writeText($(id).textContent).then(()=>toast('Скопировано')); }
 async function copyLoadout() { const t = await (await fetch('/api/loadout/text')).text(); if (!t) return toast('Лоадаут не сгенерирован', true); navigator.clipboard.writeText(t); toast('Лоадаут скопирован'); }
 function setSide(side) { post('/api/side', {side}); }
+function closePicker() { $('picker').classList.remove('open'); }
+function openPicker(ev, side, cat, id) {
+  ev.stopPropagation();
+  const r = S.roulette; if (!r.loadout) return;
+  const lo = r.loadout[side]; const current = cat === 'starting' ? [lo.starting] : lo[cat];
+  const options = Object.values(weapons).filter(w => w.category === cat && (w.team === 'BOTH' || w.team === side) && !current.includes(w.id));
+  const grid = $('picker-grid');
+  grid.innerHTML = options.map(w => `<div class="pick" onclick="pickWeapon('${side}','${cat}','${id}','${w.id}')"><div class="icon" style="--mask:url('${w.icon}')"></div><div class="name">${esc(w.name)}</div></div>`).join('')
+    + (cat !== 'starting' ? `<div class="pick random" onclick="pickRandom('${side}','${cat}','${id}')">🎲 Случайное из оставшихся</div>` : '');
+  $('picker-title').textContent = `Вместо ${weapons[id] ? weapons[id].name : id}`;
+  const p = $('picker'); p.classList.add('open');
+  const card = ev.currentTarget.getBoundingClientRect();
+  const W = p.offsetWidth || 440, H = p.offsetHeight || 300;
+  let left = window.scrollX + card.left, top = window.scrollY + card.bottom + 8;
+  if (left + W > window.scrollX + window.innerWidth - 12) left = window.scrollX + window.innerWidth - W - 12;
+  if (card.bottom + 8 + H > window.innerHeight && card.top > H + 8) top = window.scrollY + card.top - H - 8;
+  p.style.left = Math.max(12, left) + 'px'; p.style.top = top + 'px';
+}
+async function pickWeapon(side, cat, oldId, newId) { closePicker(); const r = await post('/api/loadout/slot', {side, category: cat, old: oldId, new: newId}); if (r) toast('Заменено'); }
+async function pickRandom(side, cat, id) { closePicker(); await post('/api/loadout/replace', {side, category: cat, weapon: id}); }
+document.addEventListener('click', e => { if (!e.target.closest('#picker')) closePicker(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePicker(); });
 function showTab(t) { tab = t; lastTabClick = Date.now(); renderLoadout(); post('/api/loadout/view', {side: t}); }
 async function installCfg() { const r = await post('/api/gsi/install', {}); if (r) { toast('Конфиг записан: ' + r.path); refreshState(); } }
 async function applyManualDpi() { const v = parseInt($('dpi-manual').value, 10); if (!Number.isFinite(v)) return toast('Введите DPI', true); const r = await post('/api/dpi/apply', {value: v}); if (r && !r.ok) toast(r.error || 'Ошибка', true); }
@@ -578,7 +617,8 @@ function renderChat() {
   else if (c.last_error) { chip.className = 'chip bad'; chip.querySelector('b').textContent = 'ошибка'; }
   else { chip.className = 'chip ok'; chip.querySelector('b').textContent = (c.channel && c.channel.username) ? '#' + c.channel.username : 'готов'; }
   $('chat-jwt-state').textContent = st.se_jwt_set ? '— сохранён' : '— не задан';
-  $('chat-status').textContent = (c.channel && c.channel.username ? `канал ${c.channel.username}` : '') + (c.sent_count ? ` · отправлено ${c.sent_count}` : '') + (c.last_error ? ` · ошибка: ${c.last_error}` : '');
+  const parts = []; if (c.channel && c.channel.username) parts.push(`канал ${c.channel.username}`); if (c.sent_count) parts.push(`отправлено ${c.sent_count}`); if (c.last_error) parts.push(`ошибка: ${c.last_error}`);
+  $('chat-status').textContent = parts.join(' · '); $('chat-status').style.display = parts.length ? '' : 'none';
   $('chat-log').innerHTML = (c.log||[]).slice().reverse().map(e => `<div class="${esc(e.kind)}"><span class="t">${fmtTime(e.t)}</span><span>${esc(e.text)}</span></div>`).join('');
 }
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
@@ -643,7 +683,7 @@ function renderLoadout() {
   const done = new Set(((r.completed_ids||{})[tab])||[]); const cur = r.running && r.queue[0] && tab === r.side ? r.queue[0].id : null;
   box.innerHTML = ['starting','pistol','mid','rifle'].map(cat => {
     const ids = Array.isArray(lo[cat]) ? lo[cat] : [lo[cat]];
-    return `<div class="cat"><div class="title">${titles[cat]}</div><div class="cards">` + ids.map(id => { const w = weapons[id]; if (!w) return ''; return `<div class="wcard ${id===cur?'current':''} ${done.has(id)?'done':''}" onclick="post('/api/loadout/replace',{side:'${tab}',category:'${cat}',weapon:'${id}'})" title="Заменить на случайное"><span class="hint">⟳</span><div class="icon" style="--mask:url('${w.icon}')"></div><div class="name">${esc(w.name)}</div></div>`; }).join('') + '</div></div>';
+    return `<div class="cat"><div class="title">${titles[cat]}</div><div class="cards">` + ids.map(id => { const w = weapons[id]; if (!w) return ''; return `<div class="wcard ${id===cur?'current':''} ${done.has(id)?'done':''}" onclick="openPicker(event,'${tab}','${cat}','${id}')" title="Выбрать другое оружие"><span class="hint">▾</span><div class="icon" style="--mask:url('${w.icon}')"></div><div class="name">${esc(w.name)}</div></div>`; }).join('') + '</div></div>';
   }).join('');
 }
 

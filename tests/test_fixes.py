@@ -4,6 +4,7 @@ import random
 import pytest
 
 from app import loadout as L
+from app import weapons as W
 from app.config import AppSettings, HotkeySettings, OverlaySettings
 from app.gsi import GsiTracker
 from app.hotkeys import MOD_ALT, MOD_CONTROL, parse_hotkey
@@ -261,3 +262,21 @@ def test_overlay_loadout_layout_validation():
     assert o.apply({"loadout_layout": "columns", "loadout_names": "no"}) == []
     assert o.loadout_layout == "columns" and o.loadout_names is False
     assert o.apply({"loadout_layout": "diagonal"}) == ["loadout_layout"]
+
+
+def test_set_slot_explicit_choice():
+    r = make()
+    r.start(seed=2)
+    old = r.loadout["T"]["rifle"][0]
+    options = [w.id for w in W.pool("T", "rifle") if w.id not in r.loadout["T"]["rifle"]]
+    new = options[0]
+    r.set_slot("T", "rifle", old, new)
+    assert new in r.loadout["T"]["rifle"] and old not in r.loadout["T"]["rifle"]
+    assert L.validate(r.loadout) == []
+    with pytest.raises(ValueError):
+        r.set_slot("T", "rifle", new, "m4a1")          # CT-only on T
+    other = next(w for w in r.loadout["T"]["rifle"] if w != new)
+    with pytest.raises(ValueError):
+        r.set_slot("T", "rifle", new, other)   # already equipped
+    r.set_slot("CT", "starting", r.loadout["CT"]["starting"], "hkp2000")
+    assert r.loadout["CT"]["starting"] == "hkp2000"

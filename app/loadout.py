@@ -71,6 +71,32 @@ def replace_weapon(loadout: dict, side: str, category: str, weapon_id: str, rng:
     return new
 
 
+def set_slot(loadout: dict, side: str, category: str, old_id: str, new_id: str) -> dict:
+    """Put ``new_id`` where ``old_id`` was (explicit choice). Returns a new loadout dict."""
+    if side not in loadout:
+        raise ValueError(f"loadout has no side {side!r}")
+    if new_id not in W.BY_ID:
+        raise ValueError(f"unknown weapon {new_id!r}")
+    new = {s: {k: (list(v) if isinstance(v, list) else v) for k, v in d.items()} for s, d in loadout.items()}
+    side_lo = new[side]
+    allowed = {w.id for w in W.pool(side, category)}
+    if new_id not in allowed:
+        raise ValueError(f"{W.get(new_id).name} недоступно для {side} в этой категории")
+    if category == W.CATEGORY_STARTING:
+        side_lo[W.CATEGORY_STARTING] = new_id
+        return new
+    if category not in W.SLOT_COUNTS:
+        raise ValueError(f"unknown category {category!r}")
+    current = side_lo[category]
+    if old_id not in current:
+        raise ValueError(f"{old_id} is not in {side}/{category}")
+    if new_id in current and new_id != old_id:
+        raise ValueError(f"{W.get(new_id).name} уже в лоадауте")
+    current[current.index(old_id)] = new_id
+    side_lo[category] = W.sort_ids(current)
+    return new
+
+
 def validate(loadout: dict) -> list[str]:
     """Return a list of human-readable problems (empty list == valid)."""
     problems: list[str] = []

@@ -264,3 +264,26 @@ def test_viewer_values_via_chat_messages(client):
     assert 5000 not in client.get("/api/dpi/status").json()["values"]
     assert client.post("/api/dpi/cycle/reset").json()["ok"]
     assert "twitch" in client.get("/api/state").json()
+
+
+def test_slot_api_and_reject_notification(client):
+    from tests.test_chat import fake_jwt
+    client.post("/api/loadout/generate", json={})
+    lo = client.get("/api/state").json()["roulette"]["loadout"]
+    old = lo["T"]["mid"][0]
+    from app import weapons as W
+    new = next(w.id for w in W.pool("T", "mid") if w.id not in lo["T"]["mid"])
+    r = client.post("/api/loadout/slot", json={"side": "T", "category": "mid", "old": old, "new": new})
+    assert r.status_code == 200 and new in r.json()["loadout"]["T"]["mid"]
+    assert client.post("/api/loadout/slot", json={"side": "T", "category": "mid", "old": new, "new": "mp9"}).status_code == 400
+    sent = []
+    st = client.app.state.app
+    st.chat._sender = lambda jwt, cid, msg: sent.append(msg)
+    client.post("/api/settings", json={"chat": {"enabled": True, "se_jwt": fake_jwt(), "min_interval_s": 0.5},
+                                       "dpi": {"backend": "fake", "viewer_enabled": True, "viewer_command": "!dpi"}})
+    client.post("/api/twitch/chat", json={"user": "Eve", "text": "!dpi 99999"})
+    import time as _t
+    end = _t.time() + 3
+    while _t.time() < end and not sent:
+        _t.sleep(0.05)
+    assert sent and sent[0].startswith("❌ Eve") and "вне диапазона" in sent[0]

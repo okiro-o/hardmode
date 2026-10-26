@@ -487,7 +487,8 @@ class DpiService:
         """Re-apply the target DPI if the mouse reports something else (G HUB fought back)."""
         last_reapply = 0.0
         strikes = 0
-        while not self._guard_stop.wait(3.0):
+        failures = 0          # consecutive reads without an answer (mouse asleep/unplugged) -> back off
+        while not self._guard_stop.wait(3.0 if failures < 3 else min(60.0, 3.0 * 2 ** (failures - 2))):
             if not (self.settings.enabled and self.settings.guard) or self.target_dpi is None or self.busy:
                 continue
             if self._pending_apply is not None:
@@ -498,9 +499,12 @@ class DpiService:
                 with self._apply_lock:
                     current = self.backend.get_dpi()
             except Exception:
+                failures += 1
                 continue
             if current is None:
+                failures += 1
                 continue
+            failures = 0
             if current != self.current_dpi and current == self.target_dpi:
                 self.current_dpi = current
                 self._publish_threadsafe("dpi", self.snapshot())

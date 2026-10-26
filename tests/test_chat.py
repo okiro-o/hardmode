@@ -96,3 +96,14 @@ def test_update_settings_clears_channel_on_new_token():
     assert n.channel == {} and n.channel_id() == "bb"
     n.update_settings({"se_jwt": ""})
     assert n.settings.se_jwt == "" and n.channel_id() is None
+
+
+def test_reject_messages_rate_limited_per_user():
+    n = make_notifier(reject_cooldown_s=5)
+    assert n.notify_reject("Spammer", "вне диапазона") is True
+    assert n.notify_reject("spammer", "вне диапазона") is False     # same user within cooldown
+    assert n.notify_reject("Other", "не число") is True
+    assert wait_for(lambda: n.sent_count >= 1)
+    n.settings.on_reject = False
+    assert n.notify_reject("Third", "x") is False
+    n.stop()

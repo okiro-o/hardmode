@@ -61,6 +61,9 @@ class ChatSettings:
     dpi_template: str = "🎡 Новый DPI: {dpi}"
     on_viewer: bool = True
     viewer_template: str = "✅ {user} добавил {dpi} DPI на колесо"
+    on_reject: bool = True
+    reject_template: str = "❌ {user}: {reason}"
+    reject_cooldown_s: float = 30.0         # at most one rejection message per viewer per this interval
     channel_login: str = ""                 # Twitch channel login (for the anonymous chat reader)
     min_interval_s: float = 2.0
 
@@ -73,21 +76,22 @@ class ChatSettings:
         for k, v in (d or {}).items():
             if k in names:
                 setattr(s, k, v)
-        for b in ("enabled", "on_start", "on_weapon", "on_dpi", "on_viewer"):
+        for b in ("enabled", "on_start", "on_weapon", "on_dpi", "on_viewer", "on_reject"):
             setattr(s, b, _bool(getattr(s, b)))
         s.channel_login = s.channel_login.strip().lstrip("#").lower()[:40] if isinstance(s.channel_login, str) else ""
         if s.provider not in ("streamelements",):
             s.provider = "streamelements"
         s.se_jwt = s.se_jwt.strip() if isinstance(s.se_jwt, str) else ""
-        for t in ("start_template", "weapon_template", "dpi_template", "viewer_template"):
+        for t in ("start_template", "weapon_template", "dpi_template", "viewer_template", "reject_template"):
             v = getattr(s, t)
             if not isinstance(v, str):
                 raise ValueError(f"{t}: нужна строка")
             setattr(s, t, v.strip()[:400])
         try:
             s.min_interval_s = max(0.5, min(60.0, float(s.min_interval_s)))
+            s.reject_cooldown_s = max(0.0, min(3600.0, float(s.reject_cooldown_s)))
         except (TypeError, ValueError):
-            raise ValueError("min_interval_s: нужно число") from None
+            raise ValueError("min_interval_s / reject_cooldown_s: нужно число") from None
         return s
 
     def to_dict(self) -> dict:
@@ -125,6 +129,7 @@ class ChatNotifier:
         self.last_error: str | None = None
         self.last_sent_at: float | None = None
         self.log: list[dict] = []
+        self._reject_seen: dict[str, float] = {}   # user -> last rejection message time
 
     # ------------------------------------------------------------------ status
     def status(self) -> dict:
@@ -191,6 +196,23 @@ class ChatNotifier:
         if self.settings.on_viewer:
             # one queue slot per viewer so confirmations for different people do not collapse
             self._enqueue(f"viewer:{user.lower()}", render_template(self.settings.viewer_template, user=user, dpi=dpi, **extra))
+
+    def notify_reject(self, user: str, reason: str, **extra: Any) -> bool:
+        """Tell a viewer why their value was not accepted (rate-limited per viewer)."""
+        if not self.settings.on_reject:
+            return False
+        key = (user or "").lower()
+        now = time.monotonic()
+        last = self._reject_seen.get(key, 0.0)
+        if now - last < self.settings.reject_cooldown_s:
+            return False
+        self._reject_seen[key] = now
+        if len(self._reject_seen) > 500:   # forget old spammers
+            for k, t in list(self._reject_seen.items()):
+                if now - t > 3600:
+                    self._reject_seen.pop(k, None)
+        self._enqueue(f"reject:{key}", render_template(self.settings.reject_template, user=user, reason=reason, **extra))
+        return True
 
     def send_now(self, message: str) -> dict:
         """Synchronous send (test button). Returns {ok, error}."""
