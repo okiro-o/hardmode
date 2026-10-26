@@ -244,7 +244,17 @@
           <label class="inline"><input type="checkbox" data-key="overlay.show_kills"> Бейдж «киллов x/y» (если нужно &gt; 1 килла)</label>
           <label class="inline"><input type="checkbox" data-key="overlay.show_match"> Подсвечивать цветом оружие в руках</label>
         </div>
-        <div class="hint" style="margin-top:8px;">Цвета силуэтов и подсветки — на вкладке «Общее → Цвета». Параметры в ссылке переопределяют настройки: <span class="kbd">?scale=1.2&amp;layout=vertical&amp;labels=1</span></div>
+        <div class="hint" style="margin-top:8px;">Размер источника в OBS под текущие настройки: <b id="size-weapons">—</b>. Контент прижат к краю выравнивания, поэтому источник можно двигать куда угодно, ничего не обрежется.<br>Цвета силуэтов и подсветки — на вкладке «Общее → Цвета». Параметры в ссылке переопределяют настройки: <span class="kbd">?scale=1.2&amp;layout=vertical&amp;labels=1</span></div>
+      </section>
+
+      <section>
+        <h2>Виджет лоадаута</h2>
+        <div class="url"><span class="name">Ссылка для OBS</span><code id="url-loadout"></code><button onclick="copyText('url-loadout')">Копировать</button><a id="open-loadout" target="_blank"><button>Открыть</button></a></div>
+        <div class="form" style="margin-top:8px;">
+          <label class="f"><span>Раскладка лоадаута</span><select data-key="overlay.loadout_layout"><option value="rows">строки: категория в строку</option><option value="columns">колонки: как в игре (пистолеты | мид | винтовки)</option></select></label>
+          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="overlay.loadout_names"> Названия под силуэтами</label>
+        </div>
+        <div class="hint" style="margin-top:8px;">Размер источника: одна сторона <b id="size-loadout">—</b>, обе стороны (<span class="kbd">?side=both</span>) <b id="size-loadout-both">—</b>. Показывает сторону, выбранную вкладкой T/CT выше; в матче переключается сам. Масштаб — через <span class="kbd">?scale=0.8</span> в ссылке (размер меняется пропорционально).</div>
       </section>
     </div>
   </div>
@@ -283,7 +293,7 @@
           <label class="f"><span>Прятать число через, с (0 — до следующей смерти)</span><input type="number" min="0" max="3600" step="1" data-key="dpi.idle_hide_s"></label>
           <label class="inline" style="align-self:end;"><input type="checkbox" data-key="dpi.show_current"> Показывать текущий DPI между кручениями</label>
         </div>
-        <div class="hint" style="margin-top:8px;">Размер источника 600×750. Цвет сегмента «мой DPI» — на вкладке «Общее → Цвета».</div>
+        <div class="hint" style="margin-top:8px;">Размер источника: <b id="size-dpi">600×750</b> (масштаб через <span class="kbd">?scale=</span> в ссылке, размер меняется пропорционально). Цвет сегмента «мой DPI» — на вкладке «Общее → Цвета».</div>
       </section>
     </div>
 
@@ -359,10 +369,10 @@
       <section>
         <h2>Виджеты для OBS</h2>
         <div class="url"><span class="name">Оружие</span><code id="url-weapons-2"></code><button onclick="copyText('url-weapons-2')">Копировать</button></div>
-        <div class="url"><span class="name">Лоадаут</span><code id="url-loadout"></code><button onclick="copyText('url-loadout')">Копировать</button><a id="open-loadout" target="_blank"><button>Открыть</button></a></div>
+        <div class="url"><span class="name">Лоадаут</span><code id="url-loadout-2"></code><button onclick="copyText('url-loadout-2')">Копировать</button></div>
         <div class="url"><span class="name">Колесо DPI</span><code id="url-dpi-2"></code><button onclick="copyText('url-dpi-2')">Копировать</button></div>
         <div class="hint" style="margin-top:6px;">
-          OBS → Источники → <b>Браузер</b>: вставьте ссылку. Оружие: 1920×1080 (или 900×260 для компактной полоски); лоадаут: 1000×600; колесо DPI: 600×750.
+          OBS → Источники → <b>Браузер</b>: вставьте ссылку и размер. Под текущие настройки: оружие <b id="size-weapons-2">—</b>, лоадаут <b id="size-loadout-2">—</b>, колесо DPI <b id="size-dpi-2">—</b>.
           Галочки «Выключать источник, когда не виден» и «Обновлять при активации сцены» <b>оставьте выключенными</b>.
           Лоадаут показывает сторону, выбранную вкладкой T/CT на вкладке «Оружие» (<span class="kbd">?side=both</span> — обе).
         </div>
@@ -476,7 +486,7 @@ function renderSettings() {
 function renderMisc() {
   $('version').textContent = 'v' + S.version;
   $('url-weapons').textContent = S.urls.overlay_weapons; $('url-weapons-2').textContent = S.urls.overlay_weapons; $('open-weapons').href = S.urls.overlay_weapons + '?bg=1b1e26';
-  $('url-loadout').textContent = S.urls.overlay_loadout; $('open-loadout').href = S.urls.overlay_loadout + '?bg=1b1e26';
+  $('url-loadout').textContent = S.urls.overlay_loadout; $('url-loadout-2').textContent = S.urls.overlay_loadout; $('open-loadout').href = S.urls.overlay_loadout + '?bg=1b1e26';
   $('url-dpi').textContent = S.urls.overlay_dpi; $('url-dpi-2').textContent = S.urls.overlay_dpi; $('open-dpi').href = S.urls.overlay_dpi + '?bg=1b1e26';
   $('gsi-uri').textContent = S.urls.gsi;
   $('cs2-dir').textContent = S.cs2_cfg_dir || 'не найдена автоматически — скачайте конфиг и положите в game/csgo/cfg вручную';
@@ -507,7 +517,48 @@ function renderDpi() {
   $('kbd-dpi').textContent = (S.hotkeys.bindings || {}).dpi_spin || '—';
 }
 
-function renderAll() { if (!S) return; renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderMisc(); renderDpi(); }
+// ------------------------------------------------------------------ OBS source sizes
+// Mirrors the geometry constants of the overlays (pre-scale), with the widest card (AWP) so the
+// box always fits whatever weapon is on screen.
+function weaponsBox(o, r) {
+  const sc = +o.scale || 1, n = Math.max(0, +r.visible_next || 0);
+  const H = 120, MAXW = 400, NS = 0.52, GAP = 30, labelH = o.labels ? 42 : 0, counter = o.show_counter ? 34 : 0;
+  let totalW, totalH, counterGap;
+  if (o.layout === 'vertical') {
+    totalW = MAXW;
+    totalH = (H + labelH) + (n ? GAP : 0) + n * (H + labelH) * NS + Math.max(0, n - 1) * GAP * 0.8;
+    counterGap = 22;
+  } else {
+    totalW = MAXW + (n ? GAP : 0) + n * MAXW * NS + Math.max(0, n - 1) * GAP * 0.7;
+    totalH = H + labelH;
+    counterGap = 10;
+  }
+  const w = 24 + totalW * sc, h = 24 + (totalH + (counter ? counterGap + counter : 0)) * sc;
+  return [Math.ceil(w), Math.ceil(h)];
+}
+function loadoutBox(o, both) {
+  const names = o.loadout_names !== false; const cellH = names ? 64 : 46; const PAD = 14, TITLE = 44;
+  if (o.loadout_layout === 'columns') {
+    const colH = 20 + 5 * cellH + 4 * 8;             // title + 5 cells + gaps
+    const w = PAD * 2 + 3 * 118 + 2 * 14, h = PAD * 2 + TITLE + colH;
+    return [both ? w * 2 - PAD * 2 + 20 : w, h];   // two side blocks side by side share the outer padding
+  }
+  const rowH = names ? 76 : 58;
+  const w = PAD * 2 + 150 + 14 + 5 * 118 + 4 * 12, h = PAD * 2 + TITLE + 4 * rowH;
+  return [w, both ? h * 2 - PAD * 2 + 20 : h];
+}
+function renderSizes() {
+  if (!S) return;
+  const o = S.overlay, r = S.roulette.settings;
+  const [ww, wh] = weaponsBox(o, r);
+  const txt = `${ww}×${wh}`;
+  $('size-weapons').textContent = txt; $('size-weapons-2').textContent = txt;
+  const [lw, lh] = loadoutBox(o, false), [bw, bh] = loadoutBox(o, true);
+  $('size-loadout').textContent = `${lw}×${lh}`; $('size-loadout-both').textContent = `${bw}×${bh}`; $('size-loadout-2').textContent = `${lw}×${lh}`;
+  $('size-dpi').textContent = '600×750'; $('size-dpi-2').textContent = '600×750';
+}
+
+function renderAll() { if (!S) return; renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); }
 
 // ------------------------------------------------------------------ settings form
 document.querySelectorAll('[data-key]').forEach(el => {
@@ -535,7 +586,7 @@ const es = new EventSource('/events');
 es.addEventListener('snapshot', e => { S = JSON.parse(e.data); renderAll(); $('chip-sse').className='chip ok'; });
 es.addEventListener('roulette', e => { if (!S) return; S.roulette = JSON.parse(e.data); renderHeader(); renderQueue(); renderLoadout(); renderSettings(); });
 es.addEventListener('gsi', e => { if (!S) return; S.gsi = JSON.parse(e.data); renderHeader(); renderMisc(); });
-es.addEventListener('settings', e => { if (!S) return; const d = JSON.parse(e.data); S.overlay = d.overlay; S.hotkeys = d.hotkeys; S.gsi_token = d.gsi_token; S.port = d.port; if (S.dpi && d.dpi) S.dpi.settings = d.dpi; renderHeader(); renderSettings(); renderMisc(); renderDpi(); refreshState(); });
+es.addEventListener('settings', e => { if (!S) return; const d = JSON.parse(e.data); S.overlay = d.overlay; S.hotkeys = d.hotkeys; S.gsi_token = d.gsi_token; S.port = d.port; if (S.dpi && d.dpi) S.dpi.settings = d.dpi; if (d.roulette) S.roulette.settings = d.roulette; renderHeader(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); refreshState(); });
 es.addEventListener('hotkeys', e => { if (!S) return; S.hotkeys = JSON.parse(e.data); renderHeader(); renderSettings(); renderDpi(); });
 es.addEventListener('dpi', e => { if (!S) return; S.dpi = JSON.parse(e.data); renderDpi(); renderSettings(); });
 es.addEventListener('dpi_spin', e => { const sp = JSON.parse(e.data); toast('DPI-рулетка: ' + sp.value + (sp.reason === 'death' ? ' (смерть)' : '')); });

@@ -29,7 +29,7 @@ from .modules import dpi
 from .modules.dpi import DpiService, DpiSettings
 from .roulette import Roulette
 
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 KILL_ADVANCE_GRACE = 1.5   # seconds: ignore a manual "next" right after a kill already advanced
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 log = logging.getLogger("cs2roulette")

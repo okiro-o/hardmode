@@ -73,6 +73,8 @@ class OverlaySettings:
     show_match: bool = True       # recolour the current weapon when it is the one in hand
     match_color: str = "#ff6b6b"  # colour used for that highlight
     align: str = "left"           # left | center | right (horizontal) == top | middle | bottom (vertical)
+    loadout_layout: str = "rows"  # loadout overlay: "rows" (category per row) | "columns" (like the in-game screen)
+    loadout_names: bool = True    # loadout overlay: weapon names under silhouettes
 
     def apply(self, patch: dict | None) -> list[str]:
         """Apply a validated patch. Returns a list of rejected keys (invalid values)."""
@@ -100,12 +102,17 @@ class OverlaySettings:
                     self.layout = v
                 else:
                     rejected.append(k)
+            elif k == "loadout_layout":
+                if v in ("rows", "columns"):
+                    self.loadout_layout = v
+                else:
+                    rejected.append(k)
             elif k == "align":
                 if v in ALIGNS:
                     self.align = v
                 else:
                     rejected.append(k)
-            elif k in ("labels", "show_counter", "show_kills", "show_match"):
+            elif k in ("labels", "show_counter", "show_kills", "show_match", "loadout_names"):
                 setattr(self, k, _to_bool(v))
             else:
                 rejected.append(k)

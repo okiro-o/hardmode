@@ -254,3 +254,10 @@ def test_overlay_match_color_validation():
     o = OverlaySettings()
     assert o.apply({"match_color": "#00ff00"}) == [] and o.match_color == "#00ff00"
     assert o.apply({"match_color": "red"}) == ["match_color"]
+
+
+def test_overlay_loadout_layout_validation():
+    o = OverlaySettings()
+    assert o.apply({"loadout_layout": "columns", "loadout_names": "no"}) == []
+    assert o.loadout_layout == "columns" and o.loadout_names is False
+    assert o.apply({"loadout_layout": "diagonal"}) == ["loadout_layout"]
