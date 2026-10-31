@@ -111,8 +111,9 @@ def test_tray_quit_does_not_block_the_menu_thread():
 def test_bat_files_keep_user_data_and_refresh_dependencies():
     import os
     root = os.path.join(os.path.dirname(__file__), "..")
-    build = open(os.path.join(root, "build.bat"), encoding="utf-8").read()
-    run = open(os.path.join(root, "run.bat"), encoding="utf-8").read()
+    # newline="" keeps CRLF intact (text mode would translate it away)
+    build = open(os.path.join(root, "build.bat"), encoding="utf-8", newline="").read()
+    run = open(os.path.join(root, "run.bat"), encoding="utf-8", newline="").read()
     assert "hardmode-data-keep" in build and build.count('move "%KEEP%" "dist\\hardmode\\data"') == 2
     assert "requirements.installed" in run and "fc /b requirements.txt" in run
     for text in (build, run):
