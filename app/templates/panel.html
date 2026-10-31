@@ -1143,6 +1143,7 @@ fetch('/api/weapons').then(r=>r.json()).then(d => { d.weapons.forEach(w => weapo
 
 const es = new EventSource('/events');
 es.addEventListener('snapshot', e => { S = JSON.parse(e.data); renderAll(); $('chip-sse').className='chip ok'; });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { schedulePreview('dpi'); schedulePreview('weapons'); } });
 es.addEventListener('roulette', e => { if (!S) return; S.roulette = JSON.parse(e.data); renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderChecks(); schedulePreview('weapons'); });
 es.addEventListener('gsi', e => { if (!S) return; const prev = S.gsi || {}; S.gsi = JSON.parse(e.data); renderHeader(); renderMisc(); renderChecks(); if (S.gsi.held !== prev.held || S.gsi.connected !== prev.connected) schedulePreview('weapons'); });
 es.addEventListener('settings', e => { if (!S) return; const d = JSON.parse(e.data); S.overlay = d.overlay; S.ingame = d.ingame || S.ingame; S.gsi_token = d.gsi_token; S.port = d.port; if (S.dpi && d.dpi) S.dpi.settings = d.dpi; if (S.chat && d.chat) S.chat.settings = d.chat; if (d.roulette) S.roulette.settings = d.roulette; renderHeader(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); refreshState();  renderIngame(); schedulePreview('dpi'); schedulePreview('weapons'); });
