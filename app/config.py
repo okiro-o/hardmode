@@ -50,15 +50,62 @@ def dpi_state_path() -> str:
     return os.path.join(data_dir(), "dpi_state.json")
 
 
-def _field_names(cls) -> set[str]:
-    return {f.name for f in fields(cls)}
+# ----------------------------------------------------------------- shared helpers
+# Every settings dataclass (here, roulette.py, chat.py, modules/dpi/service.py) and every JSON state
+# file use these, so the lenient parsing and the atomic write live in exactly one place.
 
-
-def _to_bool(v) -> bool:
+def to_bool(v) -> bool:
     """Lenient boolean for settings coming from JSON/forms ("no", "0", "false" are False)."""
     if isinstance(v, str):
         return v.strip().lower() not in ("", "0", "false", "no", "off", "нет")
     return bool(v)
+
+
+def to_int(v, name: str) -> int:
+    """Strict int for settings: bools and junk raise ``ValueError("<name>: нужно число")``."""
+    try:
+        if isinstance(v, bool):
+            raise TypeError
+        return int(v)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name}: нужно число") from None
+
+
+def to_float(v, name: str) -> float:
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name}: нужно число") from None
+    if f != f:   # NaN
+        raise ValueError(f"{name}: нужно число")
+    return f
+
+
+def require_object(d, label: str) -> None:
+    if d is not None and not isinstance(d, dict):
+        raise ValueError(f"{label}: нужен объект")
+
+
+def assign_fields(obj, d, label: str) -> dict:
+    """setattr every key of ``d`` that is a dataclass field of ``obj``; return the unknown keys."""
+    require_object(d, label)
+    names = {f.name for f in fields(obj)}
+    unknown: dict = {}
+    for k, v in (d or {}).items():
+        if k in names:
+            setattr(obj, k, v)
+        else:
+            unknown[k] = v
+    return unknown
+
+
+def write_json_atomic(path: str, data, indent: int | None = None) -> None:
+    """dump to ``path + ".tmp"`` then ``os.replace``: a crash never leaves a half-written file."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=indent)
+    os.replace(tmp, path)
 
 
 @dataclass
@@ -78,8 +125,7 @@ class OverlaySettings:
 
     def apply(self, patch: dict | None) -> list[str]:
         """Apply a validated patch. Returns a list of rejected keys (invalid values)."""
-        if patch is not None and not isinstance(patch, dict):
-            raise ValueError("overlay: нужен объект")
+        require_object(patch, "overlay")
         rejected: list[str] = []
         for k, v in (patch or {}).items():
             if k in ("color", "accent", "match_color"):
@@ -113,7 +159,7 @@ class OverlaySettings:
                 else:
                     rejected.append(k)
             elif k in ("labels", "show_counter", "show_kills", "show_match", "loadout_names"):
-                setattr(self, k, _to_bool(v))
+                setattr(self, k, to_bool(v))
             else:
                 rejected.append(k)
         return rejected
@@ -146,13 +192,12 @@ class IngameSettings:
     monitor: int = 0                # 0 = primary
 
     def apply(self, patch: dict | None) -> list[str]:
-        if patch is not None and not isinstance(patch, dict):
-            raise ValueError("ingame: нужен объект")
+        require_object(patch, "ingame")
         rejected: list[str] = []
         for k, v in (patch or {}).items():
             try:
                 if k in ("dpi_enabled", "weapons_enabled", "weapons_names"):
-                    setattr(self, k, _to_bool(v))
+                    setattr(self, k, to_bool(v))
                 elif k in ("dpi_mode", "weapons_mode"):
                     if v not in ("change", "always"):
                         raise ValueError(k)
@@ -220,7 +265,7 @@ class AppSettings:
         s.roulette = dict(d.get("roulette") or {}) if isinstance(d.get("roulette"), dict) else {}
         s.dpi = dict(d.get("dpi") or {}) if isinstance(d.get("dpi"), dict) else {}
         s.chat = dict(d.get("chat") or {}) if isinstance(d.get("chat"), dict) else {}
-        s.open_browser = _to_bool(d.get("open_browser", True))
+        s.open_browser = to_bool(d.get("open_browser", True))
         if isinstance(d.get("overlay"), dict):
             s.overlay.apply(d["overlay"])
         if isinstance(d.get("ingame"), dict):
@@ -228,11 +273,7 @@ class AppSettings:
         return s
 
     def save(self, path: str | None = None) -> None:
-        path = path or settings_path()
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(self.to_dict(), f, ensure_ascii=False, indent=2)
-        os.replace(tmp, path)
+        write_json_atomic(path or settings_path(), self.to_dict(), indent=2)
 
     @classmethod
     def load(cls, path: str | None = None) -> "AppSettings":

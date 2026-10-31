@@ -7,27 +7,17 @@ render snapshots of this object, so an OBS page reload never loses anything.
 from __future__ import annotations
 
 import json
-import os
 import random
 import time
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field
 from typing import Any, Callable
 
-from . import loadout as L
+from . import config, loadout as L
 from . import weapons as W
 
 MAX_HISTORY = 200
 MAX_LOG = 60
 MAX_UNDO = 20
-
-
-def _to_int(value: Any, name: str) -> int:
-    try:
-        if isinstance(value, bool):
-            raise TypeError
-        return int(value)
-    except (TypeError, ValueError):
-        raise ValueError(f"{name}: нужно число") from None
 
 
 @dataclass
@@ -45,17 +35,12 @@ class RouletteSettings:
     @classmethod
     def from_dict(cls, d: dict | None) -> "RouletteSettings":
         """Build settings from untrusted JSON. Raises ValueError on bad values."""
-        if d is not None and not isinstance(d, dict):
-            raise ValueError("roulette: нужен объект")
         s = cls()
-        names = {f.name for f in fields(cls)}
-        for k, v in (d or {}).items():
-            if k in names:
-                setattr(s, k, v)
-            elif k == "include_extras":   # legacy single toggle (< 0.4)
-                s.include_knife = s.include_zeus = bool(v)
-        s.kills_per_weapon = max(1, min(20, _to_int(s.kills_per_weapon, "kills_per_weapon")))
-        s.visible_next = max(0, min(5, _to_int(s.visible_next, "visible_next")))
+        extra = config.assign_fields(s, d, "roulette")
+        if "include_extras" in extra:     # legacy single toggle (< 0.4)
+            s.include_knife = s.include_zeus = bool(extra["include_extras"])
+        s.kills_per_weapon = max(1, min(20, config.to_int(s.kills_per_weapon, "kills_per_weapon")))
+        s.visible_next = max(0, min(5, config.to_int(s.visible_next, "visible_next")))
         s.include_starting = bool(s.include_starting)
         s.include_knife = bool(s.include_knife)
         s.include_zeus = bool(s.include_zeus)
@@ -556,11 +541,7 @@ class Roulette:
         return r
 
     def save(self, path: str) -> None:
-        tmp = path + ".tmp"
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(self.to_dict(), f, ensure_ascii=False, indent=1)
-        os.replace(tmp, path)
+        config.write_json_atomic(path, self.to_dict(), indent=1)
 
     @classmethod
     def load(cls, path: str) -> "Roulette":

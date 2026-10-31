@@ -30,18 +30,14 @@ import time
 import urllib.error
 import urllib.request
 from collections import defaultdict
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass
 from typing import Any, Callable
+
+from . import config
 
 SE_API = "https://api.streamelements.com/kappa/v2"
 MAX_LOG = 30
 log = logging.getLogger("hardmode.chat")
-
-
-def _bool(v: Any) -> bool:
-    if isinstance(v, str):
-        return v.strip().lower() not in ("", "0", "false", "no", "off", "нет")
-    return bool(v)
 
 
 def jwt_claims(token: str) -> dict:
@@ -77,15 +73,10 @@ class ChatSettings:
 
     @classmethod
     def from_dict(cls, d: dict | None) -> "ChatSettings":
-        if d is not None and not isinstance(d, dict):
-            raise ValueError("chat: нужен объект")
         s = cls()
-        names = {f.name for f in fields(cls)}
-        for k, v in (d or {}).items():
-            if k in names:
-                setattr(s, k, v)
+        config.assign_fields(s, d, "chat")
         for b in ("enabled", "on_start", "on_weapon", "on_dpi", "on_viewer", "on_reject"):
-            setattr(s, b, _bool(getattr(s, b)))
+            setattr(s, b, config.to_bool(getattr(s, b)))
         s.channel_login = s.channel_login.strip().lstrip("#").lower()[:40] if isinstance(s.channel_login, str) else ""
         s.se_jwt = s.se_jwt.strip() if isinstance(s.se_jwt, str) else ""
         for t in ("start_template", "weapon_template", "dpi_template", "viewer_template", "reject_template"):

@@ -5,12 +5,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import threading
 import time
 from typing import Any
 
-from . import weapons as W
+from . import config, weapons as W
 
 log = logging.getLogger("hardmode.stats")
 
@@ -75,10 +74,7 @@ class StatsTracker:
             return
         self._last_save = now
         try:
-            tmp = self.path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(self.data, f, ensure_ascii=False)
-            os.replace(tmp, self.path)
+            config.write_json_atomic(self.path, self.data)
             self._dirty = False
         except OSError:
             log.warning("cannot save stats", exc_info=True)

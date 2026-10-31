@@ -9,38 +9,19 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import math
 import random
 import re
 import threading
 import time
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass
 from typing import Any, Callable
 
+from ... import config
 from . import grid
 from .backends import DpiBackend, make_backend
 
 MAX_LOG = 40
-
-
-def _int(v: Any, name: str) -> int:
-    try:
-        if isinstance(v, bool):
-            raise TypeError
-        return int(v)
-    except (TypeError, ValueError):
-        raise ValueError(f"{name}: нужно число") from None
-
-
-def _float(v: Any, name: str) -> float:
-    try:
-        f = float(v)
-    except (TypeError, ValueError):
-        raise ValueError(f"{name}: нужно число") from None
-    if f != f:
-        raise ValueError(f"{name}: нужно число")
-    return f
 
 
 @dataclass
@@ -77,22 +58,17 @@ class DpiSettings:
 
     @classmethod
     def from_dict(cls, d: dict | None) -> "DpiSettings":
-        if d is not None and not isinstance(d, dict):
-            raise ValueError("dpi: нужен объект")
         s = cls()
-        names = {f.name for f in fields(cls)}
-        for k, v in (d or {}).items():
-            if k in names:
-                setattr(s, k, v)
-        s.min_dpi = max(100, min(44000, _int(s.min_dpi, "min_dpi")))
-        s.max_dpi = max(100, min(44000, _int(s.max_dpi, "max_dpi")))
+        config.assign_fields(s, d, "dpi")
+        s.min_dpi = max(100, min(44000, config.to_int(s.min_dpi, "min_dpi")))
+        s.max_dpi = max(100, min(44000, config.to_int(s.max_dpi, "max_dpi")))
         if s.max_dpi < s.min_dpi:
             s.min_dpi, s.max_dpi = s.max_dpi, s.min_dpi
-        s.step = max(1, min(10000, _int(s.step, "step")))
-        s.spin_duration_ms = max(500, min(30000, _int(s.spin_duration_ms, "spin_duration_ms")))
-        s.revolutions = max(1, min(20, _int(s.revolutions, "revolutions")))
-        s.death_cooldown_s = max(0.0, min(300.0, _float(s.death_cooldown_s, "death_cooldown_s")))
-        s.home_dpi = max(100, min(44000, _int(s.home_dpi, "home_dpi")))
+        s.step = max(1, min(10000, config.to_int(s.step, "step")))
+        s.spin_duration_ms = max(500, min(30000, config.to_int(s.spin_duration_ms, "spin_duration_ms")))
+        s.revolutions = max(1, min(20, config.to_int(s.revolutions, "revolutions")))
+        s.death_cooldown_s = max(0.0, min(300.0, config.to_float(s.death_cooldown_s, "death_cooldown_s")))
+        s.home_dpi = max(100, min(44000, config.to_int(s.home_dpi, "home_dpi")))
         vals = s.custom_values if isinstance(s.custom_values, list) else []
         cleaned: list[int] = []
         for v in vals:
@@ -105,16 +81,16 @@ class DpiSettings:
         s.custom_values = sorted(set(cleaned))[:60]
         if s.pool_mode not in ("bag", "random"):
             s.pool_mode = "bag"
-        s.viewer_min = max(100, min(44000, _int(s.viewer_min, "viewer_min")))
-        s.viewer_max = max(100, min(44000, _int(s.viewer_max, "viewer_max")))
+        s.viewer_min = max(100, min(44000, config.to_int(s.viewer_min, "viewer_min")))
+        s.viewer_max = max(100, min(44000, config.to_int(s.viewer_max, "viewer_max")))
         if s.viewer_max < s.viewer_min:
             s.viewer_min, s.viewer_max = s.viewer_max, s.viewer_min
-        s.viewer_max_values = max(1, min(60, _int(s.viewer_max_values, "viewer_max_values")))
-        s.viewer_per_user = max(1, min(10, _int(s.viewer_per_user, "viewer_per_user")))
+        s.viewer_max_values = max(1, min(60, config.to_int(s.viewer_max_values, "viewer_max_values")))
+        s.viewer_per_user = max(1, min(10, config.to_int(s.viewer_per_user, "viewer_per_user")))
         s.viewer_reward_id = s.viewer_reward_id.strip()[:64] if isinstance(s.viewer_reward_id, str) else ""
         s.viewer_command = s.viewer_command.strip()[:20] if isinstance(s.viewer_command, str) else ""
-        s.idle_hide_s = max(0.0, min(3600.0, _float(s.idle_hide_s, "idle_hide_s")))
-        s.wheel_linger_s = max(0.0, min(60.0, _float(s.wheel_linger_s, "wheel_linger_s")))
+        s.idle_hide_s = max(0.0, min(3600.0, config.to_float(s.idle_hide_s, "idle_hide_s")))
+        s.wheel_linger_s = max(0.0, min(60.0, config.to_float(s.wheel_linger_s, "wheel_linger_s")))
         if not (isinstance(s.home_color, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", s.home_color.strip())):
             raise ValueError("home_color: нужен цвет вида #rrggbb")
         s.home_color = s.home_color.strip().lower()
@@ -579,14 +555,10 @@ class DpiService:
     # ---------------------------------------------------------- persistence
     def _save(self) -> None:
         try:
-            tmp = self.state_path + ".tmp"
-            os.makedirs(os.path.dirname(self.state_path) or ".", exist_ok=True)
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump({"current_dpi": self.current_dpi, "target_dpi": self.target_dpi,
-                           "last_spin": self.last_spin, "spins": self.spins,
-                           "deaths": self.deaths, "log": self.log, "consumed": self.consumed,
-                           "viewer_values": self.viewer_values}, f, ensure_ascii=False)
-            os.replace(tmp, self.state_path)
+            config.write_json_atomic(self.state_path, {
+                "current_dpi": self.current_dpi, "target_dpi": self.target_dpi, "last_spin": self.last_spin,
+                "spins": self.spins, "deaths": self.deaths, "log": self.log, "consumed": self.consumed,
+                "viewer_values": self.viewer_values})
         except OSError:
             pass
 
