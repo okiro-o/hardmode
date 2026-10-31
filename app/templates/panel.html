@@ -126,6 +126,8 @@
   .bg .bg-b > button { flex:1 1 auto; min-width:0; }
   .bg .bg-b > button.primary { flex:1.4 1 auto; }
   .bg .bg-b input { flex:1 1 160px; min-width:0; }
+  .bg .bg-b.vert { flex-direction:column; }
+  .bg .bg-b.vert > button { width:100%; flex:0 0 auto; }
   /* startup checklist */
   .check { display:flex; align-items:flex-start; gap:14px; padding:12px 14px; border:1px solid var(--line); border-radius:10px; background:var(--panel2); margin-bottom:8px; }
   .check .mark { width:28px; height:28px; border-radius:50%; flex:0 0 auto; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:15px; background:#2a3040; color:var(--muted); }
@@ -358,7 +360,7 @@
                 <button class="primary big" id="btn-dpi-spin" onclick="post('/api/dpi/spin',{reason:'manual'})">🎡 Крутить</button>
                 <button class="big" onclick="post('/api/dpi/home')" title="Применить обычный DPI из настроек">Вернуть мой DPI</button>
               </div></div>
-              <div class="bg"><div class="bg-l">Мышь</div><div class="bg-b">
+              <div class="bg"><div class="bg-l">Мышь</div><div class="bg-b vert">
                 <button onclick="probeMouse()">🔍 Проверить</button>
                 <button onclick="post('/api/dpi/hostmode')" title="Перевести мышь в host-режим: сенсор принимает DPI от программ только в нём (в G HUB это «On-Board Memory Mode» выкл.)">Host-режим</button>
               </div></div>
