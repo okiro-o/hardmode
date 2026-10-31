@@ -48,7 +48,8 @@ class StatsTracker:
         self._round: dict | None = None     # {"no", "dpi", "changed", "kills"}
         self._last_t: float | None = None
         self._last_save = 0.0
-        self._dirty = False
+        self._dirty = False          # countable events not yet written
+        self._time_dirty = False     # only the per-DPI time counters moved
         self._load()
 
     # ------------------------------------------------------------------ store
@@ -75,7 +76,7 @@ class StatsTracker:
         self._last_save = now
         try:
             config.write_json_atomic(self.path, self.data)
-            self._dirty = False
+            self._dirty = self._time_dirty = False
         except OSError:
             log.warning("cannot save stats", exc_info=True)
 
@@ -116,6 +117,7 @@ class StatsTracker:
                 dt = now - self._last_t
                 if 0 < dt < 10:
                     self._dpi(self.cur_dpi)["seconds"] += dt
+                    self._time_dirty = True
             self._last_t = now
             t = self.data["totals"]
             for ev in events:
@@ -163,10 +165,10 @@ class StatsTracker:
                             self._dpi(self._round["dpi"])["rounds"] += 1
                         self._round = None
                         changed = True
-            if changed:
+            if changed or self._dirty:
                 self._save()
-            elif self._dirty or now - self._last_save > 30:
-                self._save()      # pending events or the time counters
+            elif self._time_dirty and now - self._last_save > 30:
+                self._save()      # time counters alone: at most twice a minute
         return changed
 
     # ---------------------------------------------------------------- control

@@ -14,6 +14,7 @@ fc /b requirements.txt ".venv\requirements.installed" >nul 2>&1 || (
   ".venv\Scripts\python.exe" -m pip install -r requirements.txt || goto :fail
   copy /y requirements.txt ".venv\requirements.installed" >nul
 )
+if /i "%~1"=="--setup-only" goto :eof
 echo [hardmode] Запускаю в трее. Иконка появится рядом с часами; это окно можно закрыть.
 start "" ".venv\Scripts\pythonw.exe" "%~dp0start_tray.pyw"
 timeout /t 2 >nul

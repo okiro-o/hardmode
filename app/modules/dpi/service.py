@@ -22,6 +22,7 @@ from . import grid
 from .backends import DpiBackend, make_backend
 
 MAX_LOG = 40
+_UNSET = object()   # "compute allowed_values() yourself" sentinel (None is a legitimate value)
 
 
 @dataclass
@@ -156,8 +157,7 @@ class DpiService:
 
     def stop(self) -> None:
         self._guard_stop.set()
-        if self._pending_apply:
-            self._pending_apply.cancel()
+        self.cancel_pending()
         try:
             self.backend.close()
         except Exception:
@@ -179,10 +179,10 @@ class DpiService:
         except Exception:
             return None
 
-    def base_values(self) -> list[int]:
+    def base_values(self, allowed=_UNSET) -> list[int]:
         """Values that belong to the wheel permanently: range (optional) + manual list."""
         s = self.settings
-        allowed = self._allowed()
+        allowed = self._allowed() if allowed is _UNSET else allowed
         vals: set[int] = set()
         if s.use_range:
             vals.update(grid.wheel_values(s.min_dpi, s.max_dpi, s.step, allowed))
@@ -190,16 +190,16 @@ class DpiService:
             vals.add(grid.snap(v, allowed))
         return sorted(vals)
 
-    def segments(self) -> tuple[list[int], list[int]]:
+    def segments(self, allowed=_UNSET) -> tuple[list[int], list[int]]:
         """What is on the wheel right now: unique sorted values and their weights.
 
         Base values (range/custom, minus consumed ones in bag mode) weigh 1 each; every viewer entry
         adds 1 to its value, so two viewers adding 3000 make that segment twice as wide (one segment,
         not two). An empty wheel falls back to the home DPI.
         """
-        allowed = self._allowed()
-        home = self.home_value()
-        base = self.base_values()
+        allowed = self._allowed() if allowed is _UNSET else allowed
+        home = self.home_value(allowed)
+        base = self.base_values(allowed)
         if self.settings.pool_mode == "bag":
             remaining = [v for v in base if v not in self.consumed]
             if base and all(v == home for v in remaining):
@@ -216,17 +216,18 @@ class DpiService:
         vals = sorted(weights)
         return vals, [weights[v] for v in vals]
 
-    def home_value(self) -> int:
-        return grid.snap(self.settings.home_dpi, self._allowed())
+    def home_value(self, allowed=_UNSET) -> int:
+        return grid.snap(self.settings.home_dpi, self._allowed() if allowed is _UNSET else allowed)
 
     def values(self) -> list[int]:
         return self.segments()[0]
 
-    def wheel_info(self) -> dict:
-        base = self.base_values()
-        vals, weights = self.segments()
+    def wheel_info(self, segs: tuple[list[int], list[int]] | None = None) -> dict:
+        allowed = self._allowed()
+        base = self.base_values(allowed)
+        vals, weights = segs if segs is not None else self.segments(allowed)
         return {"base_total": len(base), "consumed": sorted(v for v in self.consumed if v in base),
-                "viewer": list(self.viewer_values), "on_wheel": len(vals), "home": self.home_value(),
+                "viewer": list(self.viewer_values), "on_wheel": len(vals), "home": self.home_value(allowed),
                 "weights": {str(v): w for v, w in zip(vals, weights) if w > 1}}
 
     def _consume(self, value: int) -> None:
@@ -311,7 +312,7 @@ class DpiService:
             self.consumed.remove(iv)
 
     def snapshot(self) -> dict:
-        vals, weights = self.segments()
+        segs = vals, weights = self.segments()
         return {
             "enabled": self.settings.enabled,
             "backend": self.backend.name,
@@ -320,7 +321,7 @@ class DpiService:
             "target_dpi": self.target_dpi,
             "values": vals,
             "weights": weights,
-            "wheel": self.wheel_info(),
+            "wheel": self.wheel_info(segs),
             "learn_reward": self.learn_reward,
             "last_spin": self.last_spin,
             "log": self.log[-20:],
@@ -378,9 +379,7 @@ class DpiService:
         else:
             self._log("spin", f"Крутим: {value} DPI ({reason})", value=value, reason=reason)
         self._publish("dpi_spin", spin)
-        if self._pending_apply:
-            self._pending_apply.cancel()
-            self._pending_apply = None
+        self.cancel_pending()
         if instant or self.settings.apply_at == "start":
             self._schedule_apply(value, f"spin:{reason}", delay=0.0)
         else:
@@ -404,6 +403,12 @@ class DpiService:
             return False
 
     # ---------------------------------------------------------------- apply
+    def cancel_pending(self) -> None:
+        """Drop a scheduled apply (the wheel result that has not landed yet)."""
+        if self._pending_apply:
+            self._pending_apply.cancel()
+            self._pending_apply = None
+
     def _schedule_apply(self, value: int, reason: str, delay: float) -> None:
         if self._loop is None:
             return

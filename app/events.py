@@ -48,18 +48,22 @@ class Broker:
         self._seq += 1
         msg = (self._seq, event, json.dumps(data, ensure_ascii=False))
         for q in list(self._subscribers):
+            self._offer(q, msg)
+
+    @staticmethod
+    def _offer(q: asyncio.Queue, item) -> None:
+        """put_nowait; a slow client loses its oldest message instead of blocking the publisher."""
+        try:
+            q.put_nowait(item)
+        except asyncio.QueueFull:
             try:
-                q.put_nowait(msg)
-            except asyncio.QueueFull:
-                # slow client: drop the oldest message
-                try:
-                    q.get_nowait()
-                    q.put_nowait(msg)
-                except (asyncio.QueueEmpty, asyncio.QueueFull):
-                    pass
+                q.get_nowait()
+                q.put_nowait(item)
+            except (asyncio.QueueEmpty, asyncio.QueueFull):
+                pass
 
     def publish_threadsafe(self, event: str, data: dict) -> None:
-        """Publish from a foreign thread (hotkey thread etc.)."""
+        """Publish from a foreign thread (chat, Twitch reader, DPI guard, in-game overlay)."""
         if self._loop is None or self._loop.is_closed():
             return
         self._loop.call_soon_threadsafe(self.publish, event, data)
@@ -73,14 +77,7 @@ class Broker:
         """End every SSE stream now and refuse new ones (shutdown). Call from the loop thread."""
         self._closing = True
         for q in list(self._subscribers):
-            try:
-                q.put_nowait(None)
-            except asyncio.QueueFull:
-                try:
-                    q.get_nowait()
-                    q.put_nowait(None)
-                except (asyncio.QueueEmpty, asyncio.QueueFull):
-                    pass
+            self._offer(q, None)
 
     async def stream(self, snapshot: Callable[[], dict], heartbeat: float = 15.0,
                      meta: dict | None = None) -> AsyncIterator[str]:

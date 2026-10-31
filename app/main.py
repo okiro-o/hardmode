@@ -32,6 +32,7 @@ from .modules.dpi import DpiService, DpiSettings
 from .roulette import Roulette
 from .stats import StatsTracker
 from .twitch_irc import IrcMessage, TwitchChatReader
+from .web import json_body as _json, page
 
 from .version import VERSION
 
@@ -279,27 +280,15 @@ class AppState:
                 self.roulette._log("kill", "Дополнительный килл в том же пакете (коллатерал) — не считается")
                 self.roulette._changed()
                 continue
-            result = self.roulette.on_kill(ev["weapon"], headshot=ev["headshot"],
-                                           ambiguous=bool(ev["ambiguous"]), raw_name=ev["raw"])
-            if result["advanced"]:
+            if self.register_kill(ev["weapon"], ev["headshot"], bool(ev["ambiguous"]), ev["raw"])["advanced"]:
                 batch_advanced = True
-            self.broker.publish("kill", {**result, "headshot": ev["headshot"], "raw": ev["raw"],
-                                         "t": time.time()})
         self.publish_gsi()
 
-
-NO_STORE = {"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"}
-
-
-def _template(name: str) -> str:
-    path = os.path.join(config.package_dir(), "templates", name)
-    with open(path, encoding="utf-8") as f:
-        return f.read()
-
-
-def page(name: str) -> HTMLResponse:
-    """HTML pages are never cached: OBS's browser (CEF) otherwise keeps old overlay JS after an update."""
-    return HTMLResponse(_template(name), headers=NO_STORE)
+    def register_kill(self, weapon: str | None, headshot: bool, ambiguous: bool, raw: str | None = None) -> dict:
+        """Book a kill in the roulette and tell the overlays (GSI path and the fake-kill API)."""
+        result = self.roulette.on_kill(weapon, headshot=headshot, ambiguous=ambiguous, raw_name=raw)
+        self.broker.publish("kill", {**result, "headshot": headshot, "raw": raw, "t": time.time()})
+        return result
 
 
 def _loopback_origin(origin: str) -> bool:
@@ -522,11 +511,7 @@ def create_app() -> FastAPI:
         weapon = body.get("weapon") or state.roulette.current()
         if weapon is not None and (not isinstance(weapon, str) or weapon not in W.BY_ID):
             raise HTTPException(400, "unknown weapon")
-        result = state.roulette.on_kill(weapon, headshot=bool(body.get("headshot")),
-                                        ambiguous=bool(body.get("ambiguous")))
-        state.broker.publish("kill", {**result, "headshot": bool(body.get("headshot")), "raw": None,
-                                      "t": time.time()})
-        return result
+        return state.register_kill(weapon, bool(body.get("headshot")), bool(body.get("ambiguous")))
 
     @app.post("/api/side")
     async def api_side(request: Request) -> dict:
@@ -553,26 +538,16 @@ def create_app() -> FastAPI:
         for section in ("roulette", "overlay", "dpi", "chat", "ingame"):
             if section in body and body[section] is not None and not isinstance(body[section], dict):
                 raise HTTPException(400, f"{section}: нужен объект")
-        if "chat" in body:
-            try:
-                state.chat.update_settings(body["chat"] or {})
-            except ValueError as e:
-                raise HTTPException(400, f"Некорректные настройки чата: {e}")
-            s.chat = state.chat.settings.to_dict()
-        if "dpi" in body:
-            try:
-                state.dpi.update_settings(body["dpi"] or {})
-            except ValueError as e:
-                raise HTTPException(400, f"Некорректные настройки DPI: {e}")
-            s.dpi = state.dpi.settings.to_dict()
+        # sections validated by their own module: the module keeps the typed settings, AppSettings the dict copy
+        for section, owner, label in (("chat", state.chat, "чата"), ("dpi", state.dpi, "DPI"), ("roulette", state.roulette, "рулетки")):
+            if section in body:
+                try:
+                    owner.update_settings(body[section] or {})
+                except ValueError as e:
+                    raise HTTPException(400, f"Некорректные настройки {label}: {e}")
+                setattr(s, section, owner.settings.to_dict())
         if "dpi" in body or "chat" in body:
             state.sync_twitch()
-        if "roulette" in body:
-            try:
-                state.roulette.update_settings(body["roulette"] or {})
-            except ValueError as e:
-                raise HTTPException(400, f"Некорректные настройки рулетки: {e}")
-            s.roulette = state.roulette.settings.to_dict()
         if "overlay" in body:
             rejected += [f"overlay.{k}" for k in s.overlay.apply(body["overlay"] or {})]
         if "ingame" in body:
@@ -735,16 +710,6 @@ def create_app() -> FastAPI:
     return app
 
 
-async def _json(request: Request) -> dict:
-    """JSON body for /api POSTs. Requires an explicit JSON content type (browser CSRF guard)."""
-    ctype = request.headers.get("content-type", "")
-    if not ctype.lower().startswith("application/json"):
-        raise HTTPException(415, "Content-Type must be application/json")
-    try:
-        body = await request.json()
-    except Exception:
-        raise HTTPException(400, "Некорректный JSON")
-    return body if isinstance(body, dict) else {}
 
 
 app = create_app()

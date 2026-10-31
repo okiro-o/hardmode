@@ -405,15 +405,6 @@ if IS_WINDOWS:  # pragma: no cover - exercised only on Windows
     ULW_ALPHA, AC_SRC_OVER, AC_SRC_ALPHA, PM_REMOVE = 2, 0, 1, 1
     CLASS_NAME = "HardmodeIngameOverlay"
 
-    def set_dpi_aware() -> None:
-        try:
-            ctypes.WinDLL("shcore").SetProcessDpiAwareness(2)
-        except Exception:
-            try:
-                user32.SetProcessDPIAware()
-            except Exception:
-                pass
-
     def monitors() -> list[tuple[int, int, int, int]]:
         rects: list[tuple[int, int, int, int]] = []
 
@@ -575,7 +566,7 @@ class IngameOverlays:
     # ---------------------------------------------------------------- thread
     def _run(self) -> None:  # pragma: no cover - Windows only
         try:
-            set_dpi_aware()
+            # process DPI awareness is set once in app.__main__ before any window exists
             layers = {k: Win32Layer(f"Hardmode {k}") for k in KINDS}
         except Exception as e:
             self.error = f"{type(e).__name__}: {e}"

@@ -257,15 +257,7 @@ class Roulette:
         self._rng = random.Random(self.seed)
         self.running = True
         self.started_at = time.time()
-        self._q_clear()
-        self.bags = {}
-        self.current_kills = 0
-        self.completed = 0
-        self.kills_total = 0
-        self.kills_wrong_weapon = 0
-        self.kills_ambiguous = 0
-        self.history = []
-        self._undo = []
+        self._wipe_session()
         self._fill_queue()
         self._log("session", f"Сессия запущена ({self.side}). Первое оружие: {self.current_name()}")
         self._changed()
@@ -278,6 +270,12 @@ class Roulette:
 
     def reset(self) -> None:
         self.running = False
+        self._wipe_session()
+        self._log("session", "Сброс сессии")
+        self._changed()
+
+    def _wipe_session(self) -> None:
+        """Forget queue, bags, counters, history and undo (start of a fresh session / reset)."""
         self._q_clear()
         self.bags = {}
         self.current_kills = 0
@@ -287,8 +285,6 @@ class Roulette:
         self.kills_ambiguous = 0
         self.history = []
         self._undo = []
-        self._log("session", "Сброс сессии")
-        self._changed()
 
     @property
     def paused(self) -> bool:

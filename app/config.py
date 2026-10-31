@@ -191,44 +191,38 @@ class IngameSettings:
     weapons_names: bool = True
     monitor: int = 0                # 0 = primary
 
+    # option suffix -> validation; the same rules apply to the dpi_* and weapons_* keys
+    _BOOLS = ("enabled", "names")
+    _CHOICES = {"mode": ("change", "always"), "corner": CORNERS}
+    _FLOATS = {"show_s": (1.0, 120.0), "scale": (0.5, 3.0), "opacity": (0.2, 1.0)}
+    _INTS = {"x": (0, 8000), "y": (0, 8000), "next": (0, 3)}
+
     def apply(self, patch: dict | None) -> list[str]:
         require_object(patch, "ingame")
         rejected: list[str] = []
         for k, v in (patch or {}).items():
             try:
-                if k in ("dpi_enabled", "weapons_enabled", "weapons_names"):
-                    setattr(self, k, to_bool(v))
-                elif k in ("dpi_mode", "weapons_mode"):
-                    if v not in ("change", "always"):
-                        raise ValueError(k)
-                    setattr(self, k, v)
-                elif k in ("dpi_corner", "weapons_corner"):
-                    if v not in CORNERS:
-                        raise ValueError(k)
-                    setattr(self, k, v)
-                elif k in ("dpi_show_s", "weapons_show_s"):
-                    f = float(v)
-                    if f != f:
-                        raise ValueError(k)
-                    setattr(self, k, max(1.0, min(120.0, f)))
-                elif k in ("dpi_x", "dpi_y", "weapons_x", "weapons_y"):
-                    setattr(self, k, max(0, min(8000, int(float(v)))))
-                elif k in ("dpi_scale", "weapons_scale"):
-                    f = float(v)
-                    if f != f:
-                        raise ValueError(k)
-                    setattr(self, k, max(0.5, min(3.0, f)))
-                elif k in ("dpi_opacity", "weapons_opacity"):
-                    f = float(v)
-                    if f != f:
-                        raise ValueError(k)
-                    setattr(self, k, max(0.2, min(1.0, f)))
-                elif k == "weapons_next":
-                    self.weapons_next = max(0, min(3, int(float(v))))
-                elif k == "monitor":
+                if k == "monitor":
                     self.monitor = max(0, min(8, int(float(v))))
+                    continue
+                kind, _, opt = k.partition("_")
+                if kind not in ("dpi", "weapons") or k not in self.__dataclass_fields__:
+                    raise ValueError(k)
+                if opt in self._BOOLS:
+                    val = to_bool(v)
+                elif opt in self._CHOICES:
+                    if v not in self._CHOICES[opt]:
+                        raise ValueError(k)
+                    val = v
+                elif opt in self._FLOATS:
+                    lo, hi = self._FLOATS[opt]
+                    val = max(lo, min(hi, to_float(v, k)))
+                elif opt in self._INTS:
+                    lo, hi = self._INTS[opt]
+                    val = max(lo, min(hi, int(float(v))))
                 else:
                     raise ValueError(k)
+                setattr(self, k, val)
             except (TypeError, ValueError):
                 rejected.append(k)
         return rejected

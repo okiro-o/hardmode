@@ -1,12 +1,10 @@
 """HTTP routes of the DPI module (mounted by ``app.main``)."""
 from __future__ import annotations
 
-import os
-
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from ... import config
+from ...web import json_body as _json, page
 from .service import DpiService
 
 router = APIRouter()
@@ -16,23 +14,9 @@ def _svc(request: Request) -> DpiService:
     return request.app.state.app.dpi
 
 
-async def _json(request: Request) -> dict:
-    ctype = request.headers.get("content-type", "")
-    if not ctype.lower().startswith("application/json"):
-        raise HTTPException(415, "Content-Type must be application/json")
-    try:
-        body = await request.json()
-    except Exception:
-        raise HTTPException(400, "Некорректный JSON")
-    return body if isinstance(body, dict) else {}
-
-
 @router.get("/overlay/dpi", response_class=HTMLResponse)
 async def dpi_overlay() -> HTMLResponse:
-    path = os.path.join(config.package_dir(), "templates", "overlay_dpi.html")
-    with open(path, encoding="utf-8") as f:
-        html = f.read()
-    return HTMLResponse(html, headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"})
+    return page("overlay_dpi.html")
 
 
 @router.get("/api/dpi/status")
@@ -60,18 +44,14 @@ async def dpi_apply(request: Request) -> dict:
     if not 100 <= value <= 44000:
         raise HTTPException(400, "value: от 100 до 44000")
     svc = _svc(request)
-    if svc._pending_apply:
-        svc._pending_apply.cancel()
-        svc._pending_apply = None
+    svc.cancel_pending()
     return await svc.apply(value, reason="manual")
 
 
 @router.post("/api/dpi/home")
 async def dpi_home(request: Request) -> dict:
     svc = _svc(request)
-    if svc._pending_apply:
-        svc._pending_apply.cancel()
-        svc._pending_apply = None
+    svc.cancel_pending()
     return await svc.apply(svc.settings.home_dpi, reason="home")
 
 

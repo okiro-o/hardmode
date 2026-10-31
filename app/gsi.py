@@ -213,8 +213,8 @@ class GsiTracker:
             return events
 
         state = _obj(player.get("state"))
-        weapons = player.get("weapons")
-        active = self._active_weapon(weapons)
+        entries = self._weapon_entries(player.get("weapons"))   # parsed once, reused below
+        active = self._active_weapon(entries)
         active_raw = _str(active.get("name")) if active else None
         held = W.from_gsi_name(active_raw)
         st.held = held.id if held else None
@@ -239,10 +239,10 @@ class GsiTracker:
         match_kills = _int(_obj(player.get("match_stats")).get("kills"))
         st.round_kills = round_kills
         st.match_kills = match_kills
-        grenades = self._grenades(weapons)
-        alive = (st.health is None or st.health > 0) and bool(self._weapon_entries(weapons))
+        grenades = self._grenades(entries)
+        alive = (st.health is None or st.health > 0) and bool(entries)
         money = _int(state.get("money"))
-        names = tuple(sorted({n for n in (_str(e.get("name")) for e in self._weapon_entries(weapons)) if n}))
+        names = tuple(sorted({n for n in (_str(e.get("name")) for e in entries) if n}))
 
         prev = self._prev
         same_map = prev is not None and prev.map_name == st.map_name
