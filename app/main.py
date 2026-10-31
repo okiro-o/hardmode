@@ -40,7 +40,7 @@ from .version import VERSION
 QUIT_HOOK: list = []
 KILL_ADVANCE_GRACE = 1.5   # seconds: ignore a manual "next" right after a kill already advanced
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
-log = logging.getLogger("cs2roulette")
+log = logging.getLogger("hardmode")
 
 
 def _say(text: str) -> None:
@@ -382,11 +382,11 @@ def create_app() -> FastAPI:
         task = asyncio.create_task(housekeeping())
         if state.settings.open_browser and os.environ.get("CS2R_NO_BROWSER") != "1":
             loop.call_later(0.7, lambda: webbrowser.open(state.urls()["panel"]))
-        _say(f"[cs2-roulette] панель:   {state.urls()['panel']}")
-        _say(f"[cs2-roulette] виджет:   {state.urls()['overlay_weapons']}")
-        _say(f"[cs2-roulette] лоадаут:  {state.urls()['overlay_loadout']}")
-        _say(f"[cs2-roulette] DPI:      {state.urls()['overlay_dpi']}  (backend: {state.dpi.backend.name})")
-        _say(f"[cs2-roulette] данные:   {config.data_dir()}")
+        _say(f"[hardmode] панель:   {state.urls()['panel']}")
+        _say(f"[hardmode] виджет:   {state.urls()['overlay_weapons']}")
+        _say(f"[hardmode] лоадаут:  {state.urls()['overlay_loadout']}")
+        _say(f"[hardmode] DPI:      {state.urls()['overlay_dpi']}  (backend: {state.dpi.backend.name})")
+        _say(f"[hardmode] данные:   {config.data_dir()}")
         try:
             yield
         finally:
@@ -399,7 +399,7 @@ def create_app() -> FastAPI:
             state.twitch.stop()
             state.save_state()
 
-    app = FastAPI(title="CS2 Roulette", version=VERSION, lifespan=lifespan, docs_url=None, redoc_url=None)
+    app = FastAPI(title="Hardmode", version=VERSION, lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.app = state
 
     # Pure ASGI middleware (not BaseHTTPMiddleware: that one buffers/wraps streaming bodies and
@@ -747,7 +747,7 @@ def create_app() -> FastAPI:
     @app.post("/api/chat/test")
     async def chat_test(request: Request) -> dict:
         body = await _json(request)
-        text = str(body.get("message") or "✅ cs2-roulette: тестовое сообщение").strip()[:450]
+        text = str(body.get("message") or "✅ hardmode: тестовое сообщение").strip()[:450]
         loop = asyncio.get_running_loop()
         res = await loop.run_in_executor(None, state.chat.send_now, text)
         if res.get("ok"):

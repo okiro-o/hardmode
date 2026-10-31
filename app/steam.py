@@ -7,7 +7,8 @@ import sys
 
 CS2_FOLDER = "Counter-Strike Global Offensive"
 CFG_SUBDIR = os.path.join("game", "csgo", "cfg")
-CFG_NAME = "gamestate_integration_cs2roulette.cfg"
+CFG_NAME = "gamestate_integration_hardmode.cfg"
+LEGACY_CFG_NAMES = ("gamestate_integration_cs2roulette.cfg",)   # pre-rename name: removed on install
 
 
 def steam_root() -> str | None:
@@ -93,6 +94,11 @@ def install_cfg(content: str, cfg_dir: str | None = None) -> str:
         cfg_dir = cs2_cfg_dir()
     if not cfg_dir:
         raise FileNotFoundError("Папка CS2 game/csgo/cfg не найдена")
+    for legacy in LEGACY_CFG_NAMES:            # one cfg only, otherwise the game would send every packet twice
+        try:
+            os.remove(os.path.join(cfg_dir, legacy))
+        except OSError:
+            pass
     path = os.path.join(cfg_dir, CFG_NAME)
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write(content)

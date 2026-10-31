@@ -1,7 +1,7 @@
 """System-tray mode: the server runs in a background thread, the tray icon owns the main thread.
 
 No console window is needed: ``run.bat`` starts ``pythonw.exe start_tray.pyw``; the frozen
-``cs2-roulette.exe`` (built with ``--noconsole``) does the same. Errors go to ``data/app.log``
+``hardmode.exe`` (built with ``--noconsole``) does the same. Errors go to ``data/app.log``
 and to a tray notification.
 """
 from __future__ import annotations
@@ -16,7 +16,7 @@ import webbrowser
 
 from . import autostart, config, events
 
-log = logging.getLogger("cs2roulette.tray")
+log = logging.getLogger("hardmode.tray")
 
 
 def icon_image(size: int = 64):
@@ -94,7 +94,7 @@ class TrayApp:
     def notify(self, text: str) -> None:
         try:
             if self.icon:
-                self.icon.notify(text, "CS2 Roulette")
+                self.icon.notify(text, "Hardmode")
         except Exception:
             pass
 
@@ -110,7 +110,7 @@ class TrayApp:
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Выход", self._quit),
         )
-        self.icon = pystray.Icon("cs2-roulette", icon_image(64), "CS2 Roulette", menu)
+        self.icon = pystray.Icon("hardmode", icon_image(64), "Hardmode", menu)
         self.icon.run()
 
 

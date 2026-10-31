@@ -4,12 +4,12 @@ setlocal
 cd /d "%~dp0"
 where py >nul 2>nul && set "PY=py -3" || set "PY=python"
 if not exist ".venv\Scripts\python.exe" (
-  echo [cs2-roulette] Создаю виртуальное окружение...
+  echo [hardmode] Создаю виртуальное окружение...
   %PY% -m venv .venv || goto :nopython
   ".venv\Scripts\python.exe" -m pip install --upgrade pip >nul
   ".venv\Scripts\python.exe" -m pip install -r requirements.txt || goto :fail
 )
-echo [cs2-roulette] Запускаю в трее. Иконка появится рядом с часами; это окно можно закрыть.
+echo [hardmode] Запускаю в трее. Иконка появится рядом с часами; это окно можно закрыть.
 start "" ".venv\Scripts\pythonw.exe" "%~dp0start_tray.pyw"
 timeout /t 2 >nul
 goto :eof

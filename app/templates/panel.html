@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<title>CS2 Roulette — панель</title>
+<title>Hardmode — панель</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root { --bg:#0f1115; --panel:#171a21; --panel2:#1f2430; --panel3:#262c3a; --line:#2a3040; --line2:#3b4356; --text:#e6e8ee; --muted:#8b93a7; --accent:#ffd166; --ok:#4cd964; --bad:#ff5e5e; --t:#e8a44a; --ct:#6fa8ff; }
@@ -91,6 +91,11 @@
   .tokenbox button.primary { background:var(--accent); color:#1a1a1a; }
   .ingame-prev { max-height:110px; max-width:min(100%, 520px); border-radius:8px; padding:6px;
     background: repeating-conic-gradient(#2b303c 0 25%, #1c2029 0 50%) 0 0 / 18px 18px; }
+  .statline { display:flex; flex-wrap:wrap; gap:6px 18px; margin:10px 0 4px; font-size:12px; color:var(--muted); }
+  .statline b { color:var(--text); font-weight:700; font-size:13px; margin-left:2px; }
+  .log.compact { max-height:84px; }
+  .logtoggle { display:block; margin:2px 0 0 auto; background:transparent !important; border:0 !important; color:var(--muted); font-size:12px; padding:2px 6px; cursor:pointer; }
+  .logtoggle:hover { color:var(--text); }
   /* help */
   .help { display:grid; grid-template-columns: 220px 1fr; gap:16px; }
   .toc { position:sticky; top:120px; align-self:start; display:flex; flex-direction:column; gap:2px; }
@@ -217,19 +222,18 @@
 <body>
 <header>
   <div class="hrow">
-    <h1>CS2 ROULETTE <small id="version"></small></h1>
+    <h1>HARDMODE <small id="version"></small></h1>
     <span class="chip" id="chip-gsi"><span class="dot"></span>GSI: <b>нет данных</b></span>
     <span class="chip" id="chip-side"><span class="dot"></span>Сторона: <b>—</b></span>
     <span class="chip" id="chip-held"><span class="dot"></span>В руках: <b>—</b></span>
-    <span class="chip" id="chip-hk"><span class="dot"></span>Хоткеи: <b>…</b></span>
     <span class="chip" id="chip-mouse"><span class="dot"></span><b>мышь: ?</b></span>
     <span class="chip" id="chip-sse"><span class="dot"></span>Связь с сервером</span>
-    <span class="chip bad" id="chip-elev" style="display:none"><span class="dot"></span><b></b></span>
   </div>
   <nav class="maintabs">
     <button data-tab="startup" onclick="showMainTab('startup')">⚡ Startup</button>
     <button data-tab="weapons" onclick="showMainTab('weapons')">🔫 Оружие</button>
     <button data-tab="dpi" onclick="showMainTab('dpi')">🎡 DPI</button>
+    <button data-tab="look" onclick="showMainTab('look')">🎨 Вид</button>
     <button data-tab="general" onclick="showMainTab('general')">⚙ Общее</button>
     <button data-tab="help" onclick="showMainTab('help')">📖 Справка</button>
   </nav>
@@ -262,7 +266,7 @@
   <!-- ================= TAB: WEAPONS ================= -->
   <div class="tabpage" id="tab-weapons">
     <div class="col">
-      <section id="sec-session">
+<section id="sec-session">
         <h2>Гонка вооружений
           <span class="right">
             <button class="sidebtn T" data-side="T" onclick="setSide('T')">T</button>
@@ -277,16 +281,11 @@
             <button class="big danger" onclick="if(confirm('Начать заново? Очередь и статистика будут сброшены.')) post('/api/session/reset')" title="Сбросить очередь и статистику">⟲ Сброс</button>
           </div></div>
           <div class="bg"><div class="bg-l">Оружие</div><div class="bg-b">
-            <button class="primary big" id="btn-next" onclick="post('/api/roulette/next')">Следующее <span class="kbd" id="kbd-next">F9</span></button>
-            <button class="big" id="btn-reroll" onclick="post('/api/roulette/reroll')">Перекрутить <span class="kbd" id="kbd-reroll">F8</span></button>
+            <button class="primary big" id="btn-next" onclick="post('/api/roulette/next')">Следующее</button>
+            <button class="big" id="btn-reroll" onclick="post('/api/roulette/reroll')">Перекрутить</button>
           </div></div>
         </div>
-        <div class="stats">
-          <div class="stat"><div class="v" id="st-completed">0</div><div class="l">оружий пройдено</div></div>
-          <div class="stat"><div class="v" id="st-kills">0</div><div class="l">киллов всего</div></div>
-          <div class="stat"><div class="v" id="st-wrong">0</div><div class="l">не тем оружием</div></div>
-          <div class="stat"><div class="v" id="st-amb">0</div><div class="l">спорных (гранаты)</div></div>
-        </div>
+        <div class="statline"><span>пройдено <b id="st-completed">0</b></span><span>киллов <b id="st-kills">0</b></span><span>не тем оружием <b id="st-wrong">0</b></span><span>спорных <b id="st-amb">0</b></span></div>
         <details><summary>Тест без игры: симулировать килл</summary>
           <div class="row">
             <button onclick="post('/api/roulette/kill',{})">Килл текущим оружием</button>
@@ -294,10 +293,10 @@
             <button onclick="post('/api/roulette/kill',{ambiguous:true})">Спорный (граната)</button>
           </div>
         </details>
-        <div class="log" id="log"></div>
+        <div class="log compact" id="log"></div><button class="logtoggle" onclick="toggleLog(this)">развернуть</button>
       </section>
 
-      <section id="sec-loadout">
+<section id="sec-loadout">
         <h2>Лоадаут
           <span class="right">
             <button class="primary" onclick="post('/api/loadout/generate',{sides:['T','CT']})">🎲 Сгенерировать</button>
@@ -312,36 +311,144 @@
         <div id="loadout"></div>
       </section>
     </div>
-
     <div class="col">
       <section>
         <h2>Настройки гонки</h2>
         <div class="form">
-          <label class="f"><span>Автопереход после килла</span>
+          <label class="f full"><span>Автопереход после килла</span>
             <select data-key="roulette.auto_advance">
               <option value="strict">только килл назначенным оружием</option>
               <option value="any">любой килл</option>
-              <option value="off">выключен (только кнопка/хоткей)</option>
+              <option value="off">выключен (только кнопка)</option>
             </select></label>
-          <label class="f"><span>Киллов на оружие</span><input type="number" min="1" max="10" data-key="roulette.kills_per_weapon"></label>
-          <label class="f"><span>Порядок выпадения</span>
-            <select data-key="roulette.pool_mode">
-              <option value="bag">мешок (без повторов, пока не пройдём всё)</option>
-              <option value="random">чистый рандом</option>
-            </select></label>
-          <label class="f"><span>Сколько следующих показывать</span><input type="number" min="0" max="5" data-key="roulette.visible_next"></label>
-          <label class="f"><span>Определение стороны</span>
-            <select data-key="roulette.side_source"><option value="gsi">автоматически из игры (GSI)</option><option value="manual">вручную</option></select></label>
-          <label class="f"><span>Стартовый пистолет CT</span>
-            <select data-key="roulette.ct_starting"><option value="random">случайно</option><option value="usp_silencer">USP-S</option><option value="hkp2000">P2000</option></select></label>
           <h3 class="full">Что участвует в рулетке</h3>
           <label class="inline"><input type="checkbox" data-key="roulette.include_starting"> Стартовый пистолет</label>
           <label class="inline"><input type="checkbox" data-key="roulette.include_knife"> Нож</label>
           <label class="inline"><input type="checkbox" data-key="roulette.include_zeus"> Zeus x27</label>
         </div>
+        <details style="margin-top:6px;"><summary>Дополнительно</summary>
+          <div class="form" style="margin-top:8px;">
+            <label class="f"><span>Киллов на оружие</span><input type="number" min="1" max="10" data-key="roulette.kills_per_weapon"></label>
+            <label class="f"><span>Порядок выпадения</span>
+              <select data-key="roulette.pool_mode">
+                <option value="bag">мешок (без повторов, пока не пройдём всё)</option>
+                <option value="random">чистый рандом</option>
+              </select></label>
+            <label class="f"><span>Сколько следующих показывать</span><input type="number" min="0" max="5" data-key="roulette.visible_next"></label>
+            <label class="f"><span>Определение стороны</span>
+              <select data-key="roulette.side_source"><option value="gsi">автоматически из игры (GSI)</option><option value="manual">вручную</option></select></label>
+            <label class="f"><span>Стартовый пистолет CT</span>
+              <select data-key="roulette.ct_starting"><option value="random">случайно</option><option value="usp_silencer">USP-S</option><option value="hkp2000">P2000</option></select></label>
+          </div>
+        </details>
+      </section>
+    </div>
+  </div>
+
+  <!-- ================= TAB: DPI ================= -->
+  <div class="tabpage" id="tab-dpi">
+    <div class="col">
+<section id="sec-dpi">
+        <h2>DPI-рулетка</h2>
+        <div class="row" style="align-items:stretch; gap:14px; flex-wrap:wrap;">
+          <div class="dpibox"><div class="l">сейчас</div><div class="v" id="dpi-current">—</div><div class="l">DPI</div></div>
+          <div style="flex:1 1 320px; display:flex; flex-direction:column; gap:8px; min-width:0;">
+            <div class="controls" style="margin-top:0;">
+              <div class="bg"><div class="bg-l">Колесо</div><div class="bg-b">
+                <button class="primary big" id="btn-dpi-spin" onclick="post('/api/dpi/spin',{reason:'manual'})">🎡 Крутить</button>
+                <button class="big" onclick="post('/api/dpi/home')" title="Применить обычный DPI из настроек">Вернуть мой DPI</button>
+              </div></div>
+              <div class="bg"><div class="bg-l">Мышь</div><div class="bg-b">
+                <button onclick="probeMouse()">🔍 Проверить</button>
+                <button onclick="post('/api/dpi/hostmode')" title="Перевести мышь в host-режим: сенсор принимает DPI от программ только в нём (в G HUB это «On-Board Memory Mode» выкл.)">Host-режим</button>
+              </div></div>
+              <div class="bg" style="grid-column:1 / -1;"><div class="bg-l">Поставить DPI вручную</div><div class="bg-b">
+                <input type="number" id="dpi-manual" min="100" max="44000" step="10" placeholder="например, 1600" onkeydown="if(event.key==='Enter') applyManualDpi()">
+                <button onclick="applyManualDpi()" style="flex:0 0 auto;">Применить</button>
+              </div></div>
+            </div>
+            <div class="hint" id="dpi-mouse-info">Нажмите «Проверить», чтобы найти мышь и прочитать текущий DPI.</div>
+          </div>
+        </div>
+        <div class="log compact" id="dpi-log" style="margin-top:10px;"></div><button class="logtoggle" onclick="toggleLog(this)">развернуть</button>
       </section>
 
       <section>
+        <h2>Настройки DPI</h2>
+        <div class="form">
+          <label class="inline"><input type="checkbox" data-key="dpi.enabled"> DPI-рулетка включена</label>
+          <label class="inline"><input type="checkbox" data-key="dpi.auto_on_death"> Крутить после каждой смерти</label>
+          <label class="f"><span>Мой обычный DPI</span><input type="number" min="100" max="44000" step="10" data-key="dpi.home_dpi"></label>
+          <label class="f"><span>Управление мышью</span><select data-key="dpi.backend"><option value="auto">авто (HID++)</option><option value="fake">имитация (без мыши)</option><option value="none">выключено</option></select></label>
+        </div>
+        <details style="margin-top:6px;"><summary>Дополнительно</summary>
+          <div class="form" style="margin-top:8px;">
+            <label class="f"><span>Пауза после смерти, с</span><input type="number" min="0" max="300" step="0.5" data-key="dpi.death_cooldown_s"></label>
+            <div></div>
+            <label class="inline"><input type="checkbox" data-key="dpi.exclude_current"> Не выпадать на текущее значение</label>
+            <label class="inline"><input type="checkbox" data-key="dpi.guard"> Возвращать DPI, если G HUB его перебил</label>
+          </div>
+        </details>
+      </section>
+    </div>
+    <div class="col">
+      <section id="sec-wheel">
+        <h2>Значения колеса <span class="right"><span class="hint" id="wheel-summary"></span><button onclick="post('/api/dpi/cycle/reset')" title="Вернуть выпавшие значения на колесо">⟲ Новый круг</button></span></h2>
+        <div class="form">
+          <label class="f"><span>Выпавшие значения</span>
+            <select data-key="dpi.pool_mode"><option value="bag">уходят с колеса до конца круга</option><option value="random">остаются (чистый рандом)</option></select></label>
+          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="dpi.use_range"> Диапазон на колесе</label>
+          <label class="f"><span>Мин. DPI</span><input type="number" min="100" max="44000" step="10" data-key="dpi.min_dpi"></label>
+          <label class="f"><span>Макс. DPI</span><input type="number" min="100" max="44000" step="10" data-key="dpi.max_dpi"></label>
+          <label class="f"><span>Шаг</span><input type="number" min="10" max="5000" step="10" data-key="dpi.step"></label>
+          <label class="f"><span>Своё значение</span>
+            <div class="row" style="flex-wrap:nowrap;">
+              <input type="number" id="custom-dpi" min="100" max="44000" step="10" placeholder="DPI" style="flex:1;" onkeydown="if(event.key==='Enter') addCustomDpi()">
+              <button onclick="addCustomDpi()">Добавить</button>
+            </div></label>
+        </div>
+        <div class="chips" id="custom-chips" style="margin-top:8px;"></div>
+        <h3>На колесе сейчас</h3>
+        <div class="chips" id="wheel-chips"></div>
+      </section>
+
+      <section id="sec-viewers">
+        <h2>Зрители добавляют DPI <span class="right"><span class="chip" id="chip-twitch"><span class="dot"></span><b>чат: выкл</b></span></span></h2>
+        <div class="form">
+          <label class="inline"><input type="checkbox" data-key="dpi.viewer_enabled"> Включено</label>
+          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="dpi.viewer_announce"> Подтверждать в чате</label>
+          <label class="f"><span>Канал Twitch (логин)</span><input type="text" data-key="chat.channel_login" placeholder="например, mychannel"></label>
+          <label class="f"><span>Награда за баллы канала</span>
+            <div class="row" style="flex-wrap:nowrap;">
+              <input type="text" id="reward-id" readonly placeholder="не задана" style="flex:1;">
+              <button id="btn-learn" onclick="learnReward()" title="Следующее выкупленное сообщение-награда станет этой наградой">Определить</button>
+              <button onclick="post('/api/dpi/reward/learn',{on:false,clear:true})" title="Сбросить привязку">×</button>
+            </div></label>
+          <label class="f"><span>Мин. DPI от зрителей</span><input type="number" min="100" max="44000" step="100" data-key="dpi.viewer_min"></label>
+          <label class="f"><span>Макс. DPI от зрителей</span><input type="number" min="100" max="44000" step="100" data-key="dpi.viewer_max"></label>
+        </div>
+        <details style="margin-top:6px;"><summary>Дополнительно</summary>
+          <div class="form" style="margin-top:8px;">
+            <label class="f"><span>Макс. зрительских значений на колесе</span><input type="number" min="1" max="60" data-key="dpi.viewer_max_values"></label>
+            <label class="f"><span>Значений от одного зрителя</span><input type="number" min="1" max="10" data-key="dpi.viewer_per_user"></label>
+            <label class="f"><span>Чат-команда (пусто — только награда)</span><input type="text" data-key="dpi.viewer_command" placeholder="!dpi"></label>
+            <label class="f"><span>Тест: добавить как зритель</span>
+              <div class="row" style="flex-wrap:nowrap;">
+                <input type="number" id="viewer-test-dpi" min="100" max="44000" step="100" placeholder="DPI" value="1600" style="flex:1;">
+                <button onclick="post('/api/dpi/viewer/add',{value:$('viewer-test-dpi').value,user:'тест'})">Добавить</button>
+                <button onclick="post('/api/dpi/viewer/clear')" title="Убрать все зрительские значения">Очистить</button>
+              </div></label>
+          </div>
+        </details>
+        <div class="chips" id="viewer-chips" style="margin-top:8px;"></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ================= TAB: LOOK (widgets, in-game overlay, colours) ================= -->
+  <div class="tabpage" id="tab-look">
+    <div class="col">
+<section>
         <h2>Виджет оружия</h2>
         <div class="url"><span class="name">Ссылка для OBS</span><code id="url-weapons"></code><button onclick="copyText('url-weapons')">Копировать</button><a id="open-weapons" target="_blank"><button>Открыть</button></a></div>
         <div class="form" style="margin-top:8px;">
@@ -356,7 +463,45 @@
         </div>
         <div class="hint" style="margin-top:8px;">Размер источника: <b id="size-weapons">—</b></div>
       </section>
-      <section>
+
+<section>
+        <h2>Виджет лоадаута</h2>
+        <div class="url"><span class="name">Ссылка для OBS</span><code id="url-loadout"></code><button onclick="copyText('url-loadout')">Копировать</button><a id="open-loadout" target="_blank"><button>Открыть</button></a></div>
+        <div class="form" style="margin-top:8px;">
+          <label class="f"><span>Раскладка лоадаута</span><select data-key="overlay.loadout_layout"><option value="rows">строки: категория в строку</option><option value="columns">колонки: как в игре (пистолеты | мид | винтовки)</option></select></label>
+          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="overlay.loadout_names"> Названия под силуэтами</label>
+        </div>
+        <div class="hint" style="margin-top:8px;">Размер источника: <b id="size-loadout">—</b>, обе стороны <b id="size-loadout-both">—</b></div>
+      </section>
+
+<section>
+        <h2>Виджет DPI</h2>
+        <div class="url"><span class="name">Ссылка для OBS</span><code id="url-dpi"></code><button onclick="copyText('url-dpi')">Копировать</button><a id="open-dpi" target="_blank"><button>Открыть</button></a></div>
+        <div class="form" style="margin-top:8px;">
+          <label class="f"><span>Колесо на виджете</span><select data-key="dpi.wheel_mode"><option value="spin">только пока крутится, потом остаётся число</option><option value="always">всегда видно</option></select></label>
+          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="dpi.show_current"> Показывать текущий DPI между кручениями</label>
+        </div>
+        <details style="margin-top:6px;"><summary>Дополнительно</summary>
+          <div class="form" style="margin-top:8px;">
+            <label class="f"><span>Колесо остаётся после остановки, с</span><input type="number" min="0" max="60" step="0.5" data-key="dpi.wheel_linger_s"></label>
+            <label class="f"><span>Прятать число через, с (0 — не прятать)</span><input type="number" min="0" max="3600" step="1" data-key="dpi.idle_hide_s"></label>
+          </div>
+        </details>
+        <div class="hint" style="margin-top:8px;">Размер источника: <b id="size-dpi">600×750</b></div>
+      </section>
+    </div>
+    <div class="col">
+<section>
+        <h2>Цвета</h2>
+        <div class="colors">
+          <div class="swatch"><input type="color" data-key="overlay.color"><div><div class="t">Силуэты оружия</div><div class="d">основной цвет виджета оружия и лоадаута</div></div></div>
+          <div class="swatch"><input type="color" data-key="overlay.accent"><div><div class="t">Акцент</div><div class="d">счётчики, бейджи, сегменты колеса DPI</div></div></div>
+          <div class="swatch"><input type="color" data-key="overlay.match_color"><div><div class="t">Оружие в руках</div><div class="d">подсветка, когда держишь назначенное оружие</div></div></div>
+          <div class="swatch"><input type="color" data-key="dpi.home_color"><div><div class="t">Сегмент «мой DPI»</div><div class="d">на колесе и число при выпадении на него</div></div></div>
+        </div>
+      </section>
+
+<section>
         <h2>Поверх игры: оружие <span class="right"><span class="chip" id="chip-ingame-weapons"><span class="dot"></span><b>—</b></span></span></h2>
         <div class="form" style="margin-top:8px;">
           <label class="f"><span>Когда показывать</span><select data-key="ingame.weapons_mode"><option value="change">после смены, на несколько секунд</option><option value="always">всегда</option></select></label>
@@ -377,58 +522,7 @@
         </div>
       </section>
 
-      <section>
-        <h2>Виджет лоадаута</h2>
-        <div class="url"><span class="name">Ссылка для OBS</span><code id="url-loadout"></code><button onclick="copyText('url-loadout')">Копировать</button><a id="open-loadout" target="_blank"><button>Открыть</button></a></div>
-        <div class="form" style="margin-top:8px;">
-          <label class="f"><span>Раскладка лоадаута</span><select data-key="overlay.loadout_layout"><option value="rows">строки: категория в строку</option><option value="columns">колонки: как в игре (пистолеты | мид | винтовки)</option></select></label>
-          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="overlay.loadout_names"> Названия под силуэтами</label>
-        </div>
-        <div class="hint" style="margin-top:8px;">Размер источника: <b id="size-loadout">—</b>, обе стороны <b id="size-loadout-both">—</b></div>
-      </section>
-    </div>
-  </div>
-
-  <!-- ================= TAB: DPI ================= -->
-  <div class="tabpage" id="tab-dpi">
-    <div class="col">
-      <section id="sec-dpi">
-        <h2>DPI-рулетка</h2>
-        <div class="row" style="align-items:stretch; gap:14px; flex-wrap:wrap;">
-          <div class="dpibox"><div class="l">сейчас</div><div class="v" id="dpi-current">—</div><div class="l">DPI</div></div>
-          <div style="flex:1 1 320px; display:flex; flex-direction:column; gap:8px; min-width:0;">
-            <div class="controls" style="margin-top:0;">
-              <div class="bg"><div class="bg-l">Колесо</div><div class="bg-b">
-                <button class="primary big" id="btn-dpi-spin" onclick="post('/api/dpi/spin',{reason:'manual'})">🎡 Крутить <span class="kbd" id="kbd-dpi">F6</span></button>
-                <button class="big" onclick="post('/api/dpi/home')" title="Применить обычный DPI из настроек">Вернуть мой DPI</button>
-              </div></div>
-              <div class="bg"><div class="bg-l">Мышь</div><div class="bg-b">
-                <button onclick="probeMouse()">🔍 Проверить</button>
-                <button onclick="post('/api/dpi/hostmode')" title="Перевести мышь в host-режим: сенсор принимает DPI от программ только в нём (в G HUB это «On-Board Memory Mode» выкл.)">Host-режим</button>
-              </div></div>
-              <div class="bg" style="grid-column:1 / -1;"><div class="bg-l">Поставить DPI вручную</div><div class="bg-b">
-                <input type="number" id="dpi-manual" min="100" max="44000" step="10" placeholder="например, 1600" onkeydown="if(event.key==='Enter') applyManualDpi()">
-                <button onclick="applyManualDpi()" style="flex:0 0 auto;">Применить</button>
-              </div></div>
-            </div>
-            <div class="hint" id="dpi-mouse-info">Нажмите «Проверить», чтобы найти мышь и прочитать текущий DPI.</div>
-          </div>
-        </div>
-        <div class="log" id="dpi-log" style="margin-top:10px; max-height:180px;"></div>
-      </section>
-
-      <section>
-        <h2>Виджет DPI</h2>
-        <div class="url"><span class="name">Ссылка для OBS</span><code id="url-dpi"></code><button onclick="copyText('url-dpi')">Копировать</button><a id="open-dpi" target="_blank"><button>Открыть</button></a></div>
-        <div class="form" style="margin-top:8px;">
-          <label class="f"><span>Колесо на виджете</span><select data-key="dpi.wheel_mode"><option value="spin">только пока крутится, потом остаётся число</option><option value="always">всегда видно</option></select></label>
-          <label class="f"><span>Колесо остаётся после остановки, с</span><input type="number" min="0" max="60" step="0.5" data-key="dpi.wheel_linger_s"></label>
-          <label class="f"><span>Прятать число через, с (0 — не прятать)</span><input type="number" min="0" max="3600" step="1" data-key="dpi.idle_hide_s"></label>
-          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="dpi.show_current"> Показывать текущий DPI между кручениями</label>
-        </div>
-        <div class="hint" style="margin-top:8px;">Размер источника: <b id="size-dpi">600×750</b></div>
-      </section>
-      <section>
+<section>
         <h2>Поверх игры: DPI <span class="right"><span class="chip" id="chip-ingame-dpi"><span class="dot"></span><b>—</b></span></span></h2>
         <div class="form" style="margin-top:8px;">
           <label class="f"><span>Когда показывать</span><select data-key="ingame.dpi_mode"><option value="change">после смены, на несколько секунд</option><option value="always">всегда</option></select></label>
@@ -448,77 +542,12 @@
         </div>
       </section>
     </div>
-
-    <div class="col">
-      <section id="sec-wheel">
-        <h2>Значения колеса <span class="right"><span class="hint" id="wheel-summary"></span><button onclick="post('/api/dpi/cycle/reset')" title="Вернуть выпавшие значения на колесо">⟲ Новый круг</button></span></h2>
-        <div class="form">
-          <label class="f"><span>Выпавшие значения</span>
-            <select data-key="dpi.pool_mode"><option value="bag">уходят с колеса до конца круга</option><option value="random">остаются (чистый рандом)</option></select></label>
-          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="dpi.use_range"> Диапазон мин–макс–шаг на колесе</label>
-        </div>
-        <h3>Свои значения</h3>
-        <div class="row" style="margin-bottom:8px;">
-          <input type="number" id="custom-dpi" class="inlinefield" min="100" max="44000" step="10" placeholder="DPI" onkeydown="if(event.key==='Enter') addCustomDpi()">
-          <button onclick="addCustomDpi()">Добавить</button>
-        </div>
-        <div class="chips" id="custom-chips"></div>
-        <h3>На колесе сейчас</h3>
-        <div class="chips" id="wheel-chips"></div>
-
-        <h3>Зрители добавляют DPI за баллы канала</h3>
-        <div class="form">
-          <label class="inline"><input type="checkbox" data-key="dpi.viewer_enabled"> Включено</label>
-          <span class="chip" id="chip-twitch" style="align-self:center; justify-self:start;"><span class="dot"></span><b>чат: выкл</b></span>
-          <label class="f"><span>Канал Twitch (логин)</span><input type="text" data-key="chat.channel_login" placeholder="например, mychannel"></label>
-          <label class="f"><span>Награда за баллы канала</span>
-            <div class="row" style="flex-wrap:nowrap;">
-              <input type="text" id="reward-id" readonly placeholder="не задана" style="flex:1;">
-              <button id="btn-learn" onclick="learnReward()" title="Следующее выкупленное сообщение-награда станет этой наградой">Определить</button>
-              <button onclick="post('/api/dpi/reward/learn',{on:false,clear:true})" title="Сбросить привязку">×</button>
-            </div></label>
-          <label class="f"><span>Мин. DPI от зрителей</span><input type="number" min="100" max="44000" step="10" data-key="dpi.viewer_min"></label>
-          <label class="f"><span>Макс. DPI от зрителей</span><input type="number" min="100" max="44000" step="10" data-key="dpi.viewer_max"></label>
-          <label class="f"><span>Макс. зрительских значений на колесе</span><input type="number" min="1" max="60" data-key="dpi.viewer_max_values"></label>
-          <label class="f"><span>Значений от одного зрителя</span><input type="number" min="1" max="10" data-key="dpi.viewer_per_user"></label>
-          <label class="f"><span>Чат-команда (пусто — только награда)</span><input type="text" data-key="dpi.viewer_command" placeholder="!dpi"></label>
-          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="dpi.viewer_announce"> Подтверждать в чате</label>
-        </div>
-        <div class="row" style="margin-top:8px;">
-          <input type="number" id="viewer-test-dpi" class="inlinefield" min="100" max="44000" step="10" placeholder="DPI" value="1600">
-          <button onclick="post('/api/dpi/viewer/add',{value:$('viewer-test-dpi').value,user:'тест'})">Добавить как зритель (тест)</button>
-          <button onclick="post('/api/dpi/viewer/clear')">Очистить зрительские</button>
-        </div>
-        <div class="chips" id="viewer-chips" style="margin-top:8px;"></div>
-      </section>
-
-      <section>
-        <h2>Настройки DPI</h2>
-        <div class="form">
-          <label class="inline"><input type="checkbox" data-key="dpi.enabled"> DPI-рулетка включена</label>
-          <label class="inline"><input type="checkbox" data-key="dpi.auto_on_death"> Крутить после каждой смерти</label>
-          <label class="f"><span>Мин. DPI</span><input type="number" min="100" max="44000" step="10" data-key="dpi.min_dpi"></label>
-          <label class="f"><span>Макс. DPI</span><input type="number" min="100" max="44000" step="10" data-key="dpi.max_dpi"></label>
-          <label class="f"><span>Шаг сегментов колеса</span><input type="number" min="10" max="5000" step="10" data-key="dpi.step"></label>
-          <label class="f"><span>Мой обычный DPI (выделяется на колесе)</span><input type="number" min="100" max="44000" step="10" data-key="dpi.home_dpi"></label>
-          <label class="f"><span>Длительность кручения, мс</span><input type="number" min="500" max="30000" step="100" data-key="dpi.spin_duration_ms"></label>
-          <label class="f"><span>Оборотов</span><input type="number" min="1" max="20" data-key="dpi.revolutions"></label>
-          <label class="f"><span>Когда применять</span><select data-key="dpi.apply_at"><option value="stop">когда колесо остановится</option><option value="start">сразу при запуске</option></select></label>
-          <label class="f"><span>Пауза после смерти, с</span><input type="number" min="0" max="300" step="0.5" data-key="dpi.death_cooldown_s"></label>
-          <label class="f"><span>Управление мышью</span><select data-key="dpi.backend"><option value="auto">авто (HID++)</option><option value="fake">имитация (без мыши)</option><option value="none">выключено</option></select></label>
-          <div></div>
-          <label class="inline"><input type="checkbox" data-key="dpi.exclude_current"> Не выпадать на текущее значение</label>
-          <label class="inline"><input type="checkbox" data-key="dpi.guard"> Возвращать DPI, если G HUB его перебил</label>
-        </div>
-      </section>
-    </div>
   </div>
 
-  <!-- (end of DPI tab columns above) -->
   <!-- ================= TAB: GENERAL ================= -->
   <div class="tabpage" id="tab-general">
     <div class="col">
-      <section>
+<section>
         <h2>Подключение к CS2 (GSI)</h2>
         <div class="hint">После установки конфига перезапустите CS2.</div>
         <div class="row" style="margin-top:8px;">
@@ -540,21 +569,18 @@
         </details>
       </section>
 
-      <section>
-        <h2>Хоткеи</h2>
-        <label class="inline"><input type="checkbox" data-key="hotkeys.enabled"> Глобальные хоткеи включены</label>
-        <details style="margin-top:6px;"><summary>Клавиши и статус</summary>
-          <div class="form" style="margin-top:8px;">
-            <label class="f"><span>Следующее оружие</span><input type="text" data-key="hotkeys.next" placeholder="F9"></label>
-            <label class="f"><span>Перекрутить оружие</span><input type="text" data-key="hotkeys.reroll" placeholder="F8"></label>
-            <label class="f"><span>Отмена</span><input type="text" data-key="hotkeys.undo" placeholder="F7"></label>
-            <label class="f"><span>Крутить DPI</span><input type="text" data-key="hotkeys.dpi_spin" placeholder="F6"></label>
-          </div>
-          <div class="hint" style="margin-top:8px;">Статус: <span id="hk-status">—</span></div>
-        </details>
+<section>
+        <h2>Разное</h2>
+        <div class="form">
+          <label class="inline"><input type="checkbox" id="autostart-toggle" onchange="toggleAutostart(this)"> Автозапуск с Windows (в трее)</label>
+          <div class="hint" id="mode-info" style="align-self:center;"></div>
+          <button onclick="quitApp()" style="margin-left:auto;">Завершить приложение</button>
+        </div>
+        <div class="hint" style="margin-top:8px;">Папка данных: <code id="data-dir"></code><br>Лог: <code id="log-path"></code><br>Порт: <code id="port"></code> (меняется в <code>data/settings.json</code>, нужен перезапуск)</div>
       </section>
-
-      <section id="sec-chat">
+    </div>
+    <div class="col">
+<section id="sec-chat">
         <h2>Чат Twitch через StreamElements <span class="right"><span class="chip" id="chip-chat"><span class="dot"></span><b>выкл</b></span></span></h2>
         <div class="hint">Токен: streamelements.com → аккаунт → канал → Show secrets → JWT Token. Не показывайте его на стриме.</div>
         <div class="form" style="margin-top:8px;">
@@ -579,47 +605,20 @@
           <label class="inline"><input type="checkbox" data-key="chat.on_dpi"> Новый DPI</label>
           <label class="inline"><input type="checkbox" data-key="chat.on_viewer"> Зритель добавил DPI</label>
           <label class="inline"><input type="checkbox" data-key="chat.on_reject"> Отказ зрителю (почему не принято)</label>
-          <label class="f"><span>Минимум между сообщениями, с</span><input type="number" min="0.5" max="60" step="0.5" data-key="chat.min_interval_s"></label>
-          <label class="f"><span>Не чаще одного отказа на зрителя, с</span><input type="number" min="0" max="3600" step="5" data-key="chat.reject_cooldown_s"></label>
-          <h3 class="full">Тексты сообщений</h3>
-          <div class="hint full">Подстановки: <span class="kbd">{weapon}</span> <span class="kbd">{completed}</span> <span class="kbd">{kills}</span> <span class="kbd">{side}</span> <span class="kbd">{dpi}</span> <span class="kbd">{user}</span> <span class="kbd">{reason}</span></div>
-          <label class="f full"><span>Старт</span><input type="text" data-key="chat.start_template"></label>
-          <label class="f full"><span>Новое оружие</span><input type="text" data-key="chat.weapon_template"></label>
-          <label class="f full"><span>Новый DPI</span><input type="text" data-key="chat.dpi_template"></label>
-          <label class="f full"><span>Зритель добавил DPI</span><input type="text" data-key="chat.viewer_template"></label>
-          <label class="f full"><span>Отказ зрителю</span><input type="text" data-key="chat.reject_template"></label>
         </div>
-        <div class="log" id="chat-log" style="margin-top:10px; max-height:140px;"></div>
-      </section>
-
-      <section>
-        <h2>Разное</h2>
-        <div class="form">
-          <label class="inline"><input type="checkbox" id="autostart-toggle" onchange="toggleAutostart(this)"> Автозапуск с Windows (в трее)</label>
-          <div class="hint" id="mode-info" style="align-self:center;"></div>
-          <button onclick="quitApp()" style="margin-left:auto;">Завершить приложение</button>
-        </div>
-        <div class="hint" style="margin-top:8px;">Папка данных: <code id="data-dir"></code><br>Лог: <code id="log-path"></code><br>Порт: <code id="port"></code> (меняется в <code>data/settings.json</code>, нужен перезапуск)</div>
-      </section>
-    </div>
-
-    <div class="col">
-      <section>
-        <h2>Цвета</h2>
-        <div class="colors">
-          <div class="swatch"><input type="color" data-key="overlay.color"><div><div class="t">Силуэты оружия</div><div class="d">основной цвет виджета оружия и лоадаута</div></div></div>
-          <div class="swatch"><input type="color" data-key="overlay.accent"><div><div class="t">Акцент</div><div class="d">счётчики, бейджи, сегменты колеса DPI</div></div></div>
-          <div class="swatch"><input type="color" data-key="overlay.match_color"><div><div class="t">Оружие в руках</div><div class="d">подсветка, когда держишь назначенное оружие</div></div></div>
-          <div class="swatch"><input type="color" data-key="dpi.home_color"><div><div class="t">Сегмент «мой DPI»</div><div class="d">на колесе и число при выпадении на него</div></div></div>
-        </div>
-      </section>
-
-      <section>
-        <h2>Виджеты для OBS</h2>
-        <div class="url"><span class="name">Оружие</span><code id="url-weapons-2"></code><button onclick="copyText('url-weapons-2')">Копировать</button></div>
-        <div class="url"><span class="name">Лоадаут</span><code id="url-loadout-2"></code><button onclick="copyText('url-loadout-2')">Копировать</button></div>
-        <div class="url"><span class="name">Колесо DPI</span><code id="url-dpi-2"></code><button onclick="copyText('url-dpi-2')">Копировать</button></div>
-        <div class="hint" style="margin-top:6px;">Размеры: оружие <b id="size-weapons-2">—</b>, лоадаут <b id="size-loadout-2">—</b>, колесо DPI <b id="size-dpi-2">—</b>.</div>
+        <details style="margin-top:6px;"><summary>Тексты сообщений и интервалы</summary>
+          <div class="form" style="margin-top:8px;">
+            <label class="f"><span>Минимум между сообщениями, с</span><input type="number" min="0.5" max="60" step="0.5" data-key="chat.min_interval_s"></label>
+            <label class="f"><span>Не чаще одного отказа на зрителя, с</span><input type="number" min="0" max="3600" step="5" data-key="chat.reject_cooldown_s"></label>
+            <div class="hint full">Подстановки: <span class="kbd">{weapon}</span> <span class="kbd">{completed}</span> <span class="kbd">{kills}</span> <span class="kbd">{side}</span> <span class="kbd">{dpi}</span> <span class="kbd">{user}</span> <span class="kbd">{reason}</span></div>
+            <label class="f full"><span>Старт</span><input type="text" data-key="chat.start_template"></label>
+            <label class="f full"><span>Новое оружие</span><input type="text" data-key="chat.weapon_template"></label>
+            <label class="f full"><span>Новый DPI</span><input type="text" data-key="chat.dpi_template"></label>
+            <label class="f full"><span>Зритель добавил DPI</span><input type="text" data-key="chat.viewer_template"></label>
+            <label class="f full"><span>Отказ зрителю</span><input type="text" data-key="chat.reject_template"></label>
+          </div>
+        </details>
+        <div class="log compact" id="chat-log" style="margin-top:10px;"></div><button class="logtoggle" onclick="toggleLog(this)">развернуть</button>
       </section>
     </div>
   </div>
@@ -717,7 +716,7 @@ async function testChat() {
   else toast('StreamElements принял сообщение. Нет в чате? Напишите пару сообщений в чат сами: Twitch прячет бота после долгого простоя');
   refreshState();
 }
-async function quitApp() { if (!confirm('Завершить CS2 Roulette? Виджеты в OBS перестанут обновляться.')) return; const r = await post('/api/quit', {}); if (r && r.ok) toast('Завершаю…'); }
+async function quitApp() { if (!confirm('Завершить Hardmode? Виджеты в OBS перестанут обновляться.')) return; const r = await post('/api/quit', {}); if (r && r.ok) toast('Завершаю…'); }
 async function joinChat() { toast('Подключаю бота…'); const r = await post('/api/chat/join', {}); if (!r) return; if (r.ok) toast('Бот подключён к каналу'); else toast(r.error || 'Не удалось подключить бота', true); refreshState(); }
 async function addCustomDpi() { const v = parseInt($('custom-dpi').value, 10); if (!Number.isFinite(v)) return toast('Введите DPI', true); const r = await post('/api/dpi/values/add', {value: v}); if (r) { $('custom-dpi').value = ''; toast('Добавлено: ' + r.value); } }
 async function learnReward() { const r = await post('/api/dpi/reward/learn', {on: true}); if (r) toast('Жду выкуп награды в чате…'); }
@@ -788,6 +787,7 @@ function renderIngame() {
   }
 }
 async function ingamePreview(kind) { const r = await post('/api/ingame/preview', {kind}); if (!r) return; if (r.ok) toast('Показываю поверх игры 5 секунд'); else toast(r.error || 'Недоступно', true); }
+function toggleLog(btn) { const log = btn.previousElementSibling; const compact = log.classList.toggle('compact'); btn.textContent = compact ? 'развернуть' : 'свернуть'; }
 let helpLoaded = false;
 async function loadHelp() {
   if (helpLoaded) return; helpLoaded = true;
@@ -830,7 +830,7 @@ function showMainTab(name) {
 }
 (function initTab() {
   let name = (location.hash || '').replace('#', '');
-  const TABS = ['startup', 'weapons', 'dpi', 'general', 'help'];
+  const TABS = ['startup', 'weapons', 'dpi', 'look', 'general', 'help'];
   if (!TABS.includes(name)) { try { name = localStorage.getItem('cs2r.tab') || ''; } catch (e) { name = ''; } }
   if (!TABS.includes(name)) name = '';
   showMainTab(name || 'weapons');
@@ -850,19 +850,7 @@ function renderHeader() {
   const chipS = $('chip-side'); chipS.className = 'chip ' + (r.side==='T'?'warn':'ok'); chipS.querySelector('b').textContent = r.side + (r.settings.side_source==='gsi' ? ' (авто)' : ' (вручную)');
   const chipH = $('chip-held'); const held = g.connected && g.held ? (weapons[g.held]?weapons[g.held].name:g.held) : (g.connected && g.held_raw ? g.held_raw.replace('weapon_','') : '—');
   chipH.querySelector('b').textContent = held; chipH.className = 'chip' + ((r.running && r.queue[0] && g.held===r.queue[0].id) ? ' ok' : '');
-  const hk = S.hotkeys; const chipK = $('chip-hk');
-  if (!hk.enabled) { chipK.style.display = 'none'; }
-  else {
-    chipK.style.display = '';
-    if (!hk.available) { chipK.className='chip bad'; chipK.querySelector('b').textContent='недоступны на этой ОС'; }
-    else { const vals = Object.values(hk.status||{}); const ok = vals.filter(v=>v==='ok'||String(v).startsWith('polling')).length; chipK.className='chip '+(ok?'ok':'warn'); chipK.querySelector('b').textContent = ok ? `${hk.bindings.next||'—'} / ${hk.bindings.reroll||'—'} / ${hk.bindings.dpi_spin||'—'}` : 'не назначены'; }
-  }
-  const showKbd = hk.enabled && hk.available;
-  document.querySelectorAll('#kbd-next, #kbd-reroll, #kbd-undo, #kbd-dpi').forEach(el => el.style.display = showKbd ? '' : 'none');
-  $('hk-status').textContent = Object.entries(hk.status||{}).map(([k,v])=>`${HK_NAMES[k]||k}: ${v}`).join(' · ') || '—';
-  const chipE = $('chip-elev'); if (hk.elevation_warning) { chipE.style.display=''; chipE.querySelector('b').textContent = hk.elevation_warning; } else chipE.style.display='none';
   document.querySelectorAll('.sidebtn').forEach(b => b.classList.toggle('active', b.dataset.side===r.side));
-  $('kbd-next').textContent = hk.bindings.next || '—'; $('kbd-reroll').textContent = hk.bindings.reroll || '—';
 }
 
 function renderQueue() {
@@ -906,9 +894,9 @@ function renderSettings() {
 
 function renderMisc() {
   $('version').textContent = 'v' + S.version;
-  $('url-weapons').textContent = S.urls.overlay_weapons; $('url-weapons-2').textContent = S.urls.overlay_weapons; $('open-weapons').href = S.urls.overlay_weapons + '?bg=1b1e26';
-  $('url-loadout').textContent = S.urls.overlay_loadout; $('url-loadout-2').textContent = S.urls.overlay_loadout; $('open-loadout').href = S.urls.overlay_loadout + '?bg=1b1e26';
-  $('url-dpi').textContent = S.urls.overlay_dpi; $('url-dpi-2').textContent = S.urls.overlay_dpi; $('open-dpi').href = S.urls.overlay_dpi + '?bg=1b1e26';
+  $('url-weapons').textContent = S.urls.overlay_weapons; $('open-weapons').href = S.urls.overlay_weapons + '?bg=1b1e26';
+  $('url-loadout').textContent = S.urls.overlay_loadout; $('open-loadout').href = S.urls.overlay_loadout + '?bg=1b1e26';
+  $('url-dpi').textContent = S.urls.overlay_dpi; $('open-dpi').href = S.urls.overlay_dpi + '?bg=1b1e26';
   $('gsi-uri').textContent = S.urls.gsi;
   $('cs2-dir').textContent = S.cs2_cfg_dir || 'не найдена автоматически — скачайте конфиг и положите в game/csgo/cfg вручную';
   $('cfg-installed').textContent = S.cfg_state === 'ok' ? 'установлен: ' + S.cfg_installed : S.cfg_state === 'stale' ? 'устарел (другой токен/порт) — нажмите «Установить конфиг в CS2»: ' + S.cfg_installed : 'не установлен';
@@ -948,7 +936,6 @@ function renderDpi() {
   $('dpi-mouse-info').textContent = info || $('dpi-mouse-info').textContent;
   $('btn-dpi-spin').disabled = !d.enabled || d.busy;
   $('dpi-log').innerHTML = (d.log||[]).slice().reverse().map(e => `<div class="${esc(e.kind)}"><span class="t">${fmtTime(e.t)}</span><span>${esc(e.text)}</span></div>`).join('');
-  $('kbd-dpi').textContent = (S.hotkeys.bindings || {}).dpi_spin || '—';
 }
 
 // ------------------------------------------------------------------ OBS source sizes
@@ -986,10 +973,10 @@ function renderSizes() {
   const o = S.overlay, r = S.roulette.settings;
   const [ww, wh] = weaponsBox(o, r);
   const txt = `${ww}×${wh}`;
-  $('size-weapons').textContent = txt; $('size-weapons-2').textContent = txt;
+  $('size-weapons').textContent = txt;
   const [lw, lh] = loadoutBox(o, false), [bw, bh] = loadoutBox(o, true);
-  $('size-loadout').textContent = `${lw}×${lh}`; $('size-loadout-both').textContent = `${bw}×${bh}`; $('size-loadout-2').textContent = `${lw}×${lh}`;
-  $('size-dpi').textContent = '600×750'; $('size-dpi-2').textContent = '600×750';
+  $('size-loadout').textContent = `${lw}×${lh}`; $('size-loadout-both').textContent = `${bw}×${bh}`;
+  $('size-dpi').textContent = '600×750';
 }
 
 function renderChecks() {

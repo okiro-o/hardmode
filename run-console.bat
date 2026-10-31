@@ -7,6 +7,6 @@ if not exist ".venv\Scripts\python.exe" call run.bat
 ".venv\Scripts\python.exe" -m app --console %*
 if errorlevel 1 (
   echo.
-  echo [cs2-roulette] Утилита завершилась с ошибкой, код %errorlevel%. Смотрите сообщение выше и data\app.log.
+  echo [hardmode] Утилита завершилась с ошибкой, код %errorlevel%. Смотрите сообщение выше и data\app.log.
   pause
 )

@@ -77,11 +77,11 @@ def take_over(port: int, mine: str, log: logging.Logger,
 
 def alert(message: str, tray: bool) -> None:
     """Show a message where the user can see it: a message box in tray mode on Windows."""
-    print(f"[cs2-roulette] {message}")
+    print(f"[hardmode] {message}")
     if tray and sys.platform.startswith("win"):
         try:
             import ctypes
-            ctypes.windll.user32.MessageBoxW(0, message, "CS2 Roulette", 0x30)  # MB_ICONWARNING
+            ctypes.windll.user32.MessageBoxW(0, message, "Hardmode", 0x30)  # MB_ICONWARNING
         except Exception:
             pass
 
@@ -128,7 +128,7 @@ def main() -> None:
         except Exception:
             pass
     log_path = setup_logging(to_console=not tray)
-    log = logging.getLogger("cs2roulette")
+    log = logging.getLogger("hardmode")
     settings = config.AppSettings.load()
     url = f"http://127.0.0.1:{settings.port}/"
     open_browser = settings.open_browser and os.environ.get("CS2R_NO_BROWSER") != "1"
@@ -137,11 +137,11 @@ def main() -> None:
         if verdict == "stuck":
             other = instance_version(settings.port)
             alert(f"Уже запущена версия {other}, и она не завершается по запросу. Закройте её: трей → «Выход», "
-                  f"либо диспетчер задач (cs2-roulette.exe или pythonw.exe), и запустите снова.", tray)
+                  f"либо диспетчер задач (hardmode.exe или pythonw.exe), и запустите снова.", tray)
             return
         if verdict != "free":
             log.warning("port %s is busy (%s): opening %s", settings.port, verdict, url)
-            print(f"[cs2-roulette] port {settings.port} is busy: the app is probably already running. Opening {url}")
+            print(f"[hardmode] port {settings.port} is busy: the app is probably already running. Opening {url}")
             if open_browser:
                 webbrowser.open(url)
             return

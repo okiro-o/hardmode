@@ -27,7 +27,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 from . import config, weapons as W
 
-log = logging.getLogger("cs2roulette.ingame")
+log = logging.getLogger("hardmode.ingame")
 IS_WINDOWS = sys.platform.startswith("win")
 _RENDER_LOCK = threading.Lock()   # Pillow font objects are shared (lru_cache) between the overlay thread and HTTP previews
 KINDS = ("dpi", "weapons")
@@ -415,7 +415,7 @@ if IS_WINDOWS:  # pragma: no cover - exercised only on Windows
     SWP_NOSIZE, SWP_NOMOVE, SWP_NOACTIVATE, SWP_SHOWWINDOW = 0x1, 0x2, 0x10, 0x40
     HWND_TOPMOST = ctypes.c_void_p(-1 & (2 ** (8 * ctypes.sizeof(ctypes.c_void_p)) - 1))
     ULW_ALPHA, AC_SRC_OVER, AC_SRC_ALPHA, PM_REMOVE = 2, 0, 1, 1
-    CLASS_NAME = "CS2RouletteIngameOverlay"
+    CLASS_NAME = "HardmodeIngameOverlay"
 
     def set_dpi_aware() -> None:
         try:
@@ -588,7 +588,7 @@ class IngameOverlays:
     def _run(self) -> None:  # pragma: no cover - Windows only
         try:
             set_dpi_aware()
-            layers = {k: Win32Layer(f"CS2 Roulette {k}") for k in KINDS}
+            layers = {k: Win32Layer(f"Hardmode {k}") for k in KINDS}
         except Exception as e:
             self.error = f"{type(e).__name__}: {e}"
             log.exception("ingame overlay: cannot create windows")

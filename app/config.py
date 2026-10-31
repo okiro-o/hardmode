@@ -8,7 +8,7 @@ import secrets
 import sys
 from dataclasses import asdict, dataclass, field, fields
 
-APP_NAME = "cs2-roulette"
+APP_NAME = "hardmode"
 DEFAULT_PORT = 17890
 
 _COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")

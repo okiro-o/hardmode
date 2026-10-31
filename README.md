@@ -1,4 +1,4 @@
-# CS2 Roulette
+# Hardmode
 
 Мини-утилита для стримов по CS2 (Windows).
 
@@ -114,7 +114,7 @@ Valve. Это безопасно для VAC. Сервер слушает тол�
 ./run.sh --no-browser          # macOS/Linux (без хоткеев)
 .venv/bin/python -m pytest -q  # тесты
 python tools/fetch_icons.py    # обновить иконки
-build.bat                      # (Windows) собрать папку dist/cs2-roulette с exe
+build.bat                      # (Windows) собрать папку dist/hardmode с exe
 ```
 
 Иконки — собственность Valve; использование в личном стрим-оверлее соответствует

@@ -57,7 +57,7 @@ def test_quickstart_found_inside_frozen_internal_dir(tmp_path, monkeypatch):
     (internal / "QUICKSTART.md").write_text("# Справка\n\n## Startup\n", encoding="utf-8")
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "_MEIPASS", str(internal), raising=False)
-    monkeypatch.setattr(sys, "executable", str(exe_dir / "cs2-roulette.exe"))
+    monkeypatch.setattr(sys, "executable", str(exe_dir / "hardmode.exe"))
     assert docs.quickstart_path() == str(internal / "QUICKSTART.md")
     assert any(h["text"] == "Startup" for h in docs.load_help()["headings"])
 

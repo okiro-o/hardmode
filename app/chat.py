@@ -35,7 +35,7 @@ from typing import Any, Callable
 
 SE_API = "https://api.streamelements.com/kappa/v2"
 MAX_LOG = 30
-log = logging.getLogger("cs2roulette.chat")
+log = logging.getLogger("hardmode.chat")
 
 
 def _bool(v: Any) -> bool:
@@ -287,7 +287,7 @@ class ChatNotifier:
             "Authorization": f"Bearer {jwt}",
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "User-Agent": "cs2-roulette/1.0",
+            "User-Agent": "hardmode/1.0",
         })
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:

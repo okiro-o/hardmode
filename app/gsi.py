@@ -330,7 +330,7 @@ class GsiTracker:
 def build_cfg(uri: str, token: str) -> str:
     """Valve KeyValues config for CS2 (no BOM!) tuned for low latency on localhost."""
     return (
-        '"CS2 Roulette"\n'
+        '"Hardmode"\n'
         "{\n"
         f'  "uri"        "{uri}"\n'
         '  "timeout"    "5.0"\n'

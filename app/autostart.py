@@ -7,7 +7,8 @@ import sys
 from . import config
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-VALUE_NAME = "cs2-roulette"
+VALUE_NAME = "hardmode"
+LEGACY_VALUE_NAMES = ("cs2-roulette",)   # pre-rename registry value, cleaned up on toggle
 IS_WINDOWS = sys.platform.startswith("win")
 
 
@@ -48,6 +49,11 @@ def set_enabled(enabled: bool) -> bool:
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
         if enabled:
             winreg.SetValueEx(key, VALUE_NAME, 0, winreg.REG_SZ, launch_command())
+            for legacy in LEGACY_VALUE_NAMES:
+                try:
+                    winreg.DeleteValue(key, legacy)
+                except OSError:
+                    pass
         else:
             try:
                 winreg.DeleteValue(key, VALUE_NAME)

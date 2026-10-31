@@ -1,8 +1,8 @@
-# CS2 Roulette — спецификация проекта
+# Hardmode — спецификация проекта
 
 Этот документ — источник правды о приложении: зачем оно, как устроено, какие решения приняты
 и почему, что отклонено, что в бэклоге. Обновляется при каждом значимом изменении.
-Последнее обновление: 2026-10-31, версия приложения 0.12.0.
+Последнее обновление: 2026-10-31, версия приложения 0.13.0. Название продукта: **Hardmode** (до 0.13.0 — CS2 Roulette; переименовано по просьбе пользователя: «roulette» ассоциируется со скам-сайтами, «CS2» — чужой знак).
 
 ## 1. Назначение и пользователь
 
@@ -42,10 +42,10 @@ push-обновлений, обычные HTML/JS-страницы без сбо
 | `run.bat` | создаёт venv, ставит зависимости, запускает трей-режим через `pythonw.exe start_tray.pyw` (без консоли) |
 | `run-console.bat` / `run.sh` | консольный режим (`python -m app --console`), лог на экране |
 | `start_tray.pyw` | лаунчер для pythonw и автозапуска |
-| `build.bat`, `tools/entry.py` | PyInstaller `--onedir --noconsole` сборка `dist/cs2-roulette/cs2-roulette.exe` (иконка `app/static/icon.ico`, `--hidden-import hid`, pystray/PIL) |
+| `build.bat`, `tools/entry.py` | PyInstaller `--onedir --noconsole` сборка `dist/hardmode/hardmode.exe` (иконка `app/static/icon.ico`, `--hidden-import hid`, pystray/PIL) |
 | `app/__main__.py` | точка входа: режим трей/консоль (`want_tray`: `--tray`, frozen → трей, `--console` отменяет), лог `data/app.log` (RotatingFileHandler 1 МБ×3), занятый порт → открыть панель и выйти |
 | `app/tray.py` | pystray-иконка (глиф рисуется Pillow), uvicorn в потоке, меню: панель, автозапуск, папка данных, выход; watchdog уведомляет при падении сервера |
-| `app/autostart.py` | HKCU\...\Run `cs2-roulette` → `pythonw start_tray.pyw` или `cs2-roulette.exe --tray` |
+| `app/autostart.py` | HKCU\...\Run `hardmode` → `pythonw start_tray.pyw` или `hardmode.exe --tray` |
 | `app/main.py` | FastAPI: панель, оверлеи, `/events` (SSE), `/gsi`, API, middleware same-origin, lifespan |
 | `app/config.py` | `AppSettings` (port, gsi_token, roulette, dpi, overlay, hotkeys), пути `data/` |
 | `app/events.py` | SSE-брокер (очереди на подписчика, первое событие — полный снапшот) |
@@ -86,7 +86,7 @@ push-обновлений, обычные HTML/JS-страницы без сбо
 - GSI-имена: `weapon_m4a1` = M4A4, `weapon_m4a1_silencer` = M4A1-S, `weapon_hkp2000` = P2000,
   `weapon_revolver` = R8, `weapon_elite` = Dual Berettas, `weapon_galilar`, `weapon_sg556`,
   `weapon_cz75a`, `weapon_taser` = Zeus, ножи `weapon_knife*`/`weapon_bayonet` → `knife`.
-- GSI (конфиг `game/csgo/cfg/gamestate_integration_cs2roulette.cfg`, читается при старте игры,
+- GSI (конфиг `game/csgo/cfg/gamestate_integration_hardmode.cfg`, читается при старте игры,
   без BOM): блоки provider, map, round, player_id, player_state, player_weapons,
   player_match_stats; buffer 0.0, throttle 0.0, heartbeat 10. Когда стример мёртв, блок
   `player` описывает наблюдаемого тиммейта — фильтр по `player.steamid == provider.steamid`.
@@ -290,7 +290,12 @@ current, home, homecolor, color, accent, bg, debug`.
 
 ## 8. Панель (UI)
 
-Пять вкладок (запоминаются в localStorage/hash, `hashchange` переключает): **Startup** (живой чек-лист: CS2/GSI,
+Шесть вкладок (0.13.0, запоминаются в localStorage/hash, `hashchange` переключает). Принцип: настройки
+каждой вкладки должны влезать в экран; редкие настройки — в `<details>` «Дополнительно» внутри блока;
+логи свёрнуты до 84px с кнопкой «развернуть»; статистика гонки — строка `.statline` в блоке. Удалены
+из UI: блок хоткеев (код `app/hotkeys.py` остался, выключен), дубль «Виджеты для OBS», длительность
+и обороты кручения, «когда применять». Вкладка **Вид** собирает всё внешнее: виджеты OBS (ссылки, размеры,
+настройки), цвета, блоки «Поверх игры». **Startup** (живой чек-лист: CS2/GSI,
 лоадаут, виджеты в OBS, мышь, колесо; «по желанию»: лоадаут-виджет, чат SE, награды,
 автозапуск; при первом запуске открывается сама, пока обязательные пункты не зелёные;
 пользователь просил назвать именно «Startup», без лозунгов), **Оружие** (очередь, кнопки, статистика, лог,
@@ -398,8 +403,8 @@ SSE-пинг раз в 15 с на клиента, IRC-сокет блокиру�
 ## 11. Процесс
 
 - Тесты: `.venv/bin/python -m pytest -q` (macOS: `perl -e 'alarm 150; exec @ARGV' …`, `timeout`
-  отсутствует). Предпросмотр: `.claude/launch.json` → `preview_start cs2-roulette`
+  отсутствует). Предпросмотр: `.claude/launch.json` → `preview_start hardmode`
   (порт 17890); виджеты смотреть с `?bg=1b1e26`.
-- Архив для пользователя: `dist/cs2-roulette-<версия>.zip` (без `.venv`, `data`, кэшей; папка
-  верхнего уровня `cs2-roulette/`); версия в `app/main.py` `VERSION`.
+- Архив для пользователя: `dist/hardmode-<версия>.zip` (без `.venv`, `data`, кэшей; папка
+  верхнего уровня `hardmode/`); версия в `app/main.py` `VERSION`.
 - Память агента: `~/.claude/projects/-Users-prc-999-user-CS2/memory/` указывает на этот файл.
