@@ -223,22 +223,25 @@ class DpiService:
         adds 1 to its value, so two viewers adding 3000 make that segment twice as wide (one segment,
         not two). An empty wheel falls back to the home DPI.
         """
+        allowed = self._allowed()
+        home = self.home_value()
         base = self.base_values()
         if self.settings.pool_mode == "bag":
             remaining = [v for v in base if v not in self.consumed]
-            if not remaining and base:
-                self.consumed = []        # cycle exhausted: everything comes back
+            if base and all(v == home for v in remaining):
+                self.consumed = []        # cycle exhausted (the home value never leaves): everything comes back
                 remaining = list(base)
             base = remaining
-        allowed = self._allowed()
         weights: dict[int, int] = {v: 1 for v in base}
         for e in self.viewer_values:
             v = grid.snap(int(e["value"]), allowed)
             weights[v] = weights.get(v, 0) + 1
-        if not weights:
-            return [grid.snap(self.settings.home_dpi, allowed)], [1]
+        weights.setdefault(home, 1)       # the streamer's own DPI is always on the wheel (own colour)
         vals = sorted(weights)
         return vals, [weights[v] for v in vals]
+
+    def home_value(self) -> int:
+        return grid.snap(self.settings.home_dpi, self._allowed())
 
     def values(self) -> list[int]:
         return self.segments()[0]
@@ -247,7 +250,7 @@ class DpiService:
         base = self.base_values()
         vals, weights = self.segments()
         return {"base_total": len(base), "consumed": sorted(v for v in self.consumed if v in base),
-                "viewer": list(self.viewer_values), "on_wheel": len(vals),
+                "viewer": list(self.viewer_values), "on_wheel": len(vals), "home": self.home_value(),
                 "weights": {str(v): w for v, w in zip(vals, weights) if w > 1}}
 
     def _consume(self, value: int) -> None:
@@ -255,8 +258,8 @@ class DpiService:
         leaves the wheel, viewer values included)."""
         if self.settings.pool_mode != "bag":
             return
-        if value in self.base_values() and value not in self.consumed:
-            self.consumed.append(value)
+        if value in self.base_values() and value not in self.consumed and value != self.home_value():
+            self.consumed.append(value)   # the home value is never consumed: it must stay on the wheel
         for i, e in enumerate(self.viewer_values):
             if int(e["value"]) == value:
                 del self.viewer_values[i]     # one viewer ticket per roll

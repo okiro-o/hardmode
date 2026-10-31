@@ -66,7 +66,7 @@ def test_ingame_settings_validation_and_persistence():
 
 def test_single_value_wheel_changes_without_spinning(tmp_path, monkeypatch):
     monkeypatch.setenv("CS2R_DPI_BACKEND", "fake")
-    st = DpiSettings.from_dict({"enabled": True, "use_range": False, "custom_values": [1600], "pool_mode": "random"})
+    st = DpiSettings.from_dict({"enabled": True, "use_range": False, "custom_values": [1600], "pool_mode": "random", "home_dpi": 1600})
     published = []
     svc = DpiService(st, str(tmp_path / "dpi.json"), publish=lambda e, d: published.append((e, d)),
                      publish_threadsafe=lambda e, d: None)
@@ -74,7 +74,7 @@ def test_single_value_wheel_changes_without_spinning(tmp_path, monkeypatch):
     spin = svc.spin("death")
     assert spin["instant"] is True and spin["duration_ms"] == 0 and spin["value"] == 1600
     assert any(e == "dpi_spin" and d["instant"] for e, d in published)
-    st2 = DpiSettings.from_dict({"enabled": True, "use_range": False, "custom_values": [800, 1600], "pool_mode": "random"})
+    st2 = DpiSettings.from_dict({"enabled": True, "use_range": False, "custom_values": [800, 1600], "pool_mode": "random", "home_dpi": 1600})
     svc2 = DpiService(st2, str(tmp_path / "dpi2.json"), publish=lambda e, d: None, publish_threadsafe=lambda e, d: None)
     assert svc2.spin()["instant"] is False
 

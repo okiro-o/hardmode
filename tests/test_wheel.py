@@ -28,22 +28,37 @@ def test_base_values_range_and_custom(svc):
 
 
 def test_bag_mode_removes_rolled_values_until_exhausted(svc):
+    # the home value (3200 by default) is always on the wheel and never consumed; rig the picker to skip it
+    svc._rng.choices = lambda population, weights=None, k=1: [next(i for i in population if svc.segments()[0][i] != 3200)]
     async def run():
         svc.start(asyncio.get_running_loop())
         try:
+            assert svc.values() == [800, 900, 1000, 1100, 1200, 3200]
             seen = []
             for _ in range(5):
                 before = set(svc.values())
                 spin = svc.spin("manual")
                 seen.append(spin["value"])
                 assert spin["value"] in before
-                assert spin["value"] not in svc.values() or len(svc.values()) == 5
-            assert sorted(seen) == [800, 900, 1000, 1100, 1200]
-            assert len(svc.values()) == 5           # cycle exhausted -> refilled
-            assert svc.wheel_info()["consumed"] == []
+            assert seen == [800, 900, 1000, 1100, 1200]
+            assert len(svc.values()) == 6           # cycle exhausted -> refilled, home still there
+            assert svc.wheel_info()["consumed"] == [] and svc.wheel_info()["home"] == 3200
             svc.update_settings({"pool_mode": "random"})
             svc.spin("manual")
-            assert len(svc.values()) == 5
+            assert len(svc.values()) == 6
+        finally:
+            svc.stop()
+    asyncio.run(run())
+
+
+def test_home_value_is_never_consumed_even_when_in_range(svc):
+    svc.update_settings({"home_dpi": 1000, "pool_mode": "bag"})
+    svc._rng.choices = lambda population, weights=None, k=1: [svc.segments()[0].index(1000)]
+    async def run():
+        svc.start(asyncio.get_running_loop())
+        try:
+            svc.spin("manual")
+            assert 1000 in svc.values() and svc.consumed == []
         finally:
             svc.stop()
     asyncio.run(run())
@@ -124,9 +139,9 @@ def test_viewer_rounding_duplicates_weights_and_pool_modes(svc):
     # duplicates merge into one wider segment
     assert svc.add_viewer_value("3000", "Bob")["ok"] and svc.add_viewer_value("3000", "Carl")["ok"]
     vals, weights = svc.segments()
-    assert vals == [700, 1000, 1300, 3000] and weights == [1, 1, 1, 3]
+    assert vals == [700, 1000, 1300, 3000, 3200] and weights == [1, 1, 1, 3, 1]   # 3200 = home, always present
     assert svc.wheel_info()["weights"] == {"3000": 3}
-    assert svc.snapshot()["weights"] == [1, 1, 1, 3]
+    assert svc.snapshot()["weights"] == [1, 1, 1, 3, 1]
     # weighted pick honours the weights
     seen = {svc.pick()[1] for _ in range(300)}
     assert 3000 in seen
@@ -134,10 +149,10 @@ def test_viewer_rounding_duplicates_weights_and_pool_modes(svc):
     assert svc.pick()[1] == 3000
     # full random: a rolled viewer value stays on the wheel
     spin = svc.spin("manual")
-    assert spin["value"] == 3000 and spin["weights"] == [1, 1, 1, 3]
-    assert svc.segments()[1] == [1, 1, 1, 3]
+    assert spin["value"] == 3000 and spin["weights"] == [1, 1, 1, 3, 1]
+    assert svc.segments()[1] == [1, 1, 1, 3, 1]
     # bag: the base 3000 and one viewer ticket leave, the other viewer's 3000 stays
     svc.update_settings({"pool_mode": "bag"})
     svc.spin("manual")
-    assert svc.segments() == ([700, 1000, 1300, 3000], [1, 1, 1, 1])
+    assert svc.segments() == ([700, 1000, 1300, 3000, 3200], [1, 1, 1, 1, 1])
     assert svc.consumed == [3000] and sum(1 for e in svc.viewer_values if e["value"] == 3000) == 1

@@ -95,12 +95,21 @@
     ctx.save();
     ctx.translate(CX, CY);
     ctx.rotate(rotation);
-    let a0 = 0;
+    // Colours alternate over the ordinary segments only; the home segment has its own colour and is
+    // skipped, otherwise two ordinary neighbours around it would come out identical. When the number of
+    // ordinary segments is odd and the home value does not separate the last from the first, the last
+    // one gets a third shade so no two neighbours match.
+    const nonHome = values.filter(v => v !== cfg.home).length;
+    const homeAtEdge = values[0] === cfg.home || values[n - 1] === cfg.home;
+    let a0 = 0, k = 0;
     for (let i = 0; i < n; i++) {
       const seg = TAU * (ws[i] || 1) / total, a1 = a0 + seg;
       ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, R, a0, a1); ctx.closePath();
       const isHome = values[i] === cfg.home;
-      ctx.fillStyle = isHome ? hexToRgba(cfg.homeColor, 0.95) : i % 2 === 0 ? hexToRgba(cfg.accent, 0.85) : hexToRgba(cfg.color, 0.22);
+      const third = !isHome && nonHome > 2 && nonHome % 2 === 1 && !homeAtEdge && k === nonHome - 1;
+      const even = !isHome && !third && k % 2 === 0;
+      if (!isHome) k++;
+      ctx.fillStyle = isHome ? hexToRgba(cfg.homeColor, 0.95) : third ? hexToRgba(cfg.accent, 0.45) : even ? hexToRgba(cfg.accent, 0.85) : hexToRgba(cfg.color, 0.22);
       ctx.fill();
       ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 2; ctx.stroke();
       if (cfg.labels) {
@@ -109,8 +118,8 @@
         ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
         const fs = n > 40 ? 13 : n > 28 ? 16 : n > 16 ? 20 : 26;
         ctx.font = `800 ${fs}px "Segoe UI", Roboto, Arial, sans-serif`;
-        ctx.fillStyle = isHome ? '#ffffff' : i % 2 === 0 ? '#1a1a1a' : cfg.color;
-        ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = (isHome || i % 2 !== 0) ? 4 : 0;
+        ctx.fillStyle = isHome ? '#ffffff' : even ? '#1a1a1a' : cfg.color;
+        ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = even ? 0 : 4;
         ctx.fillText(String(values[i]), R - 14, 0);
         ctx.restore();
       }
