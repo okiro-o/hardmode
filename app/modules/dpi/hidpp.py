@@ -52,7 +52,7 @@ ERROR_CODES = {
     0x08: "busy / device not connected",
     0x09: "unsupported",
 }
-HOST_MODE, ONBOARD_MODE = 0x02, 0x01
+HOST_MODE = 0x02
 
 
 class HidppError(RuntimeError):
@@ -277,10 +277,6 @@ class HidppDevice:
             else:
                 raise HidppError("Мышь не поддерживает управление DPI по HID++ (нет фич 0x2202/0x2201)")
         return self._dpi_feature
-
-    def sensor_count(self) -> int:
-        _, idx = self.dpi_feature()
-        return self.request(idx, 0)[0]
 
     def dpi_parameters(self, sensor: int = 0) -> dict:
         """{dpi_x, default_x, dpi_y, default_y, lod, feature}"""

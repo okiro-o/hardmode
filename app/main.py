@@ -1,8 +1,9 @@
-"""FastAPI application: control panel, OBS overlays, SSE stream, GSI receiver, hotkeys.
+"""FastAPI application: control panel, OBS overlays, SSE stream, GSI receiver.
 
 All state lives in one ``AppState`` and is only touched from the event-loop thread:
-every endpoint is ``async`` (they are all sub-millisecond), the hotkey thread marshals
-through ``Broker.call_threadsafe``.
+every endpoint is ``async`` (they are all sub-millisecond); background threads (chat,
+Twitch reader, DPI guard, in-game overlay) marshal through ``Broker.call_threadsafe`` /
+``publish_threadsafe``.
 """
 from __future__ import annotations
 
@@ -11,7 +12,6 @@ import logging
 import os
 import secrets
 import signal
-import sys
 import threading
 import time
 import webbrowser
@@ -25,7 +25,6 @@ from fastapi.staticfiles import StaticFiles
 from . import autostart, config, docs, loadout as L, steam, weapons as W
 from .events import Broker
 from .gsi import GsiTracker, build_cfg
-from .hotkeys import HotkeyManager
 from .ingame import IngameOverlays
 from .chat import ChatNotifier, ChatSettings
 from .modules import dpi
@@ -39,7 +38,6 @@ from .version import VERSION
 # Callables that stop this instance (set by the tray). Without them /api/quit raises SIGINT, which
 # uvicorn in console mode turns into a graceful shutdown.
 QUIT_HOOK: list = []
-KILL_ADVANCE_GRACE = 1.5   # seconds: ignore a manual "next" right after a kill already advanced
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 log = logging.getLogger("hardmode")
 
@@ -84,15 +82,10 @@ class AppState:
         self.twitch = TwitchChatReader(on_message=self._twitch_from_thread,
                                        on_status=lambda: self.broker.publish_threadsafe("twitch", self.twitch.status()))
         self._announced: tuple[bool, int | None] = (self.roulette.running, self.roulette.current_uid())
-        self.hotkeys = HotkeyManager(on_action=self._hotkey_from_thread,
-                                     bindings=self.settings.hotkeys.bindings(),
-                                     enabled=self.settings.hotkeys.enabled)
-        self.hotkeys.on_status = lambda: self.broker.publish_threadsafe("hotkeys", self.hotkeys.describe())
         self.ingame = IngameOverlays(self.settings.ingame, self.ingame_state, self.ingame_colors)
         self._save_lock = threading.Lock()
         self._last_gsi_publish = 0.0
         self._last_gsi_key: tuple = ()
-        self._last_kill_advance = 0.0
         self._last_gsi_error_log = 0.0
         self.roulette.bind(self._on_roulette_change)
         self.broker.on_clients_changed = lambda: self.broker.publish("clients", self.broker.clients())
@@ -111,7 +104,7 @@ class AppState:
         self.broker.publish("roulette", self.roulette.snapshot())
 
     def _announce_weapon(self) -> None:
-        """Chat notification when the current weapon changes (start, kill, hotkey, reroll, side switch)."""
+        """Chat notification when the current weapon changes (start, kill, button, reroll, side switch)."""
         r = self.roulette
         now = (r.running, r.current_uid())
         was = self._announced
@@ -156,30 +149,6 @@ class AppState:
 
     def ingame_info(self) -> dict:
         return {**self.settings.ingame.__dict__, **self.ingame.status()}
-
-    def _hotkey_from_thread(self, action: str) -> None:
-        self.broker.call_threadsafe(self.hotkey_action, action)
-
-    def hotkey_action(self, action: str) -> None:
-        r = self.roulette
-        ignored = False
-        if action == "next":
-            if not r.running and r.loadout:
-                r.start()  # fresh start, or resume after pause
-            elif time.monotonic() - self._last_kill_advance < KILL_ADVANCE_GRACE:
-                ignored = True  # the kill already advanced; a reflexive press must not skip a weapon
-            else:
-                r.advance(reason="hotkey")
-        elif action == "reroll":
-            r.reroll_current()
-        elif action == "undo":
-            r.undo()
-        elif action == "dpi_spin":
-            try:
-                self.dpi.spin(reason="hotkey")
-            except ValueError:
-                ignored = True
-        self.broker.publish("hotkey", {"action": action, "ignored": ignored, "t": time.time()})
 
     def persist_dpi_settings(self) -> None:
         self.settings.dpi = self.dpi.settings.to_dict()
@@ -250,14 +219,12 @@ class AppState:
         cfg = steam.installed_cfg_status(self.cfg_text())
         return {
             "version": VERSION,
-            "platform": sys.platform,
             "roulette": self.roulette.snapshot(),
             "dpi": self.dpi.snapshot(),
             "chat": self.chat.status(),
             "twitch": self.twitch.status(),
             "clients": self.broker.clients(),
             "gsi": self.gsi.status.to_dict(),
-            "hotkeys": self.hotkeys.describe(),
             "overlay": self.settings.overlay.__dict__,
             "ingame": self.ingame_info(),
             "stats": self.stats.snapshot(),
@@ -274,7 +241,7 @@ class AppState:
         }
 
     def settings_event(self) -> dict:
-        return {"overlay": self.settings.overlay.__dict__, "hotkeys": self.hotkeys.describe(),
+        return {"overlay": self.settings.overlay.__dict__,
                 "ingame": self.ingame_info(),
                 "roulette": self.roulette.settings.to_dict(), "dpi": self.dpi.settings.to_dict(),
                 "chat": self.chat.settings.public_dict(),
@@ -316,7 +283,6 @@ class AppState:
                                            ambiguous=bool(ev["ambiguous"]), raw_name=ev["raw"])
             if result["advanced"]:
                 batch_advanced = True
-                self._last_kill_advance = time.monotonic()
             self.broker.publish("kill", {**result, "headshot": ev["headshot"], "raw": ev["raw"],
                                          "t": time.time()})
         self.publish_gsi()
@@ -379,7 +345,6 @@ def create_app() -> FastAPI:
     async def lifespan(app: FastAPI):
         loop = asyncio.get_running_loop()
         state.broker.attach_loop(loop)
-        state.hotkeys.start()
         state.dpi.start(loop)
         state.ingame.start()
         state.chat.start()
@@ -408,7 +373,6 @@ def create_app() -> FastAPI:
         finally:
             stop.set()
             task.cancel()
-            state.hotkeys.stop()
             state.dpi.stop()
             state.ingame.stop()
             state.chat.stop()
@@ -560,8 +524,6 @@ def create_app() -> FastAPI:
             raise HTTPException(400, "unknown weapon")
         result = state.roulette.on_kill(weapon, headshot=bool(body.get("headshot")),
                                         ambiguous=bool(body.get("ambiguous")))
-        if result["advanced"]:
-            state._last_kill_advance = time.monotonic()
         state.broker.publish("kill", {**result, "headshot": bool(body.get("headshot")), "raw": None,
                                       "t": time.time()})
         return result
@@ -588,7 +550,7 @@ def create_app() -> FastAPI:
         body = await _json(request)
         s = state.settings
         rejected: list[str] = []
-        for section in ("roulette", "overlay", "hotkeys", "dpi", "chat", "ingame"):
+        for section in ("roulette", "overlay", "dpi", "chat", "ingame"):
             if section in body and body[section] is not None and not isinstance(body[section], dict):
                 raise HTTPException(400, f"{section}: нужен объект")
         if "chat" in body:
@@ -613,9 +575,6 @@ def create_app() -> FastAPI:
             s.roulette = state.roulette.settings.to_dict()
         if "overlay" in body:
             rejected += [f"overlay.{k}" for k in s.overlay.apply(body["overlay"] or {})]
-        if "hotkeys" in body:
-            rejected += [f"hotkeys.{k}" for k in s.hotkeys.apply(body["hotkeys"] or {})]
-            state.hotkeys.update(s.hotkeys.bindings(), s.hotkeys.enabled)
         if "ingame" in body:
             rejected += [f"ingame.{k}" for k in s.ingame.apply(body["ingame"] or {})]
             state.ingame.update_settings(s.ingame)
@@ -663,11 +622,6 @@ def create_app() -> FastAPI:
         return PlainTextResponse(state.cfg_text(), headers={
             "Content-Disposition": f'attachment; filename="{steam.CFG_NAME}"'})
 
-    @app.get("/api/gsi/info")
-    async def gsi_info() -> dict:
-        cfg = steam.installed_cfg_status(state.cfg_text())
-        return {"cfg_dir": steam.cs2_cfg_dir(), "installed": cfg["path"], "cfg_state": cfg["state"],
-                "cfg_name": steam.CFG_NAME, "uri": state.urls()["gsi"], "status": state.gsi.status.to_dict()}
 
     @app.post("/api/gsi/install")
     async def gsi_install(request: Request) -> dict:
@@ -681,10 +635,6 @@ def create_app() -> FastAPI:
             raise HTTPException(400, str(e))
         state.broker.publish("settings", state.settings_event())
         return {"path": path}
-
-    @app.get("/api/hotkeys")
-    async def api_hotkeys() -> dict:
-        return state.hotkeys.describe()
 
     @app.post("/api/autostart")
     async def api_autostart(request: Request) -> dict:

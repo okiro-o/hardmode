@@ -32,8 +32,6 @@ def _obj(v: Any) -> dict:
 
 def _int(v: Any, default: int | None = None) -> int | None:
     try:
-        if isinstance(v, bool):
-            return int(v)
         return int(v)
     except (TypeError, ValueError):
         return default
@@ -65,13 +63,11 @@ class GsiStatus:
     held_raw: str | None = None      # raw GSI name (weapon_ak47, weapon_hegrenade, ...)
     round_kills: int | None = None
     match_kills: int | None = None
-    steamid: str | None = None
     name: str | None = None
     payloads: int = 0
     rejected_auth: int = 0
     last_rejected_at: float | None = None
     rejected_name: str | None = None     # who is posting with a wrong token (diagnostics)
-    last_name_at: float | None = None
 
     def clear_player(self) -> None:
         self.own_player = None
@@ -91,12 +87,10 @@ class GsiStatus:
 
 @dataclass
 class _OwnSnapshot:
-    t: float
     map_name: str | None
     round: int | None
     round_kills: int
     round_killhs: int
-    match_kills: int | None
     active_raw: str | None
     grenades: dict[str, int]   # gsi name -> count in inventory
     alive: bool
@@ -197,10 +191,8 @@ class GsiTracker:
         st.mode = _str(map_.get("mode"))
         st.round = _int(map_.get("round"))
         st.round_phase = _str(round_.get("phase"))
-        st.steamid = provider_sid
         if own and _str(player.get("name")):
             st.name = _str(player.get("name"))
-            st.last_name_at = now
 
         if not player or not map_:
             # main menu / loading: nothing to track, reset per-round memory and stale fields
@@ -332,12 +324,10 @@ class GsiTracker:
                 })
 
         self._prev = _OwnSnapshot(
-            t=now,
             map_name=st.map_name,
             round=st.round,
             round_kills=round_kills,
             round_killhs=round_killhs,
-            match_kills=match_kills,
             active_raw=active_raw,
             grenades=grenades,
             alive=alive,

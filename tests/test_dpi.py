@@ -26,8 +26,6 @@ def test_snap_and_bounds():
     assert grid.snap(1236) == 1240
     assert grid.snap(50) == 100
     assert grid.snap(99999) == 44000
-    assert grid.snap(3205, lo=800, hi=3200) == 3200
-    assert grid.snap(100, lo=800, hi=3200) == 800
 
 
 def test_wheel_values():
@@ -36,14 +34,6 @@ def test_wheel_values():
     assert all(v in grid.DEFAULT_VALUES for v in vals)
     assert grid.wheel_values(3200, 800, 100) == vals  # swapped bounds
     assert len(grid.wheel_values(100, 44000, 10)) <= 60
-
-
-def test_parse_range_list():
-    words = [100, 0xE001, 200, 0xE002, 500, 0xE005, 1000, 0]
-    ranges = grid.parse_range_list(words)
-    assert ranges == [(100, 200, 1), (200, 500, 2), (500, 1000, 5)]
-    assert grid.expand_ranges(ranges)[:3] == [100, 101, 102]
-    assert grid.parse_range_list([400, 800, 1600, 0]) == [(400, 400, 1), (800, 800, 1), (1600, 1600, 1)]
 
 
 def test_parse_dpi_words_like_solaar():

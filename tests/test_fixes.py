@@ -5,9 +5,8 @@ import pytest
 
 from app import loadout as L
 from app import weapons as W
-from app.config import AppSettings, HotkeySettings, OverlaySettings
+from app.config import AppSettings, OverlaySettings
 from app.gsi import GsiTracker
-from app.hotkeys import MOD_ALT, MOD_CONTROL, parse_hotkey
 from app.roulette import Roulette, RouletteSettings
 from tests.test_gsi import ME, MATE, kills, payload
 
@@ -192,26 +191,6 @@ def test_death_does_not_register_grenade_throw():
     assert ev[0]["ambiguous"] is None
 
 
-# ------------------------------------------------------------------ hotkeys
-def test_parse_hotkey_variants():
-    assert parse_hotkey("F9") == (0, 0x78)
-    assert parse_hotkey("ctrl+alt+K") == (MOD_CONTROL | MOD_ALT, ord("K"))
-    assert parse_hotkey("numpad+") == (0, 0x6B)
-    assert parse_hotkey("NUM+") == (0, 0x6B)
-    assert parse_hotkey("ctrl++") == (MOD_CONTROL, 0x6B)
-    assert parse_hotkey("numpad-") == (0, 0x6D)
-    assert parse_hotkey("") is None and parse_hotkey(5) is None and parse_hotkey("ctrl+a+b") is None
-    assert parse_hotkey("nosuchkey") is None
-
-
-def test_hotkey_settings_reject_bad_and_duplicates():
-    h = HotkeySettings()
-    rejected = h.apply({"next": 5, "reroll": "F9", "undo": "", "enabled": "no"})
-    assert "next" in rejected and h.next == "F9"
-    assert h.reroll == "" and "reroll" in rejected  # duplicate of next
-    assert h.enabled is False
-
-
 def test_overlay_settings_validation():
     o = OverlaySettings()
     rejected = o.apply({"scale": None, "color": "red;x", "layout": "diagonal", "align": "center", "labels": 1})
@@ -223,8 +202,7 @@ def test_overlay_settings_validation():
         o.apply("abc")
 
 
-def test_app_settings_default_undo_hotkey_and_corrupt_file(tmp_path):
-    assert AppSettings().hotkeys.undo == "F7"
+def test_app_settings_corrupt_file(tmp_path):
     path = tmp_path / "settings.json"
     path.write_text("{broken", encoding="utf-8")
     s = AppSettings.load(str(path))

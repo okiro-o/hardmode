@@ -669,7 +669,6 @@ let tab = 'T';
 let lastTabClick = 0;
 function tabClickedRecently() { return Date.now() - lastTabClick < 1500; }
 const $ = id => document.getElementById(id);
-const HK_NAMES = { next: 'Следующее', reroll: 'Перекрутить', undo: 'Отмена', dpi_spin: 'Крутить DPI' };
 
 function toast(msg, bad=false) { const t=$('toast'); t.textContent=msg; t.className='toast show'+(bad?' bad':''); clearTimeout(t._h); t._h=setTimeout(()=>t.className='toast',2600); }
 async function post(url, body) {
@@ -948,8 +947,8 @@ function renderHeader() {
 function renderQueue() {
   const r = S.roulette; const q = $('queue');
   if (!r.loadout) { q.innerHTML = '<span class="muted">Сгенерируйте лоадаут (ниже) и нажмите «Старт»</span>'; }
-  else if (!r.running && r.paused) { q.innerHTML = '<span class="muted">Пауза. Нажмите «Продолжить» или хоткей «Следующее» — очередь и статистика сохранены.</span>'; }
-  else if (!r.running) { q.innerHTML = '<span class="muted">Сессия не запущена. Нажмите «Старт» или хоткей «Следующее».</span>'; }
+  else if (!r.running && r.paused) { q.innerHTML = '<span class="muted">Пауза. Нажмите «Продолжить» — очередь и статистика сохранены.</span>'; }
+  else if (!r.running) { q.innerHTML = '<span class="muted">Сессия не запущена. Нажмите «Старт».</span>'; }
   else {
     q.innerHTML = r.queue.map((w,i) => `<div class="q ${i===0?'cur':'nxt'}"><div class="tag">${i===0?'сейчас'+(r.kills_per_weapon>1?` · ${r.current_kills}/${r.kills_per_weapon}`:''):'далее'}</div><div class="icon" style="--mask:url('${w.icon}')"></div><div class="name">${esc(w.name)}</div></div>${i===0?'<div style="font-size:28px;color:var(--muted)">›</div>':''}`).join('');
   }
@@ -974,8 +973,8 @@ function renderLoadout() {
 }
 
 function renderSettings() {
-  const r = S.roulette.settings, o = S.overlay, h = S.hotkeys;
-  const src = { roulette: r, overlay: o, hotkeys: {...h.bindings, enabled: h.enabled}, dpi: (S.dpi && S.dpi.settings) || {}, chat: (S.chat && S.chat.settings) || {}, ingame: S.ingame || {} };
+  const r = S.roulette.settings, o = S.overlay;
+  const src = { roulette: r, overlay: o, dpi: (S.dpi && S.dpi.settings) || {}, chat: (S.chat && S.chat.settings) || {}, ingame: S.ingame || {} };
   document.querySelectorAll('[data-key]').forEach(el => {
     if (document.activeElement === el) return;
     const [grp, key] = el.dataset.key.split('.'); const v = src[grp] ? src[grp][key] : undefined; if (v === undefined) return;
@@ -1151,8 +1150,7 @@ const es = new EventSource('/events');
 es.addEventListener('snapshot', e => { S = JSON.parse(e.data); renderAll(); $('chip-sse').className='chip ok'; });
 es.addEventListener('roulette', e => { if (!S) return; S.roulette = JSON.parse(e.data); renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderChecks(); });
 es.addEventListener('gsi', e => { if (!S) return; S.gsi = JSON.parse(e.data); renderHeader(); renderMisc(); renderChecks(); });
-es.addEventListener('settings', e => { if (!S) return; const d = JSON.parse(e.data); S.overlay = d.overlay; S.ingame = d.ingame || S.ingame; S.hotkeys = d.hotkeys; S.gsi_token = d.gsi_token; S.port = d.port; if (S.dpi && d.dpi) S.dpi.settings = d.dpi; if (S.chat && d.chat) S.chat.settings = d.chat; if (d.roulette) S.roulette.settings = d.roulette; renderHeader(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); refreshState(); });
-es.addEventListener('hotkeys', e => { if (!S) return; S.hotkeys = JSON.parse(e.data); renderHeader(); renderSettings(); renderDpi(); });
+es.addEventListener('settings', e => { if (!S) return; const d = JSON.parse(e.data); S.overlay = d.overlay; S.ingame = d.ingame || S.ingame; S.gsi_token = d.gsi_token; S.port = d.port; if (S.dpi && d.dpi) S.dpi.settings = d.dpi; if (S.chat && d.chat) S.chat.settings = d.chat; if (d.roulette) S.roulette.settings = d.roulette; renderHeader(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); refreshState(); });
 es.addEventListener('dpi', e => { if (!S) return; S.dpi = JSON.parse(e.data); renderDpi(); renderSettings(); renderWheel(); renderChecks(); });
 es.addEventListener('twitch', e => { if (!S) return; S.twitch = JSON.parse(e.data); renderWheel(); renderChecks(); });
 es.addEventListener('clients', e => { if (!S) return; S.clients = JSON.parse(e.data); renderChecks(); });
@@ -1165,7 +1163,6 @@ es.addEventListener('gsi', () => schedulePreview('weapons'));
 es.addEventListener('settings', () => { renderIngame(); schedulePreview('dpi'); schedulePreview('weapons'); });
 es.addEventListener('dpi_spin', e => { const sp = JSON.parse(e.data); toast('DPI-рулетка: ' + sp.value + (sp.reason === 'death' ? ' (смерть)' : '')); });
 es.addEventListener('kill', e => { const k = JSON.parse(e.data); if (k.ambiguous) toast('Килл: возможно граната — не засчитан'); else if (k.counted) toast(k.advanced ? 'Килл засчитан → следующее оружие' : 'Килл засчитан'); else if (S && S.roulette.running) toast('Килл не тем оружием', true); });
-es.addEventListener('hotkey', e => { const h = JSON.parse(e.data); toast('Хоткей «' + (HK_NAMES[h.action]||h.action) + '»' + (h.ignored ? ' — проигнорирован (килл уже переключил оружие)' : '')); });
 es.onerror = () => { $('chip-sse').className='chip bad'; };
 </script>
 </body>

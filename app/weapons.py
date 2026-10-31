@@ -195,8 +195,6 @@ def from_gsi_name(gsi_name: str | None) -> Weapon | None:
     # Knives report their own model names: weapon_knife_karambit, weapon_bayonet, ...
     if short.startswith("knife") or short == "bayonet" or short.endswith("_knife"):
         return BY_ID["knife"]
-    if short == "knife_t":
-        return BY_ID["knife"]
     return None
 
 

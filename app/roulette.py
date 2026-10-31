@@ -1,7 +1,7 @@
 """Arms-race roulette state machine.
 
 Server-authoritative state: the queue (current weapon + upcoming ones), the active side,
-the loadout, statistics and a short history. The overlay and the control panel only
+the loadout, statistics and the undo history. The overlay and the control panel only
 render snapshots of this object, so an OBS page reload never loses anything.
 """
 from __future__ import annotations
@@ -91,7 +91,6 @@ class Roulette:
     kills_ambiguous: int = 0
     history: list[dict] = field(default_factory=list)   # finished weapons
     log: list[dict] = field(default_factory=list)       # recent events for the panel
-    last_event: dict | None = None
     started_at: float | None = None
     seed: int | None = None
     _rng: random.Random = field(default_factory=random.Random, repr=False)
@@ -110,7 +109,6 @@ class Roulette:
         entry = {"t": time.time(), "kind": kind, "text": text, **extra}
         self.log.append(entry)
         del self.log[:-MAX_LOG]
-        self.last_event = entry
         return entry
 
     def visible_count(self) -> int:
@@ -601,10 +599,7 @@ class Roulette:
             "kills_total": self.kills_total,
             "kills_wrong_weapon": self.kills_wrong_weapon,
             "kills_ambiguous": self.kills_ambiguous,
-            "history": self.history[-10:],
             "log": self.log[-25:],
-            "last_event": self.last_event,
-            "can_undo": bool(self._undo),
             "settings": self.settings.to_dict(),
             "started_at": self.started_at,
         }

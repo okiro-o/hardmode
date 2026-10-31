@@ -25,7 +25,7 @@ from typing import Callable
 
 from PIL import Image, ImageChops, ImageDraw, ImageFont
 
-from . import config, weapons as W
+from . import config
 
 log = logging.getLogger("hardmode.ingame")
 IS_WINDOWS = sys.platform.startswith("win")
@@ -50,17 +50,11 @@ def font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
             return ImageFont.truetype(name, size)
         except OSError:
             continue
-    try:
-        return ImageFont.load_default(size=size)
-    except TypeError:  # Pillow < 10.1
-        return ImageFont.load_default()
+    return ImageFont.load_default(size=size)
 
 
 def _text_w(f, text: str) -> float:
-    try:
-        return f.getlength(text)
-    except AttributeError:
-        return f.getbbox(text)[2]
+    return f.getlength(text)
 
 
 # ------------------------------------------------------------------- SVG silhouettes
@@ -263,12 +257,8 @@ def render_dpi(st: dict, s: config.IngameSettings, colors: dict) -> Image.Image 
     d.rounded_rectangle([0, 0, w - 1, h - 1], radius=int(16 * k), fill=BG)
     home = (not spinning) and cur == st.get("home")
     color = _rgb(colors.get("home_color", "#ffd166")) if home else (255, 255, 255)
-    try:
-        d.text((pad, h / 2), text, font=big, fill=color + (255,), anchor="lm")
-        d.text((pad * 2 + tw, h / 2 + 4 * k), label, font=small, fill=MUTED, anchor="lm")
-    except (ValueError, TypeError):  # bitmap font without anchors
-        d.text((pad, int(h * 0.15)), text, font=big, fill=color + (255,))
-        d.text((pad * 2 + tw, int(h * 0.45)), label, font=small, fill=MUTED)
+    d.text((pad, h / 2), text, font=big, fill=color + (255,), anchor="lm")
+    d.text((pad * 2 + tw, h / 2 + 4 * k), label, font=small, fill=MUTED, anchor="lm")
     return img
 
 
@@ -295,8 +285,6 @@ def render_weapons(st: dict, s: config.IngameSettings, colors: dict) -> Image.Im
     w = pad * 2 + max(cur_w, int(_text_w(name_f, cur["name"])) if s.weapons_names else 0)
     if next_masks:
         w += gap + sum((m.size[0] if m else int(40 * k)) + int(10 * k) for _, m in next_masks)
-        if s.weapons_names:
-            pass
     h = pad * 2 + H + name_h
     img = Image.new("RGBA", (int(w), int(h)), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)

@@ -191,7 +191,7 @@ def test_rejected_payload_keeps_player_name_for_diagnostics():
     assert t.status.rejected_name == "me" and t.status.name is None
     p["auth"] = {"token": "good"}
     t.handle(p, now=2.0)
-    assert t.status.name == "me" and t.status.last_name_at == 2.0
+    assert t.status.name == "me"
 
 
 def test_halftime_last_kill_and_death_still_count():

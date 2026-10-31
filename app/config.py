@@ -119,49 +119,6 @@ class OverlaySettings:
         return rejected
 
 
-@dataclass
-class HotkeySettings:
-    next: str = "F9"
-    reroll: str = "F8"
-    undo: str = "F7"
-    dpi_spin: str = "F6"
-    enabled: bool = False       # off by default: kills/deaths drive everything through GSI
-
-    ACTIONS = ("next", "reroll", "undo", "dpi_spin")
-
-    def apply(self, patch: dict | None) -> list[str]:
-        """Apply a validated patch (strings only, parseable by hotkeys.parse_hotkey)."""
-        from .hotkeys import parse_hotkey  # local import: keep config importable standalone
-
-        if patch is not None and not isinstance(patch, dict):
-            raise ValueError("hotkeys: нужен объект")
-        rejected: list[str] = []
-        for k, v in (patch or {}).items():
-            if k == "enabled":
-                self.enabled = _to_bool(v)
-            elif k in self.ACTIONS:
-                spec = (v or "").strip() if isinstance(v, str) else None
-                if spec is None or (spec and parse_hotkey(spec) is None):
-                    rejected.append(k)
-                else:
-                    setattr(self, k, spec)
-            else:
-                rejected.append(k)
-        # duplicates would make two actions fire on one key
-        seen: dict[str, str] = {}
-        for action in self.ACTIONS:
-            spec = getattr(self, action).upper().replace(" ", "")
-            if spec and spec in seen:
-                setattr(self, action, "")
-                rejected.append(action)
-            elif spec:
-                seen[spec] = action
-        return rejected
-
-    def bindings(self) -> dict[str, str]:
-        return {a: getattr(self, a) for a in self.ACTIONS}
-
-
 CORNERS = ("tl", "tr", "bl", "br")
 
 
@@ -240,7 +197,6 @@ class AppSettings:
     dpi: dict = field(default_factory=dict)           # DpiSettings as dict (validated by the module)
     chat: dict = field(default_factory=dict)          # ChatSettings as dict (contains the SE JWT secret)
     overlay: OverlaySettings = field(default_factory=OverlaySettings)
-    hotkeys: HotkeySettings = field(default_factory=HotkeySettings)
     ingame: IngameSettings = field(default_factory=IngameSettings)
     open_browser: bool = True
 
@@ -267,8 +223,6 @@ class AppSettings:
         s.open_browser = _to_bool(d.get("open_browser", True))
         if isinstance(d.get("overlay"), dict):
             s.overlay.apply(d["overlay"])
-        if isinstance(d.get("hotkeys"), dict):
-            s.hotkeys.apply(d["hotkeys"])
         if isinstance(d.get("ingame"), dict):
             s.ingame.apply(d["ingame"])
         return s

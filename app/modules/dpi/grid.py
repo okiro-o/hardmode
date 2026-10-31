@@ -64,51 +64,14 @@ def parse_dpi_words(words: list[int]) -> list[int]:
     return sorted(set(v for v in values if 0 < v < STEP_FLAG))
 
 
-def parse_range_list(words: list[int]) -> list[tuple[int, int, int]]:
-    """Decode the 16-bit list returned by getSensorDpiRanges pages.
-
-    Format (same as 0x2201 Adjustable DPI): ``v0, step, v1, step, v2, ... , 0`` where a word
-    ``>= 0xE000`` is a step between the neighbouring values. A lone list of plain values means
-    "exactly these values".
-    """
-    ranges: list[tuple[int, int, int]] = []
-    explicit: list[int] = []
-    i = 0
-    prev: int | None = None
-    while i < len(words):
-        w = words[i]
-        if w == 0:
-            break
-        if (w >> 13) == 0b111:
-            step = w & STEP_MASK
-            nxt = words[i + 1] if i + 1 < len(words) else 0
-            if prev is not None and nxt and step > 0:
-                ranges.append((prev, nxt, step))
-            i += 1
-            continue
-        if prev is not None and (i == 0 or words[i - 1] < STEP_FLAG):
-            explicit.append(prev)
-        prev = w
-        i += 1
-    if not ranges and prev is not None:
-        explicit.append(prev)
-        return [(v, v, 1) for v in sorted(set(explicit))]
-    return ranges
-
-
 DEFAULT_VALUES: list[int] = expand_ranges(DEFAULT_RANGES)
 
 
-def snap(value: int, allowed: list[int] | None = None, lo: int | None = None, hi: int | None = None) -> int:
-    """Nearest allowed DPI to ``value`` inside [lo, hi] (bounds snapped as well)."""
-    allowed = allowed or DEFAULT_VALUES
-    if not allowed:
+def snap(value: int, allowed: list[int] | None = None) -> int:
+    """Nearest allowed DPI to ``value`` (clamped to the ends of the grid)."""
+    candidates = allowed or DEFAULT_VALUES
+    if not candidates:
         return int(value)
-    candidates = allowed
-    if lo is not None or hi is not None:
-        lo_v = lo if lo is not None else allowed[0]
-        hi_v = hi if hi is not None else allowed[-1]
-        candidates = [v for v in allowed if lo_v <= v <= hi_v] or allowed
     i = bisect_left(candidates, value)
     if i == 0:
         return candidates[0]

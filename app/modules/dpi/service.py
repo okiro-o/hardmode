@@ -20,9 +20,7 @@ from typing import Any, Callable
 
 from . import grid
 from .backends import DpiBackend, make_backend
-from .hidpp import HidppError
 
-MAX_HISTORY = 50
 MAX_LOG = 40
 
 
@@ -151,7 +149,6 @@ class DpiService:
         self.current_dpi: int | None = None      # last value confirmed by the mouse
         self.target_dpi: int | None = None       # value we want on the mouse (guard re-applies it)
         self.last_spin: dict | None = None
-        self.history: list[dict] = []
         self.log: list[dict] = []
         self.spins = 0
         self.deaths = 0
@@ -350,7 +347,6 @@ class DpiService:
             "wheel": self.wheel_info(),
             "learn_reward": self.learn_reward,
             "last_spin": self.last_spin,
-            "history": self.history[-20:],
             "log": self.log[-20:],
             "spins": self.spins,
             "deaths": self.deaths,
@@ -457,8 +453,6 @@ class DpiService:
             self.last_error = None
             if self.last_spin and self.last_spin.get("value") == actual and reason.startswith("spin"):
                 self.last_spin["applied"] = time.time()
-            self.history.append({"t": time.time(), "value": actual, "reason": reason})
-            del self.history[:-MAX_HISTORY]
             self._log("apply", f"DPI {actual} применён ({reason})", value=actual)
             result = {"ok": True, "value": actual}
             if self.on_applied:
@@ -589,7 +583,7 @@ class DpiService:
             os.makedirs(os.path.dirname(self.state_path) or ".", exist_ok=True)
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump({"current_dpi": self.current_dpi, "target_dpi": self.target_dpi,
-                           "last_spin": self.last_spin, "history": self.history, "spins": self.spins,
+                           "last_spin": self.last_spin, "spins": self.spins,
                            "deaths": self.deaths, "log": self.log, "consumed": self.consumed,
                            "viewer_values": self.viewer_values}, f, ensure_ascii=False)
             os.replace(tmp, self.state_path)
@@ -607,7 +601,6 @@ class DpiService:
         self.current_dpi = d.get("current_dpi") if isinstance(d.get("current_dpi"), int) else None
         self.target_dpi = d.get("target_dpi") if isinstance(d.get("target_dpi"), int) else None
         self.last_spin = d.get("last_spin") if isinstance(d.get("last_spin"), dict) else None
-        self.history = [h for h in (d.get("history") or []) if isinstance(h, dict)][-MAX_HISTORY:]
         self.log = [e for e in (d.get("log") or []) if isinstance(e, dict)][-MAX_LOG:]
         self.spins = int(d.get("spins", 0) or 0) if isinstance(d.get("spins", 0), int) else 0
         self.deaths = int(d.get("deaths", 0) or 0) if isinstance(d.get("deaths", 0), int) else 0

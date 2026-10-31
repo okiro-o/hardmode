@@ -151,7 +151,7 @@
     resultEl.classList.add('show');
   }
   function hideNumber() { resultEl.classList.remove('show'); }
-  function reasonText(spin) { return spin.reason === 'death' ? 'после смерти' : spin.reason === 'hotkey' ? 'по хоткею' : ''; }
+  function reasonText(spin) { return spin.reason === 'death' ? 'после смерти' : ''; }
 
   // ---- animation -----------------------------------------------------------------
   let anim = null;            // {from, to, start, duration, spin}

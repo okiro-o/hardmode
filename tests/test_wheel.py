@@ -117,7 +117,6 @@ def test_parse_privmsg_with_reward_tag():
     m = parse_line(line)
     assert m.command == "PRIVMSG" and m.params == ["#streamer"] and m.trailing == "1600"
     assert m.reward_id == "abc-123" and m.display_name == "Viewer_One" and m.user == "viewer_one"
-    assert not m.is_mod
 
 
 def test_parse_ping_join_and_escapes():
@@ -125,7 +124,7 @@ def test_parse_ping_join_and_escapes():
     j = parse_line(":justinfan123!justinfan123@justinfan123.tmi.twitch.tv JOIN #streamer")
     assert j.command == "JOIN" and j.user == "justinfan123"
     m = parse_line("@display-name=A\\sB;mod=1 :a!a@a PRIVMSG #c :hello world")
-    assert m.display_name == "A B" and m.is_mod and m.trailing == "hello world"
+    assert m.display_name == "A B" and m.trailing == "hello world"
     assert parse_line("") is None
 
 

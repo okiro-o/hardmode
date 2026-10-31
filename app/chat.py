@@ -60,7 +60,6 @@ def jwt_claims(token: str) -> dict:
 @dataclass
 class ChatSettings:
     enabled: bool = False
-    provider: str = "streamelements"
     se_jwt: str = ""                        # secret
     on_start: bool = True
     on_weapon: bool = True
@@ -88,8 +87,6 @@ class ChatSettings:
         for b in ("enabled", "on_start", "on_weapon", "on_dpi", "on_viewer", "on_reject"):
             setattr(s, b, _bool(getattr(s, b)))
         s.channel_login = s.channel_login.strip().lstrip("#").lower()[:40] if isinstance(s.channel_login, str) else ""
-        if s.provider not in ("streamelements",):
-            s.provider = "streamelements"
         s.se_jwt = s.se_jwt.strip() if isinstance(s.se_jwt, str) else ""
         for t in ("start_template", "weapon_template", "dpi_template", "viewer_template", "reject_template"):
             v = getattr(s, t)
@@ -138,7 +135,6 @@ class ChatNotifier:
         self.last_response: dict | None = None   # last answer of /say
         self.sent_count = 0
         self.last_error: str | None = None
-        self.last_sent_at: float | None = None
         self.log: list[dict] = []
         self._reject_seen: dict[str, float] = {}   # user -> last rejection message time
 
@@ -152,9 +148,7 @@ class ChatNotifier:
             "last_response": self.last_response,
             "sent_count": self.sent_count,
             "last_error": self.last_error,
-            "last_sent_at": self.last_sent_at,
             "log": self.log[-10:],
-            "queued": self._queue.qsize(),
         }
 
     def _log(self, kind: str, text: str) -> None:
@@ -274,7 +268,6 @@ class ChatNotifier:
         res = self._sender(self.settings.se_jwt, cid, message)
         self.last_response = res if isinstance(res, dict) else None
         self.sent_count += 1
-        self.last_sent_at = time.time()
         self.last_error = None
         log.info("chat: sent %r -> %s", message, res)
         self._log("sent", message)

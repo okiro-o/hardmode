@@ -18,7 +18,6 @@ from typing import Protocol
 from . import grid
 from .hidpp import (
     HOST_MODE,
-    Candidate,
     DeviceNotFound,
     HidppDevice,
     HidppError,
@@ -227,7 +226,8 @@ def make_backend(kind: str = "auto") -> DpiBackend:
         return NoneBackend("DPI-модуль выключен")
     if kind in ("auto", "hidpp"):
         try:
-            import hid  # noqa: F401
+            import hid  # noqa: F401  (availability probe: the real import happens in hidpp.py)
+            del hid
         except ImportError as e:
             if getattr(sys, "frozen", False):
                 return NoneBackend(f"В сборке нет модуля hidapi ({e}). Пересоберите build.bat: сборка не должна "

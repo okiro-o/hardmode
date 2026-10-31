@@ -82,10 +82,10 @@ def test_manual_side_switch_allowed(client):
 
 def test_settings_roundtrip_and_persistence(client, tmp_path):
     r = client.post("/api/settings", json={"roulette": {"kills_per_weapon": 2, "auto_advance": "any"},
-                                           "overlay": {"color": "#00ff00"}, "hotkeys": {"next": "F10"}})
+                                           "overlay": {"color": "#00ff00"}})
     assert r.status_code == 200
     d = r.json()
-    assert d["roulette"]["kills_per_weapon"] == 2 and d["overlay"]["color"] == "#00ff00" and d["hotkeys"]["next"] == "F10"
+    assert d["roulette"]["kills_per_weapon"] == 2 and d["overlay"]["color"] == "#00ff00"
     with open(os.path.join(str(tmp_path), "settings.json"), encoding="utf-8") as f:
         saved = json.load(f)
     assert saved["roulette"]["auto_advance"] == "any"
@@ -153,9 +153,9 @@ def test_settings_validation_errors(client):
     assert client.post("/api/settings", json={"roulette": {"kills_per_weapon": None}}).status_code == 400
     assert client.post("/api/settings", json={"overlay": "abc"}).status_code == 400
     r = client.post("/api/settings", json={"overlay": {"scale": None, "layout": "diagonal"},
-                                           "hotkeys": {"next": 5}, "roulette": {"to_dict": 1}})
+                                           "roulette": {"to_dict": 1}})
     assert r.status_code == 200
-    assert set(r.json()["rejected"]) == {"overlay.scale", "overlay.layout", "hotkeys.next"}
+    assert set(r.json()["rejected"]) == {"overlay.scale", "overlay.layout"}
     assert client.get("/api/state").status_code == 200
 
 
@@ -211,7 +211,7 @@ def test_kill_event_has_finished_uid_and_collateral_not_wrong(client):
     client.post("/gsi", json=gsi(2))  # collateral: two kills in one payload
     r = client.get("/api/state").json()["roulette"]
     assert r["completed"] == 1 and r["kills_wrong_weapon"] == 0
-    assert r["history"][-1]["uid"] == uid
+    assert client.app.state.app.roulette.history[-1]["uid"] == uid
 
 
 def test_chat_settings_masked_and_notifications_wired(client, monkeypatch):

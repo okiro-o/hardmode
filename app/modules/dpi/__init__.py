@@ -7,5 +7,7 @@
 
 See ``docs/DPI_PLAN.md`` for the research behind the HID++ path and the G HUB caveats.
 """
-from .routes import router  # noqa: F401
-from .service import DpiService, DpiSettings  # noqa: F401
+from .routes import router
+from .service import DpiService, DpiSettings
+
+__all__ = ["router", "DpiService", "DpiSettings"]

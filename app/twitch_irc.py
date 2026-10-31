@@ -14,8 +14,7 @@ import random
 import socket
 import ssl
 import threading
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable
 
 HOST, PORT = "irc.chat.twitch.tv", 6697
@@ -40,10 +39,6 @@ class IrcMessage:
     @property
     def reward_id(self) -> str:
         return self.tags.get("custom-reward-id", "")
-
-    @property
-    def is_mod(self) -> bool:
-        return self.tags.get("mod") == "1" or "broadcaster/" in self.tags.get("badges", "")
 
 
 def _unescape_tag(value: str) -> str:
@@ -95,7 +90,6 @@ class TwitchChatReader:
         self.connected = False
         self.last_error: str | None = None
         self.messages = 0
-        self.connected_at: float | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._sock: ssl.SSLSocket | None = None
@@ -104,7 +98,7 @@ class TwitchChatReader:
     # ----------------------------------------------------------------- control
     def status(self) -> dict:
         return {"channel": self.channel, "connected": self.connected, "last_error": self.last_error,
-                "messages": self.messages, "connected_at": self.connected_at,
+                "messages": self.messages,
                 "running": bool(self._thread and self._thread.is_alive())}
 
     def start(self, channel: str) -> None:
@@ -199,7 +193,6 @@ class TwitchChatReader:
             raise ConnectionError(f"Twitch: {msg.trailing}")
         if msg.command == "JOIN" and msg.user.startswith("justinfan"):
             self.connected = True
-            self.connected_at = time.time()
             self.last_error = None
             self._notify()
             return
