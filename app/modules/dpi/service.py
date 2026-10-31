@@ -163,6 +163,7 @@ class DpiService:
         self.viewer_values: list[dict] = []     # [{value, user, t}] one-shot values added by viewers
         self.learn_reward = False               # next reward redemption seen in chat becomes the reward id
         self.on_applied: Callable[[int, str], None] | None = None   # external hook (chat notifications)
+        self.on_spin: Callable[[int, str], None] | None = None      # external hook (statistics)
         self.on_viewer_added: Callable[[dict], None] | None = None  # external hook (chat confirmation)
         self._last_spin_at = 0.0
         self._pending_apply: asyncio.TimerHandle | None = None
@@ -395,6 +396,11 @@ class DpiService:
         }
         self.last_spin = spin
         self._consume(value)
+        if self.on_spin:
+            try:
+                self.on_spin(value, reason)
+            except Exception:
+                pass
         if instant:
             self._log("spin", f"{value} DPI без кручения: на колесе одно значение ({reason})", value=value, reason=reason)
         else:

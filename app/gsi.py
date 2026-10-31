@@ -100,6 +100,9 @@ class _OwnSnapshot:
     active_raw: str | None
     grenades: dict[str, int]   # gsi name -> count in inventory
     alive: bool
+    round_phase: str | None = None
+    names: tuple[str, ...] = ()   # gsi names of everything in the inventory
+    money: int | None = None
 
 
 @dataclass
@@ -213,7 +216,7 @@ class GsiTracker:
             # the player block switched to a teammate: that only happens when we are dead
             if self._was_alive and st.map_phase in ACTIVE_PHASES:
                 self._was_alive = False
-                events.append({"type": "death"})
+                events.append(self._death_event(self._prev.active_raw if self._prev else None))
             events.append({"type": "status"})
             return events
 
@@ -231,7 +234,7 @@ class GsiTracker:
             elif self._was_alive:
                 self._was_alive = False
                 if st.map_phase in ACTIVE_PHASES:
-                    events.append({"type": "death"})
+                    events.append(self._death_event((self._prev.active_raw if self._prev else None) or active_raw))
         team = _str(player.get("team"))
         if team in (W.T, W.CT) and team != st.team:
             st.team = team
@@ -246,10 +249,39 @@ class GsiTracker:
         st.match_kills = match_kills
         grenades = self._grenades(weapons)
         alive = (st.health is None or st.health > 0) and bool(self._weapon_entries(weapons))
+        money = _int(state.get("money"))
+        names = tuple(sorted({n for n in (_str(e.get("name")) for e in self._weapon_entries(weapons)) if n}))
 
         prev = self._prev
         same_map = prev is not None and prev.map_name == st.map_name
         same_round = same_map and prev is not None and prev.round == st.round
+
+        # round boundaries (statistics): new round number, or the phase turning "over"
+        if st.map_phase in ACTIVE_PHASES and st.round is not None:
+            if prev is None or not same_map:
+                events.append({"type": "round_start", "round": st.round})
+            elif prev.round != st.round:
+                if prev.round_phase != "over" and prev.round is not None:
+                    events.append({"type": "round_end", "round": prev.round})
+                events.append({"type": "round_start", "round": st.round})
+            elif prev.round_phase != "over" and st.round_phase == "over":
+                events.append({"type": "round_end", "round": st.round})
+
+        # inventory changes (statistics): bought = money went down in the same payload; items that
+        # appear right after a death / with a new round and without spending are spawn equipment
+        if prev is not None and same_map and st.map_phase in ACTIVE_PHASES and prev.names:
+            money_down = money is not None and prev.money is not None and money < prev.money
+            spawned = (not prev.alive) or (not same_round and not money_down)
+            added: list[str] = [n for n in names if n not in prev.names]
+            for gname, count in grenades.items():       # extra grenades of a kind already carried
+                extra = count - prev.grenades.get(gname, 0) - (0 if gname in prev.names else 1)
+                added += [gname] * max(0, extra)
+            for name in added:
+                if name.startswith("weapon_knife") or name == "weapon_c4":
+                    continue
+                w = W.from_gsi_name(name)
+                events.append({"type": "pickup", "raw": name, "weapon": w.id if w else None,
+                               "bought": money_down, "spawn": spawned and not money_down})
         if prev is not None and same_round and alive and prev.alive:
             # a grenade disappearing while alive means it was thrown (death/drop would be noise)
             self._note_throws(prev.grenades, grenades, now)
@@ -309,9 +341,17 @@ class GsiTracker:
             active_raw=active_raw,
             grenades=grenades,
             alive=alive,
+            round_phase=st.round_phase,
+            names=names,
+            money=money,
         )
         events.append({"type": "status"})
         return events
+
+    @staticmethod
+    def _death_event(raw: str | None) -> dict:
+        w = W.from_gsi_name(raw)
+        return {"type": "death", "weapon": w.id if w else None, "raw": raw}
 
     def tick(self, now: float | None = None, timeout: float = 30.0) -> bool:
         """Mark the connection stale when no payload arrived for ``timeout`` seconds.

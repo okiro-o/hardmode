@@ -31,6 +31,7 @@ from .chat import ChatNotifier, ChatSettings
 from .modules import dpi
 from .modules.dpi import DpiService, DpiSettings
 from .roulette import Roulette
+from .stats import StatsTracker
 from .twitch_irc import IrcMessage, TwitchChatReader
 
 from .version import VERSION
@@ -74,7 +75,10 @@ class AppState:
             chat_settings = ChatSettings()
         self.settings.chat = chat_settings.to_dict()
         self.chat = ChatNotifier(chat_settings, publish_threadsafe=self.broker.publish_threadsafe)
-        self.dpi.on_applied = lambda value, reason: self.chat.notify_dpi(value, reason)
+        self.stats = StatsTracker(os.path.join(config.data_dir(), "stats.json"))
+        self.dpi.on_applied = lambda value, reason: (self.chat.notify_dpi(value, reason), self.stats.on_dpi_applied(value))
+        self.dpi.on_spin = lambda value, reason: (self.stats.on_dpi_roll(value, reason),
+                                                  self.broker.publish("stats", self.stats.snapshot()))
         self.dpi.on_viewer_added = lambda e: (self.chat.notify_viewer(e["user"], e["value"])
                                               if self.dpi.settings.viewer_announce else None)
         self.twitch = TwitchChatReader(on_message=self._twitch_from_thread,
@@ -256,6 +260,7 @@ class AppState:
             "hotkeys": self.hotkeys.describe(),
             "overlay": self.settings.overlay.__dict__,
             "ingame": self.ingame_info(),
+            "stats": self.stats.snapshot(),
             "urls": self.urls(),
             "gsi_token": self.settings.gsi_token,
             "port": self.settings.port,
@@ -292,6 +297,9 @@ class AppState:
             # idempotent; no-op when side_source == "manual" or the side already matches
             self.roulette.set_side(st.team, source="gsi")
         batch_advanced = False
+        # statistics first: a death must be booked at the DPI that was current before the new spin
+        if self.stats.handle_events(events, st, self.dpi.current_dpi):
+            self.broker.publish("stats", self.stats.snapshot())
         for ev in events:
             if ev["type"] == "death":
                 self.dpi.on_death()
@@ -397,6 +405,7 @@ def create_app() -> FastAPI:
             state.ingame.stop()
             state.chat.stop()
             state.twitch.stop()
+            state.stats.flush()
             state.save_state()
 
     app = FastAPI(title="Hardmode", version=VERSION, lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -701,6 +710,16 @@ def create_app() -> FastAPI:
         msg = IrcMessage(tags=tags, prefix=f"{tags['display-name'].lower()}!x@x", command="PRIVMSG",
                          params=["#test"], trailing=str(body.get("text") or ""))
         state.handle_chat_message(msg)
+        return {"ok": True}
+
+    @app.get("/api/stats")
+    async def api_stats() -> dict:
+        return state.stats.snapshot()
+
+    @app.post("/api/stats/reset")
+    async def api_stats_reset() -> dict:
+        state.stats.reset()
+        state.broker.publish("stats", state.stats.snapshot())
         return {"ok": True}
 
     @app.post("/api/quit")

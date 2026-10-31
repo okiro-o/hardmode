@@ -205,16 +205,75 @@ def test_halftime_last_kill_and_death_still_count():
     t2.handle(payload(rk=0), now=1.0)
     p = payload(rk=0, phase="intermission", rphase="over")
     p["player"]["state"]["health"] = 0
-    assert {"type": "death"} in t2.handle(p, now=1.2)
+    assert any(e["type"] == "death" for e in t2.handle(p, now=1.2))
     # warmup is still ignored
     t3 = GsiTracker()
     t3.handle(payload(rk=0, phase="warmup"), now=1.0)
     p = payload(rk=1, phase="warmup")
     p["player"]["state"]["health"] = 0
     ev = t3.handle(p, now=1.1)
-    assert kills(ev) == [] and {"type": "death"} not in ev
+    assert kills(ev) == [] and not any(e["type"] == "death" for e in ev)
 
 
 def test_cfg_timing_is_gentle_on_the_game():
     cfg = build_cfg("http://127.0.0.1:17890/gsi", "tok")
     assert '"buffer"     "0.03"' in cfg and '"throttle"   "0.05"' in cfg and '"timeout"    "1.0"' in cfg
+
+
+def _inv(*names, money=None):
+    ws = {f"weapon_{i}": {"name": n, "type": "Rifle", "state": "holstered"} for i, n in enumerate(names)}
+    p = payload(weapons=ws, active=names[-1])
+    if money is not None:
+        p["player"]["state"]["money"] = money
+    return p
+
+
+def test_inventory_events_bought_picked_and_spawn():
+    t = GsiTracker()
+    t.handle(_inv("weapon_knife_t", "weapon_glock", money=800), now=1.0)
+    ev = t.handle(_inv("weapon_knife_t", "weapon_glock", "weapon_ak47", money=100), now=1.5)
+    picks = [e for e in ev if e["type"] == "pickup"]
+    assert picks == [{"type": "pickup", "raw": "weapon_ak47", "weapon": "ak47", "bought": True, "spawn": False}]
+    ev = t.handle(_inv("weapon_knife_t", "weapon_glock", "weapon_ak47", "weapon_awp", money=100), now=2.0)
+    picks = [e for e in ev if e["type"] == "pickup"]
+    assert picks[0]["raw"] == "weapon_awp" and picks[0]["bought"] is False and picks[0]["spawn"] is False
+    # death, then a fresh spawn with a default pistol: spawn equipment, not a pickup
+    dead = _inv("weapon_knife_t", money=100); dead["player"]["state"]["health"] = 0
+    t.handle(dead, now=3.0)
+    p = _inv("weapon_knife_t", "weapon_glock", money=100); p["map"]["round"] = 4
+    ev = t.handle(p, now=60.0)
+    picks = [e for e in ev if e["type"] == "pickup"]
+    assert picks and all(e["spawn"] for e in picks)
+    # a second flashbang of the same kind counts as another purchase
+    a = _inv("weapon_knife_t", "weapon_glock", money=1000)
+    a["player"]["weapons"]["weapon_9"] = {"name": "weapon_flashbang", "type": "Grenade", "state": "holstered", "ammo_reserve": 1}
+    t.handle(a, now=61.0)
+    b = _inv("weapon_knife_t", "weapon_glock", money=800)
+    b["player"]["weapons"]["weapon_9"] = {"name": "weapon_flashbang", "type": "Grenade", "state": "holstered", "ammo_reserve": 2}
+    ev = t.handle(b, now=61.5)
+    assert [e["raw"] for e in ev if e["type"] == "pickup"] == ["weapon_flashbang"]
+    # warmup: nothing is counted
+    w = GsiTracker()
+    w.handle(_inv("weapon_knife_t", money=800), now=1.0)
+    p = _inv("weapon_knife_t", "weapon_ak47", money=100); p["map"]["phase"] = "warmup"
+    assert not [e for e in w.handle(p, now=1.1) if e["type"] == "pickup"]
+
+
+def test_round_boundary_events_and_death_weapon():
+    t = GsiTracker()
+    ev = t.handle(payload(round_=3), now=1.0)
+    assert {"type": "round_start", "round": 3} in ev
+    ev = t.handle(payload(round_=3, rphase="over"), now=2.0)
+    assert {"type": "round_end", "round": 3} in ev
+    ev = t.handle(payload(round_=4, rphase="freezetime"), now=3.0)
+    assert {"type": "round_start", "round": 4} in ev and not any(e["type"] == "round_end" for e in ev)
+    # round number jumps without a seen "over": the old round is closed first
+    ev = t.handle(payload(round_=5), now=4.0)
+    kinds = [(e["type"], e.get("round")) for e in ev if e["type"].startswith("round")]
+    assert kinds == [("round_end", 4), ("round_start", 5)]
+    # death carries the weapon that was in hand
+    t.handle(payload(active="weapon_ak47"), now=5.0)
+    dead = payload(active="weapon_ak47"); dead["player"]["state"]["health"] = 0
+    ev = t.handle(dead, now=5.5)
+    d = [e for e in ev if e["type"] == "death"]
+    assert d == [{"type": "death", "weapon": "ak47", "raw": "weapon_ak47"}]

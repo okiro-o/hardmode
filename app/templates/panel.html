@@ -96,6 +96,14 @@
   .log.compact { max-height:84px; }
   .logtoggle { display:block; margin:2px 0 0 auto; background:transparent !important; border:0 !important; color:var(--muted); font-size:12px; padding:2px 6px; cursor:pointer; }
   .logtoggle:hover { color:var(--text); }
+  .cols2 { display:grid; grid-template-columns: 1fr 1.4fr; gap:18px; margin-top:10px; }
+  @media (max-width: 900px) { .cols2 { grid-template-columns: 1fr; } }
+  .tbl { width:100%; border-collapse:collapse; font-size:13px; }
+  .tbl th, .tbl td { padding:6px 8px; border-bottom:1px solid var(--line); text-align:right; white-space:nowrap; }
+  .tbl th:first-child, .tbl td:first-child { text-align:left; }
+  .tbl th { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.06em; font-weight:600; }
+  .tbl tr.home td:first-child { color:var(--accent); font-weight:700; }
+  .tbl td.muted { color:var(--muted); text-align:left; }
   /* help */
   .help { display:grid; grid-template-columns: 220px 1fr; gap:16px; }
   .toc { position:sticky; top:120px; align-self:start; display:flex; flex-direction:column; gap:2px; }
@@ -236,6 +244,7 @@
     <button data-tab="weapons" onclick="showMainTab('weapons')">🔫 Оружие</button>
     <button data-tab="dpi" onclick="showMainTab('dpi')">🎡 DPI</button>
     <button data-tab="look" onclick="showMainTab('look')">🎨 Вид</button>
+    <button data-tab="stats" onclick="showMainTab('stats')">📊 Статистика</button>
     <button data-tab="general" onclick="showMainTab('general')">⚙ Общее</button>
     <button data-tab="help" onclick="showMainTab('help')">📖 Справка</button>
   </nav>
@@ -546,6 +555,18 @@
     </div>
   </div>
 
+  <!-- ================= TAB: STATS ================= -->
+  <div class="tabpage" id="tab-stats" style="grid-template-columns: 1fr;">
+    <section>
+      <h2>Статистика стрима <span class="right"><span class="hint" id="stats-since"></span><button onclick="downloadStatsCsv()" title="Скачать таблицы в CSV">⤓ CSV</button><button class="danger" onclick="resetStats()" title="Обнулить всё и начать новый стрим">Новый стрим</button></span></h2>
+      <div class="statline" id="stats-totals"></div>
+      <div class="cols2">
+        <div><h3>DPI</h3><table class="tbl" id="stats-dpi"></table></div>
+        <div><h3>Оружие</h3><table class="tbl" id="stats-weapons"></table></div>
+      </div>
+    </section>
+  </div>
+
   <!-- ================= TAB: GENERAL ================= -->
   <div class="tabpage" id="tab-general">
     <div class="col">
@@ -791,6 +812,33 @@ function renderIngame() {
 }
 async function ingamePreview(kind) { const r = await post('/api/ingame/preview', {kind}); if (!r) return; if (r.ok) toast('Показываю поверх игры 5 секунд'); else toast(r.error || 'Недоступно', true); }
 function toggleLog(btn) { const log = btn.previousElementSibling; const compact = log.classList.toggle('compact'); btn.textContent = compact ? 'развернуть' : 'свернуть'; }
+// ---- statistics tab
+function fmtDur(s) { s = Math.round(s || 0); const m = Math.floor(s / 60); return m >= 60 ? `${Math.floor(m / 60)} ч ${m % 60} мин` : m ? `${m} мин` : `${s} с`; }
+function renderStats() {
+  const st = S.stats; if (!st || !$('stats-totals')) return;
+  const t = st.totals || {};
+  const kd = t.deaths ? (t.kills / t.deaths).toFixed(2) : (t.kills ? '∞' : '—');
+  const hs = t.kills ? Math.round(100 * t.hs / t.kills) + '%' : '—';
+  $('stats-totals').innerHTML = [['раундов', t.rounds], ['киллов', t.kills], ['смертей', t.deaths], ['K/D', kd], ['HS', hs], ['лучший раунд', t.best_round_kills], ['кручений DPI', t.rolls], ['куплено', t.bought], ['подобрано', t.picked]]
+    .map(([l, v]) => `<span>${l} <b>${v ?? 0}</b></span>`).join('');
+  $('stats-since').textContent = st.started_at ? 'с ' + new Date(st.started_at * 1000).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+  const home = +((S.dpi && S.dpi.settings && S.dpi.settings.home_dpi) || 0);
+  const dpiRows = (st.dpi || []).map(r => `<tr${r.value === home ? ' class="home"' : ''}><td>${r.value}</td><td>${r.rolls}</td><td>${r.kills}</td><td>${r.deaths}</td><td>${r.rounds}</td><td>${fmtDur(r.seconds)}</td></tr>`).join('');
+  $('stats-dpi').innerHTML = '<tr><th>DPI</th><th>выпал</th><th>киллов</th><th>смертей</th><th>раундов целиком</th><th>время</th></tr>' + (dpiRows || '<tr><td class="muted" colspan="6">пока пусто</td></tr>');
+  const wRows = (st.weapons || []).map(r => `<tr><td>${esc(r.name)}</td><td>${r.bought}</td><td>${r.picked}</td><td>${r.kills}</td><td>${r.hs}</td><td>${r.deaths}</td></tr>`).join('');
+  $('stats-weapons').innerHTML = '<tr><th>Оружие</th><th>куплено</th><th>подобрано</th><th>киллов</th><th>HS</th><th>смертей с ним</th></tr>' + (wRows || '<tr><td class="muted" colspan="6">пока пусто</td></tr>');
+}
+async function resetStats() { if (!confirm('Обнулить статистику и начать новый стрим?')) return; const r = await post('/api/stats/reset', {}); if (r) toast('Статистика обнулена'); }
+function downloadStatsCsv() {
+  const st = S.stats || {}; const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const lines = ['DPI;выпал;киллов;смертей;раундов целиком;секунд'];
+  (st.dpi || []).forEach(r => lines.push([r.value, r.rolls, r.kills, r.deaths, r.rounds, Math.round(r.seconds || 0)].join(';')));
+  lines.push('', 'Оружие;куплено;подобрано;киллов;HS;смертей с ним');
+  (st.weapons || []).forEach(r => lines.push([q(r.name), r.bought, r.picked, r.kills, r.hs, r.deaths].join(';')));
+  const t = st.totals || {}; lines.push('', 'Итого;раундов;киллов;смертей;HS;лучший раунд;кручений DPI', ['', t.rounds, t.kills, t.deaths, t.hs, t.best_round_kills, t.rolls].join(';'));
+  const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'hardmode-stats-' + new Date().toISOString().slice(0, 10) + '.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
 let helpLoaded = false;
 async function loadHelp() {
   if (helpLoaded) return; helpLoaded = true;
@@ -833,7 +881,7 @@ function showMainTab(name) {
 }
 (function initTab() {
   let name = (location.hash || '').replace('#', '');
-  const TABS = ['startup', 'weapons', 'dpi', 'look', 'general', 'help'];
+  const TABS = ['startup', 'weapons', 'dpi', 'look', 'stats', 'general', 'help'];
   if (!TABS.includes(name)) { try { name = localStorage.getItem('cs2r.tab') || ''; } catch (e) { name = ''; } }
   if (!TABS.includes(name)) name = '';
   showMainTab(name || 'weapons');
@@ -1034,7 +1082,7 @@ function renderChecks() {
   if (!window.__tabChosen && bad && !window.__autoStartup) { window.__autoStartup = true; showMainTab('startup'); }
 }
 
-function renderAll() { if (!S) return; renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); renderChat(); renderWheel(); renderChecks(); renderIngame(); }
+function renderAll() { if (!S) return; renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); renderChat(); renderWheel(); renderChecks(); renderIngame(); renderStats(); }
 
 // ------------------------------------------------------------------ settings form
 document.querySelectorAll('[data-key]').forEach(el => {
@@ -1068,6 +1116,7 @@ es.addEventListener('dpi', e => { if (!S) return; S.dpi = JSON.parse(e.data); re
 es.addEventListener('twitch', e => { if (!S) return; S.twitch = JSON.parse(e.data); renderWheel(); renderChecks(); });
 es.addEventListener('clients', e => { if (!S) return; S.clients = JSON.parse(e.data); renderChecks(); });
 es.addEventListener('chat', e => { if (!S) return; S.chat = JSON.parse(e.data); renderChat(); renderSettings(); renderWheel(); renderChecks(); });
+es.addEventListener('stats', e => { if (!S) return; S.stats = JSON.parse(e.data); renderStats(); });
 es.addEventListener('dpi', () => schedulePreview('dpi'));
 es.addEventListener('dpi_spin', () => schedulePreview('dpi'));
 es.addEventListener('roulette', () => schedulePreview('weapons'));
