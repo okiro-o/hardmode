@@ -361,8 +361,8 @@
                 <button class="big" onclick="post('/api/dpi/home')" title="Применить обычный DPI из настроек">Вернуть мой DPI</button>
               </div></div>
               <div class="bg"><div class="bg-l">Мышь</div><div class="bg-b vert">
-                <button onclick="probeMouse()">🔍 Проверить</button>
-                <button onclick="post('/api/dpi/hostmode')" title="Перевести мышь в host-режим: сенсор принимает DPI от программ только в нём (в G HUB это «On-Board Memory Mode» выкл.)">Host-режим</button>
+                <button class="big" onclick="probeMouse()">🔍 Проверить</button>
+                <button class="big" onclick="post('/api/dpi/hostmode')" title="Перевести мышь в host-режим: сенсор принимает DPI от программ только в нём (в G HUB это «On-Board Memory Mode» выкл.)">Host-режим</button>
               </div></div>
               <div class="bg" style="grid-column:1 / -1;"><div class="bg-l">Поставить DPI вручную</div><div class="bg-b">
                 <input type="number" id="dpi-manual" min="100" max="44000" step="10" placeholder="например, 1600" onkeydown="if(event.key==='Enter') applyManualDpi()">
