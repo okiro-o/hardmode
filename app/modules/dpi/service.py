@@ -232,11 +232,13 @@ class DpiService:
                 self.consumed = []        # cycle exhausted (the home value never leaves): everything comes back
                 remaining = list(base)
             base = remaining
-        weights: dict[int, int] = {v: 1 for v in base}
+        weights: dict[int, int] = {v: 1 for v in base if v != home}
         for e in self.viewer_values:
             v = grid.snap(int(e["value"]), allowed)
             weights[v] = weights.get(v, 0) + 1
-        weights.setdefault(home, 1)       # the streamer's own DPI is always on the wheel (own colour)
+        # The streamer's own DPI is always on the wheel with exactly one permanent ticket (it replaces
+        # the range/custom ticket if the value is also there); viewer tickets for it stack on top.
+        weights[home] = weights.get(home, 0) + 1
         vals = sorted(weights)
         return vals, [weights[v] for v in vals]
 

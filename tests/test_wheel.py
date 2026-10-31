@@ -156,3 +156,30 @@ def test_viewer_rounding_duplicates_weights_and_pool_modes(svc):
     svc.spin("manual")
     assert svc.segments() == ([700, 1000, 1300, 3000, 3200], [1, 1, 1, 1, 1])
     assert svc.consumed == [3000] and sum(1 for e in svc.viewer_values if e["value"] == 3000) == 1
+
+
+def test_viewer_ticket_for_home_value_stacks_on_the_permanent_one(svc):
+    svc.update_settings({"viewer_min": 400, "viewer_max": 6400, "viewer_max_values": 10, "viewer_per_user": 3,
+                         "pool_mode": "bag"})
+    assert svc.segments()[0] == [800, 900, 1000, 1100, 1200, 3200]
+    assert svc.add_viewer_value("3200", "Alice")["ok"]
+    vals, weights = svc.segments()
+    assert weights[vals.index(3200)] == 2                      # permanent + viewer
+    assert svc.wheel_info()["weights"] == {"3200": 2}
+    # home inside the range: still one permanent ticket, not range + permanent
+    svc.update_settings({"home_dpi": 1000})
+    svc.clear_viewer_values()
+    vals, weights = svc.segments()
+    assert vals == [800, 900, 1000, 1100, 1200] and weights == [1, 1, 1, 1, 1]
+    svc.add_viewer_value("1000", "Bob")
+    assert svc.segments()[1][svc.segments()[0].index(1000)] == 2
+    # rolling it in bag mode removes the viewer ticket, the permanent one stays
+    svc._rng.choices = lambda population, weights=None, k=1: [svc.segments()[0].index(1000)]
+    async def run():
+        svc.start(asyncio.get_running_loop())
+        try:
+            svc.spin("manual")
+            assert svc.segments()[1][svc.segments()[0].index(1000)] == 1 and svc.consumed == []
+        finally:
+            svc.stop()
+    asyncio.run(run())
