@@ -558,7 +558,7 @@
   <!-- ================= TAB: STATS ================= -->
   <div class="tabpage" id="tab-stats" style="grid-template-columns: 1fr;">
     <section>
-      <h2>Статистика стрима <span class="right"><span class="hint" id="stats-since"></span><button onclick="downloadStatsCsv()" title="Скачать таблицы в CSV">⤓ CSV</button><button class="danger" onclick="resetStats()" title="Обнулить всё и начать новый стрим">Новый стрим</button></span></h2>
+      <h2>Статистика стрима <span class="right"><span class="hint" id="stats-since"></span><button onclick="downloadStatsCsv()" title="Скачать таблицы в CSV">⤓ CSV</button><button class="danger" onclick="resetStats()" title="Обнулить статистику стрима">⟲ Сброс</button></span></h2>
       <div class="statline" id="stats-totals"></div>
       <div class="cols2">
         <div><h3>DPI</h3><table class="tbl" id="stats-dpi"></table></div>
@@ -828,7 +828,7 @@ function renderStats() {
   const wRows = (st.weapons || []).map(r => `<tr><td>${esc(r.name)}</td><td>${r.bought}</td><td>${r.picked}</td><td>${r.kills}</td><td>${r.hs}</td><td>${r.deaths}</td></tr>`).join('');
   $('stats-weapons').innerHTML = '<tr><th>Оружие</th><th>куплено</th><th>подобрано</th><th>киллов</th><th>HS</th><th>смертей с ним</th></tr>' + (wRows || '<tr><td class="muted" colspan="6">пока пусто</td></tr>');
 }
-async function resetStats() { if (!confirm('Обнулить статистику и начать новый стрим?')) return; const r = await post('/api/stats/reset', {}); if (r) toast('Статистика обнулена'); }
+async function resetStats() { if (!confirm('Обнулить статистику стрима?')) return; const r = await post('/api/stats/reset', {}); if (r) toast('Статистика обнулена'); }
 function downloadStatsCsv() {
   const st = S.stats || {}; const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
   const lines = ['DPI;выпал;киллов;смертей;раундов целиком;секунд'];
