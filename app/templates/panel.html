@@ -730,7 +730,8 @@ function renderWheel() {
   const consumed = new Set(w.consumed || []);
   const viewerVals = new Set((w.viewer||[]).map(e => e.value));
   const all = Array.from(new Set([...(d.values||[]), ...consumed])).sort((a,b)=>a-b);
-  $('wheel-chips').innerHTML = all.map(v => `<span class="chip2 ${consumed.has(v) && !viewerVals.has(v) ? 'consumed' : ''} ${viewerVals.has(v) ? 'viewer' : ''}" title="${consumed.has(v) ? 'уже выпало в этом круге' : viewerVals.has(v) ? 'от зрителя' : ''}">${v}</span>`).join('') || '<span class="hint">—</span>';
+  const wts = w.weights || {};
+  $('wheel-chips').innerHTML = all.map(v => `<span class="chip2 ${consumed.has(v) && !viewerVals.has(v) ? 'consumed' : ''} ${viewerVals.has(v) ? 'viewer' : ''}" title="${consumed.has(v) ? 'уже выпало в этом круге' : viewerVals.has(v) ? 'от зрителя' : ''}">${v}${wts[String(v)] > 1 ? ' ×' + wts[String(v)] : ''}</span>`).join('') || '<span class="hint">—</span>';
   $('viewer-chips').innerHTML = (w.viewer||[]).length ? w.viewer.map((e,i) => `<span class="chip2 viewer">${e.value} <span class="u">${esc(e.user)}</span><button title="Убрать" onclick="post('/api/dpi/viewer/remove',{index:${i}})">×</button></span>`).join('') : '<span class="hint">зрители пока ничего не добавили</span>';
   $('reward-id').value = (d.settings && d.settings.viewer_reward_id) || '';
   $('btn-learn').textContent = d.learn_reward ? '⏳ жду награду…' : 'Определить';

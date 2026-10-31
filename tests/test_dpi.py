@@ -237,7 +237,7 @@ def test_spin_excludes_current_and_death_cooldown(service):
         try:
             service.current_dpi = 1600
             for _ in range(50):
-                idx, value, vals = service.pick()
+                idx, value, vals, _w = service.pick()
                 assert value != 1600
             assert service.on_death() is True
             assert service.on_death() is False           # cooldown

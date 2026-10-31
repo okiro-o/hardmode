@@ -62,7 +62,8 @@ def test_reset_cycle_and_custom_add_remove(svc):
 
 
 def test_viewer_values_validation_limits_and_consumption(svc):
-    svc.update_settings({"viewer_min": 400, "viewer_max": 6400, "viewer_max_values": 2, "viewer_per_user": 1})
+    svc.update_settings({"viewer_min": 400, "viewer_max": 6400, "viewer_max_values": 2, "viewer_per_user": 1,
+                         "pool_mode": "bag"})
     assert svc.add_viewer_value("1600", "Alice")["ok"]
     assert svc.add_viewer_value("1600", "alice")["ok"] is False          # per-user limit
     assert svc.add_viewer_value("20", "Bob")["ok"] is False               # out of range
@@ -74,7 +75,7 @@ def test_viewer_values_validation_limits_and_consumption(svc):
     async def run():
         svc.start(asyncio.get_running_loop())
         try:
-            svc._rng.choice = lambda options: options[svc.values().index(1600)]
+            svc._rng.choices = lambda population, weights=None, k=1: [list(population)[svc.values().index(1600)]]
             spin = svc.spin("death")
             assert spin["value"] == 1600
             assert all(e["value"] != 1600 for e in svc.viewer_values)
@@ -111,3 +112,32 @@ def test_parse_ping_join_and_escapes():
     m = parse_line("@display-name=A\\sB;mod=1 :a!a@a PRIVMSG #c :hello world")
     assert m.display_name == "A B" and m.is_mod and m.trailing == "hello world"
     assert parse_line("") is None
+
+
+def test_viewer_rounding_duplicates_weights_and_pool_modes(svc):
+    svc.update_settings({"viewer_min": 400, "viewer_max": 6400, "viewer_max_values": 10, "viewer_per_user": 3,
+                         "pool_mode": "random", "use_range": False, "custom_values": [1000, 3000]})
+    r = svc.add_viewer_value("228", "Alice")
+    assert r["ok"] is False and "228 → 200" in r["error"]            # rounded first, then range-checked
+    assert svc.add_viewer_value("666", "Alice")["value"] == 700
+    assert svc.add_viewer_value("1250", "Alice")["value"] == 1300    # .5 rounds up, no banker's rounding
+    # duplicates merge into one wider segment
+    assert svc.add_viewer_value("3000", "Bob")["ok"] and svc.add_viewer_value("3000", "Carl")["ok"]
+    vals, weights = svc.segments()
+    assert vals == [700, 1000, 1300, 3000] and weights == [1, 1, 1, 3]
+    assert svc.wheel_info()["weights"] == {"3000": 3}
+    assert svc.snapshot()["weights"] == [1, 1, 1, 3]
+    # weighted pick honours the weights
+    seen = {svc.pick()[1] for _ in range(300)}
+    assert 3000 in seen
+    svc._rng.choices = lambda population, weights=None, k=1: [list(population)[weights.index(max(weights))]]
+    assert svc.pick()[1] == 3000
+    # full random: a rolled viewer value stays on the wheel
+    spin = svc.spin("manual")
+    assert spin["value"] == 3000 and spin["weights"] == [1, 1, 1, 3]
+    assert svc.segments()[1] == [1, 1, 1, 3]
+    # bag: the base 3000 and one viewer ticket leave, the other viewer's 3000 stays
+    svc.update_settings({"pool_mode": "bag"})
+    svc.spin("manual")
+    assert svc.segments() == ([700, 1000, 1300, 3000], [1, 1, 1, 1])
+    assert svc.consumed == [3000] and sum(1 for e in svc.viewer_values if e["value"] == 3000) == 1

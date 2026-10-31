@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import math
 import random
 import re
 import threading
@@ -215,8 +216,13 @@ class DpiService:
             vals.add(grid.snap(v, allowed))
         return sorted(vals)
 
-    def values(self) -> list[int]:
-        """What is on the wheel right now: base minus consumed (bag mode) plus viewer values."""
+    def segments(self) -> tuple[list[int], list[int]]:
+        """What is on the wheel right now: unique sorted values and their weights.
+
+        Base values (range/custom, minus consumed ones in bag mode) weigh 1 each; every viewer entry
+        adds 1 to its value, so two viewers adding 3000 make that segment twice as wide (one segment,
+        not two). An empty wheel falls back to the home DPI.
+        """
         base = self.base_values()
         if self.settings.pool_mode == "bag":
             remaining = [v for v in base if v not in self.consumed]
@@ -225,22 +231,35 @@ class DpiService:
                 remaining = list(base)
             base = remaining
         allowed = self._allowed()
-        viewer = [grid.snap(int(e["value"]), allowed) for e in self.viewer_values]
-        wheel = sorted(set(base) | set(viewer))
-        return wheel or [grid.snap(self.settings.home_dpi, allowed)]
+        weights: dict[int, int] = {v: 1 for v in base}
+        for e in self.viewer_values:
+            v = grid.snap(int(e["value"]), allowed)
+            weights[v] = weights.get(v, 0) + 1
+        if not weights:
+            return [grid.snap(self.settings.home_dpi, allowed)], [1]
+        vals = sorted(weights)
+        return vals, [weights[v] for v in vals]
+
+    def values(self) -> list[int]:
+        return self.segments()[0]
 
     def wheel_info(self) -> dict:
         base = self.base_values()
+        vals, weights = self.segments()
         return {"base_total": len(base), "consumed": sorted(v for v in self.consumed if v in base),
-                "viewer": list(self.viewer_values), "on_wheel": len(self.values())}
+                "viewer": list(self.viewer_values), "on_wheel": len(vals),
+                "weights": {str(v): w for v, w in zip(vals, weights) if w > 1}}
 
     def _consume(self, value: int) -> None:
-        """Book-keeping after a spin landed on ``value``."""
-        if self.settings.pool_mode == "bag" and value in self.base_values() and value not in self.consumed:
+        """Book-keeping after a spin landed on ``value`` (bag mode only: in full-random mode nothing
+        leaves the wheel, viewer values included)."""
+        if self.settings.pool_mode != "bag":
+            return
+        if value in self.base_values() and value not in self.consumed:
             self.consumed.append(value)
         for i, e in enumerate(self.viewer_values):
             if int(e["value"]) == value:
-                del self.viewer_values[i]     # one viewer entry per roll
+                del self.viewer_values[i]     # one viewer ticket per roll
                 break
 
     def reset_cycle(self) -> None:
@@ -256,8 +275,11 @@ class DpiService:
             iv = int(str(value).strip().replace(" ", ""))
         except (TypeError, ValueError):
             return {"ok": False, "error": "не число"}
+        raw = iv
+        iv = int(math.floor(iv / 100.0 + 0.5)) * 100      # viewers' values are always a multiple of 100
         if not (s.viewer_min <= iv <= s.viewer_max):
-            return {"ok": False, "error": f"вне диапазона {s.viewer_min}–{s.viewer_max}"}
+            shown = f"{raw} → {iv}: " if iv != raw else ""
+            return {"ok": False, "error": f"{shown}вне диапазона {s.viewer_min}–{s.viewer_max}"}
         iv = grid.snap(iv, self._allowed())
         user = (user or "?")[:40]
         if len(self.viewer_values) >= s.viewer_max_values:
@@ -310,13 +332,15 @@ class DpiService:
             self.consumed.remove(iv)
 
     def snapshot(self) -> dict:
+        vals, weights = self.segments()
         return {
             "enabled": self.settings.enabled,
             "backend": self.backend.name,
             "mouse": self.mouse,
             "current_dpi": self.current_dpi,
             "target_dpi": self.target_dpi,
-            "values": self.values(),
+            "values": vals,
+            "weights": weights,
             "wheel": self.wheel_info(),
             "learn_reward": self.learn_reward,
             "last_spin": self.last_spin,
@@ -332,19 +356,20 @@ class DpiService:
         }
 
     # --------------------------------------------------------------- spinning
-    def pick(self) -> tuple[int, int, list[int]]:
-        vals = self.values()
-        options = list(range(len(vals)))
+    def pick(self) -> tuple[int, int, list[int], list[int]]:
+        """Weighted pick: a value added by two viewers is twice as likely (its segment is twice as wide)."""
+        vals, weights = self.segments()
+        w = list(weights)
         if self.settings.exclude_current and self.current_dpi in vals and len(vals) > 1:
-            options = [i for i in options if vals[i] != self.current_dpi]
-        idx = self._rng.choice(options)
-        return idx, vals[idx], vals
+            w[vals.index(self.current_dpi)] = 0
+        idx = self._rng.choices(range(len(vals)), weights=w, k=1)[0]
+        return idx, vals[idx], vals, weights
 
     def spin(self, reason: str = "manual") -> dict:
         """Start a spin: choose the result, publish the animation, schedule the apply."""
         if not self.settings.enabled:
             raise ValueError("DPI-рулетка выключена в настройках")
-        idx, value, vals = self.pick()
+        idx, value, vals, weights = self.pick()
         instant = len(vals) <= 1          # nothing to spin: the number just changes on screen
         self.spins += 1
         self._last_spin_at = time.monotonic()
@@ -353,6 +378,7 @@ class DpiService:
             "index": idx,
             "value": value,
             "values": vals,
+            "weights": weights,
             "duration_ms": 0 if instant else self.settings.spin_duration_ms,
             "revolutions": 0 if instant else self.settings.revolutions,
             "instant": instant,

@@ -192,3 +192,24 @@ def test_rejected_payload_keeps_player_name_for_diagnostics():
     p["auth"] = {"token": "good"}
     t.handle(p, now=2.0)
     assert t.status.name == "me" and t.status.last_name_at == 2.0
+
+
+def test_halftime_last_kill_and_death_still_count():
+    # the final kill of a half arrives with map.phase already "intermission"
+    t = GsiTracker()
+    t.handle(payload(rk=1), now=1.0)
+    ev = kills(t.handle(payload(rk=2, phase="intermission", rphase="over"), now=1.1))
+    assert len(ev) == 1
+    # dying as the last player of the last round of the half
+    t2 = GsiTracker()
+    t2.handle(payload(rk=0), now=1.0)
+    p = payload(rk=0, phase="intermission", rphase="over")
+    p["player"]["state"]["health"] = 0
+    assert {"type": "death"} in t2.handle(p, now=1.2)
+    # warmup is still ignored
+    t3 = GsiTracker()
+    t3.handle(payload(rk=0, phase="warmup"), now=1.0)
+    p = payload(rk=1, phase="warmup")
+    p["player"]["state"]["health"] = 0
+    ev = t3.handle(p, now=1.1)
+    assert kills(ev) == [] and {"type": "death"} not in ev

@@ -43,6 +43,11 @@ def _str(v: Any) -> str | None:
     return v if isinstance(v, str) else (str(v) if isinstance(v, (int, float)) else None)
 
 
+# map.phase values in which kills and deaths are real: "intermission" is the half-time screen and the
+# last kill/death of a half arrives with it already set; "gameover" likewise for the final round.
+ACTIVE_PHASES = ("live", "intermission", "gameover")
+
+
 @dataclass
 class GsiStatus:
     connected: bool = False
@@ -206,7 +211,7 @@ class GsiTracker:
 
         if not own:
             # the player block switched to a teammate: that only happens when we are dead
-            if self._was_alive and st.map_phase == "live":
+            if self._was_alive and st.map_phase in ACTIVE_PHASES:
                 self._was_alive = False
                 events.append({"type": "death"})
             events.append({"type": "status"})
@@ -225,7 +230,7 @@ class GsiTracker:
                 self._was_alive = True
             elif self._was_alive:
                 self._was_alive = False
-                if st.map_phase == "live":
+                if st.map_phase in ACTIVE_PHASES:
                     events.append({"type": "death"})
         team = _str(player.get("team"))
         if team in (W.T, W.CT) and team != st.team:
@@ -271,7 +276,7 @@ class GsiTracker:
             elif round_kills > prev.round_kills:
                 old_kills = prev.round_kills
 
-        live = st.map_phase == "live" and st.round_phase != "freezetime"
+        live = st.map_phase in ACTIVE_PHASES and st.round_phase != "freezetime"
         if live and old_kills is not None and round_kills > old_kills:
             delta = round_kills - old_kills
             hs_delta = max(0, round_killhs - prev.round_killhs) if (same_round and prev) else 0

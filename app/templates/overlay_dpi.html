@@ -83,17 +83,21 @@
 
   // ---- drawing -------------------------------------------------------------------
   let values = [];
+  let weights = [];           // segment weights aligned with values (viewer duplicates widen a segment)
   let rotation = 0;           // current wheel rotation (radians)
+  function segWeights(vals, ws) { return (ws && ws.length === vals.length) ? ws : vals.map(() => 1); }
   function hexToRgba(h, a) { const n = parseInt(h.slice(1), 16); return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`; }
   function draw() {
     ctx.clearRect(0, 0, SIZE, SIZE);
     const n = values.length || 1;
-    const seg = TAU / n;
+    const ws = segWeights(values, weights);
+    const total = ws.reduce((a, b) => a + b, 0) || 1;
     ctx.save();
     ctx.translate(CX, CY);
     ctx.rotate(rotation);
+    let a0 = 0;
     for (let i = 0; i < n; i++) {
-      const a0 = i * seg, a1 = a0 + seg;
+      const seg = TAU * (ws[i] || 1) / total, a1 = a0 + seg;
       ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, R, a0, a1); ctx.closePath();
       const isHome = values[i] === cfg.home;
       ctx.fillStyle = isHome ? hexToRgba(cfg.homeColor, 0.95) : i % 2 === 0 ? hexToRgba(cfg.accent, 0.85) : hexToRgba(cfg.color, 0.22);
@@ -110,6 +114,7 @@
         ctx.fillText(String(values[i]), R - 14, 0);
         ctx.restore();
       }
+      a0 = a1;
     }
     ctx.restore();
     ctx.save(); ctx.translate(CX, CY);
@@ -143,13 +148,16 @@
   let anim = null;            // {from, to, start, duration, spin}
   const easeOut = t => 1 - Math.pow(1 - t, 3);
   function targetRotation(spin) {
-    const seg = TAU / spin.values.length;
-    // segment i spans [i*seg, (i+1)*seg) before rotation; the pointer sits at -PI/2 (top)
-    return -Math.PI / 2 - (spin.index + spin.offset) * seg;
+    // segments are proportional to their weights; the pointer sits at -PI/2 (top)
+    const ws = segWeights(spin.values, spin.weights);
+    const total = ws.reduce((a, b) => a + b, 0) || 1;
+    let start = 0;
+    for (let i = 0; i < spin.index; i++) start += ws[i];
+    return -Math.PI / 2 - (start + spin.offset * ws[spin.index]) * TAU / total;
   }
   function norm(a) { return ((a % TAU) + TAU) % TAU; }
   function startSpin(spin, nowMs) {
-    values = spin.values; readCfg(); layout();
+    values = spin.values; weights = spin.weights || []; readCfg(); layout();
     clearTimers();
     if (spin.instant || !spin.duration_ms) {
       // single value on the wheel: no animation, the number simply changes
@@ -196,13 +204,13 @@
   function sync(nowMs) {
     if (!dpi) return;
     readCfg();
-    values = dpi.values || [];
+    values = dpi.values || []; weights = dpi.weights || [];
     layout();
     const spin = dpi.last_spin;
     if (spin && spin.values && spin.values.length) {
       const endMs = spin.started_at * 1000 + spin.duration_ms;
       if (nowMs < endMs) { startSpin(spin, nowMs); return; }
-      anim = null; values = spin.values; rotation = norm(targetRotation(spin));
+      anim = null; values = spin.values; weights = spin.weights || []; rotation = norm(targetRotation(spin));
       draw();
       const shown = (dpi.current_dpi && spin.applied) ? { ...spin, value: dpi.current_dpi } : spin;
       if (cfg.showCurrent || (nowMs - endMs) / 1000 < 15) rest(shown, (nowMs - endMs) / 1000); else idle();
@@ -236,6 +244,7 @@
     if (!anim) {
       // settings may have changed (wheel mode, values); redraw without disturbing a shown result
       values = (dpi.last_spin && dpi.last_spin.values) || dpi.values || values;
+      weights = (dpi.last_spin && dpi.last_spin.weights) || dpi.weights || [];
       draw();
       if (resultEl.classList.contains('show')) {
         // "вернуть мой DPI" / manual apply: the number must follow the value really on the mouse
