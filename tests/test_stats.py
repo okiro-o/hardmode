@@ -47,6 +47,8 @@ def test_stats_counts_kills_deaths_pickups_rounds_and_dpi(tmp_path):
 
 def test_weapon_key_and_name():
     assert weapon_key("weapon_ak47", "ak47") == "ak47" and weapon_key("weapon_molotov", None) == "molotov"
+    assert weapon_key("weapon_healthshot", None) is None and weapon_key("weapon_knife_t", None) is None
+    assert weapon_key("weapon_c4", None) is None
     assert weapon_name("ak47") == "AK-47" and weapon_name("molotov") == "Molotov" and weapon_name("x") == "x"
 
 
@@ -73,3 +75,16 @@ def test_stats_api_and_gsi_feed(client):
     assert client.get("/api/state").json()["stats"]["totals"]["kills"] == 1
     assert client.post("/api/stats/reset", json={}).json()["ok"]
     assert client.get("/api/stats").json()["totals"]["kills"] == 0
+
+
+def test_non_weapons_are_not_booked(tmp_path):
+    s = StatsTracker(str(tmp_path / "stats.json"))
+    s.handle_events([{"type": "pickup", "raw": "weapon_healthshot", "weapon": None, "bought": True, "spawn": False},
+                     {"type": "death", "weapon": None, "raw": "weapon_healthshot"}], status(), 800, now=1.0)
+    snap = s.snapshot()
+    assert snap["weapons"] == [] and snap["totals"]["deaths"] == 1 and snap["totals"]["bought"] == 0   # not a weapon purchase
+    # legacy entries are dropped on load
+    import json
+    s.data["weapons"]["healthshot"] = {"name": "healthshot", "bought": 3, "picked": 0, "kills": 0, "hs": 0, "deaths": 0}
+    s.flush()
+    assert "healthshot" not in StatsTracker(str(tmp_path / "stats.json")).data["weapons"]

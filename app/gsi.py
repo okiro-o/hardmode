@@ -277,7 +277,7 @@ class GsiTracker:
                 extra = count - prev.grenades.get(gname, 0) - (0 if gname in prev.names else 1)
                 added += [gname] * max(0, extra)
             for name in added:
-                if name.startswith("weapon_knife") or name == "weapon_c4":
+                if W.is_non_weapon(name):
                     continue
                 w = W.from_gsi_name(name)
                 events.append({"type": "pickup", "raw": name, "weapon": w.id if w else None,

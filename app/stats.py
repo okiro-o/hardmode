@@ -21,6 +21,8 @@ GRENADE_NAMES = {"hegrenade": "HE", "flashbang": "Flash", "smokegrenade": "Smoke
 def weapon_key(raw: str | None, weapon_id: str | None) -> str | None:
     if weapon_id:
         return weapon_id
+    if W.is_non_weapon(raw):
+        return None          # healthshot, C4, knives...: not weapons for the statistics
     if raw and raw.startswith("weapon_"):
         return raw[len("weapon_"):]
     return raw or None
@@ -59,6 +61,8 @@ class StatsTracker:
                 base = _fresh()
                 base.update({k: d[k] for k in ("started_at", "dpi", "weapons") if k in d})
                 base["totals"].update(d["totals"])
+                for key in [k for k in base["weapons"] if W.is_non_weapon("weapon_" + k)]:
+                    del base["weapons"][key]      # entries booked before the non-weapon filter existed
                 self.data = base
         except (OSError, ValueError):
             pass

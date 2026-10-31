@@ -28,7 +28,8 @@
   .tabpage.active { display:grid; grid-template-columns: 1.1fr .9fr; gap:16px; }
   @media (max-width: 1100px) { .tabpage.active { grid-template-columns: 1fr; } }
   .col { display:flex; flex-direction:column; gap:16px; min-width:0; }
-  section { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; min-width:0; }
+  .col { min-width:0; }
   section h2 { margin:0 0 10px; font-size:15px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); display:flex; align-items:center; gap:10px; }
   section h2 .right { margin-left:auto; display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
   h3 { margin:14px 0 8px; font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); display:flex; align-items:center; gap:8px; }
@@ -96,14 +97,21 @@
   .log.compact { max-height:84px; }
   .logtoggle { display:block; margin:2px 0 0 auto; background:transparent !important; border:0 !important; color:var(--muted); font-size:12px; padding:2px 6px; cursor:pointer; }
   .logtoggle:hover { color:var(--text); }
-  .cols2 { display:grid; grid-template-columns: 1fr 1.4fr; gap:18px; margin-top:10px; }
-  @media (max-width: 900px) { .cols2 { grid-template-columns: 1fr; } }
-  .tbl { width:100%; border-collapse:collapse; font-size:13px; }
-  .tbl th, .tbl td { padding:6px 8px; border-bottom:1px solid var(--line); text-align:right; white-space:nowrap; }
-  .tbl th:first-child, .tbl td:first-child { text-align:left; }
-  .tbl th { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.06em; font-weight:600; }
-  .tbl tr.home td:first-child { color:var(--accent); font-weight:700; }
-  .tbl td.muted { color:var(--muted); text-align:left; }
+  .kpis { display:grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap:8px; margin-top:6px; }
+  .kpis .stat .v { font-size:24px; }
+  .tblwrap { border:1px solid var(--line); border-radius:10px; overflow:auto; background:var(--panel2); }
+  .tbl { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; font-variant-numeric: tabular-nums; }
+  .tbl th { position:sticky; top:0; z-index:1; background:#1a1f2a; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.06em; font-weight:600; padding:10px 12px; text-align:right; cursor:pointer; user-select:none; border-bottom:1px solid var(--line); white-space:nowrap; }
+  .tbl th:hover { color:var(--text); }
+  .tbl th.sorted { color:var(--accent); }
+  .tbl th .arr { display:inline-block; width:12px; opacity:.9; }
+  .tbl td { padding:8px 12px; text-align:right; border-bottom:1px solid rgba(255,255,255,.05); white-space:nowrap; }
+  .tbl tbody tr:last-child td { border-bottom:0; }
+  .tbl tbody tr:nth-child(even) td { background:rgba(255,255,255,.015); }
+  .tbl tbody tr:hover td { background:rgba(255,209,102,.05); }
+  .tbl th:first-child, .tbl td:first-child { text-align:left; font-weight:600; }
+  .tbl td.muted { color:var(--muted); text-align:left; font-weight:400; }
+  .tbl td.sortedcol { color:var(--text); }
   /* help */
   .help { display:grid; grid-template-columns: 220px 1fr; gap:16px; }
   .toc { position:sticky; top:120px; align-self:start; display:flex; flex-direction:column; gap:2px; }
@@ -391,6 +399,7 @@
           <label class="inline"><input type="checkbox" data-key="dpi.auto_on_death"> Крутить после каждой смерти</label>
           <label class="f"><span>Мой обычный DPI</span><input type="number" min="100" max="44000" step="10" data-key="dpi.home_dpi"></label>
           <label class="f"><span>Управление мышью</span><select data-key="dpi.backend"><option value="auto">авто (HID++)</option><option value="fake">имитация (без мыши)</option><option value="none">выключено</option></select></label>
+          <label class="f full"><span>Когда применять новый DPI</span><select data-key="dpi.apply_at"><option value="stop">когда колесо остановится</option><option value="start">сразу после смерти, не дожидаясь колеса (Deathmatch)</option></select></label>
         </div>
         <details style="margin-top:6px;"><summary>Дополнительно</summary>
           <div class="form" style="margin-top:8px;">
@@ -559,11 +568,15 @@
   <div class="tabpage" id="tab-stats" style="grid-template-columns: 1fr;">
     <section>
       <h2>Статистика стрима <span class="right"><span class="hint" id="stats-since"></span><button onclick="downloadStatsCsv()" title="Скачать таблицы в CSV">⤓ CSV</button><button class="danger" onclick="resetStats()" title="Обнулить статистику стрима">⟲ Сброс</button></span></h2>
-      <div class="statline" id="stats-totals"></div>
-      <div class="cols2">
-        <div><h3>DPI</h3><table class="tbl" id="stats-dpi"></table></div>
-        <div><h3>Оружие</h3><table class="tbl" id="stats-weapons"></table></div>
-      </div>
+      <div class="kpis" id="stats-totals"></div>
+    </section>
+    <section>
+      <h2>DPI <span class="right hint">клик по заголовку сортирует, второй клик меняет направление</span></h2>
+      <div class="tblwrap"><table class="tbl" id="stats-dpi"></table></div>
+    </section>
+    <section>
+      <h2>Оружие</h2>
+      <div class="tblwrap"><table class="tbl" id="stats-weapons"></table></div>
     </section>
   </div>
 
@@ -813,26 +826,54 @@ function renderIngame() {
 async function ingamePreview(kind) { const r = await post('/api/ingame/preview', {kind}); if (!r) return; if (r.ok) toast('Показываю поверх игры 5 секунд'); else toast(r.error || 'Недоступно', true); }
 function toggleLog(btn) { const log = btn.previousElementSibling; const compact = log.classList.toggle('compact'); btn.textContent = compact ? 'развернуть' : 'свернуть'; }
 // ---- statistics tab
-function fmtDur(s) { s = Math.round(s || 0); const m = Math.floor(s / 60); return m >= 60 ? `${Math.floor(m / 60)} ч ${m % 60} мин` : m ? `${m} мин` : `${s} с`; }
+function fmtDur(sec) { sec = Math.round(sec || 0); const m = Math.floor(sec / 60); return m >= 60 ? `${Math.floor(m / 60)} ч ${m % 60} мин` : m ? `${m} мин` : `${sec} с`; }
+const DPI_COLS = [['value', 'DPI'], ['rolls', 'выпал'], ['kpr', 'киллов за выпадение'], ['kills', 'киллов'], ['deaths', 'смертей'], ['rounds', 'раундов целиком'], ['seconds', 'время']];
+const W_COLS = [['name', 'Оружие'], ['bought', 'куплено'], ['picked', 'подобрано'], ['kills', 'киллов'], ['hs', 'HS'], ['deaths', 'смертей с ним']];
+let statsSort = { dpi: { key: 'value', dir: 1 }, weapons: { key: 'kills', dir: -1 } };
+try { statsSort = { ...statsSort, ...JSON.parse(localStorage.getItem('hardmode.statsSort') || '{}') }; } catch (e) {}
+function sortStats(table, key) {
+  const s = statsSort[table];
+  if (s.key === key) s.dir = -s.dir; else { s.key = key; s.dir = (key === 'value' || key === 'name') ? 1 : -1; }
+  try { localStorage.setItem('hardmode.statsSort', JSON.stringify(statsSort)); } catch (e) {}
+  renderStats();
+}
+function sortRows(rows, s) {
+  const num = v => (v == null || v === '' || Number.isNaN(v)) ? -Infinity : v;
+  return rows.slice().sort((a, b) => {
+    const x = a[s.key], y = b[s.key];
+    if (typeof x === 'string' || typeof y === 'string') return s.dir * String(x).localeCompare(String(y), 'ru');
+    return s.dir * (num(x) - num(y));
+  });
+}
+function thead(cols, s, table) {
+  return '<thead><tr>' + cols.map(([k, l]) => `<th class="${s.key === k ? 'sorted' : ''}" onclick="sortStats('${table}','${k}')">${l}<span class="arr">${s.key === k ? (s.dir > 0 ? '▲' : '▼') : ''}</span></th>`).join('') + '</tr></thead>';
+}
 function renderStats() {
   const st = S.stats; if (!st || !$('stats-totals')) return;
   const t = st.totals || {};
   const kd = t.deaths ? (t.kills / t.deaths).toFixed(2) : (t.kills ? '∞' : '—');
   const hs = t.kills ? Math.round(100 * t.hs / t.kills) + '%' : '—';
   $('stats-totals').innerHTML = [['раундов', t.rounds], ['киллов', t.kills], ['смертей', t.deaths], ['K/D', kd], ['HS', hs], ['лучший раунд', t.best_round_kills], ['кручений DPI', t.rolls], ['куплено', t.bought], ['подобрано', t.picked]]
-    .map(([l, v]) => `<span>${l} <b>${v ?? 0}</b></span>`).join('');
+    .map(([l, v]) => `<div class="stat"><div class="v">${v ?? 0}</div><div class="l">${l}</div></div>`).join('');
   $('stats-since').textContent = st.started_at ? 'с ' + new Date(st.started_at * 1000).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
-  const home = +((S.dpi && S.dpi.settings && S.dpi.settings.home_dpi) || 0);
-  const dpiRows = (st.dpi || []).map(r => `<tr${r.value === home ? ' class="home"' : ''}><td>${r.value}</td><td>${r.rolls}</td><td>${r.kills}</td><td>${r.deaths}</td><td>${r.rounds}</td><td>${fmtDur(r.seconds)}</td></tr>`).join('');
-  $('stats-dpi').innerHTML = '<tr><th>DPI</th><th>выпал</th><th>киллов</th><th>смертей</th><th>раундов целиком</th><th>время</th></tr>' + (dpiRows || '<tr><td class="muted" colspan="6">пока пусто</td></tr>');
-  const wRows = (st.weapons || []).map(r => `<tr><td>${esc(r.name)}</td><td>${r.bought}</td><td>${r.picked}</td><td>${r.kills}</td><td>${r.hs}</td><td>${r.deaths}</td></tr>`).join('');
-  $('stats-weapons').innerHTML = '<tr><th>Оружие</th><th>куплено</th><th>подобрано</th><th>киллов</th><th>HS</th><th>смертей с ним</th></tr>' + (wRows || '<tr><td class="muted" colspan="6">пока пусто</td></tr>');
+  const home = +((S.dpi && S.dpi.settings && S.dpi.settings.home_dpi) || 0), homeColor = (S.dpi && S.dpi.settings && S.dpi.settings.home_color) || '#ff6b6b';
+  const sd = statsSort.dpi, sw = statsSort.weapons;
+  const dpiRows = sortRows((st.dpi || []).map(r => ({ ...r, kpr: r.rolls ? r.kills / r.rolls : null })), sd);
+  const cell = (k, v, s) => `<td class="${s.key === k ? 'sortedcol' : ''}">${v}</td>`;
+  $('stats-dpi').innerHTML = thead(DPI_COLS, sd, 'dpi') + '<tbody>' + (dpiRows.map(r =>
+    `<tr${r.value === home ? ` style="box-shadow: inset 3px 0 0 ${homeColor}"` : ''}>` + cell('value', r.value, sd) + cell('rolls', r.rolls, sd) + cell('kpr', r.kpr == null ? '—' : r.kpr.toFixed(2), sd)
+    + cell('kills', r.kills, sd) + cell('deaths', r.deaths, sd) + cell('rounds', r.rounds, sd) + cell('seconds', fmtDur(r.seconds), sd) + '</tr>').join('')
+    || '<tr><td class="muted" colspan="7">пока пусто: данные появятся с первого раунда</td></tr>') + '</tbody>';
+  const wRows = sortRows(st.weapons || [], sw);
+  $('stats-weapons').innerHTML = thead(W_COLS, sw, 'weapons') + '<tbody>' + (wRows.map(r =>
+    '<tr>' + cell('name', esc(r.name), sw) + cell('bought', r.bought, sw) + cell('picked', r.picked, sw) + cell('kills', r.kills, sw) + cell('hs', r.hs, sw) + cell('deaths', r.deaths, sw) + '</tr>').join('')
+    || '<tr><td class="muted" colspan="6">пока пусто: данные появятся с первой покупки или килла</td></tr>') + '</tbody>';
 }
 async function resetStats() { if (!confirm('Обнулить статистику стрима?')) return; const r = await post('/api/stats/reset', {}); if (r) toast('Статистика обнулена'); }
 function downloadStatsCsv() {
   const st = S.stats || {}; const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
-  const lines = ['DPI;выпал;киллов;смертей;раундов целиком;секунд'];
-  (st.dpi || []).forEach(r => lines.push([r.value, r.rolls, r.kills, r.deaths, r.rounds, Math.round(r.seconds || 0)].join(';')));
+  const lines = ['DPI;выпал;киллов за выпадение;киллов;смертей;раундов целиком;секунд'];
+  (st.dpi || []).forEach(r => lines.push([r.value, r.rolls, r.rolls ? (r.kills / r.rolls).toFixed(2).replace('.', ',') : '', r.kills, r.deaths, r.rounds, Math.round(r.seconds || 0)].join(';')));
   lines.push('', 'Оружие;куплено;подобрано;киллов;HS;смертей с ним');
   (st.weapons || []).forEach(r => lines.push([q(r.name), r.bought, r.picked, r.kills, r.hs, r.deaths].join(';')));
   const t = st.totals || {}; lines.push('', 'Итого;раундов;киллов;смертей;HS;лучший раунд;кручений DPI', ['', t.rounds, t.kills, t.deaths, t.hs, t.best_round_kills, t.rolls].join(';'));

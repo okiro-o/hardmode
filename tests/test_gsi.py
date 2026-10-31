@@ -277,3 +277,10 @@ def test_round_boundary_events_and_death_weapon():
     ev = t.handle(dead, now=5.5)
     d = [e for e in ev if e["type"] == "death"]
     assert d == [{"type": "death", "weapon": "ak47", "raw": "weapon_ak47"}]
+
+
+def test_healthshot_and_c4_are_not_pickups():
+    t = GsiTracker()
+    t.handle(_inv("weapon_knife_t", "weapon_glock", money=5000), now=1.0)
+    ev = t.handle(_inv("weapon_knife_t", "weapon_glock", "weapon_healthshot", "weapon_c4", money=4000), now=1.5)
+    assert not [e for e in ev if e["type"] == "pickup"]

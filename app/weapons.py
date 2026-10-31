@@ -170,6 +170,17 @@ def pool(side: str, category: str) -> list[Weapon]:
     return [w for w in CATALOG if w.category == category and w.usable_by(side)]
 
 
+# GSI names that must never show up in weapon statistics (equipment, Danger Zone tools, knives)
+NON_WEAPONS = frozenset({"weapon_c4", "weapon_healthshot", "weapon_shield", "weapon_tablet", "weapon_breachcharge",
+                         "weapon_bumpmine", "weapon_fists", "weapon_melee", "weapon_axe", "weapon_hammer",
+                         "weapon_spanner", "weapon_snowball", "weapon_diversion", "weapon_firebomb",
+                         "weapon_frag_grenade", "weapon_tagrenade"})
+
+
+def is_non_weapon(gsi_name: str | None) -> bool:
+    return not gsi_name or gsi_name in NON_WEAPONS or gsi_name.startswith("weapon_knife")
+
+
 def sort_ids(ids: Iterable[str]) -> list[str]:
     return sorted(ids, key=lambda i: ORDER.get(i, 10_000))
 
