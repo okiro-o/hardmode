@@ -47,3 +47,9 @@ def test_take_over_decisions():
 def test_version_single_source():
     from app.version import VERSION
     assert m.VERSION == VERSION == launcher.VERSION
+
+
+def test_html_pages_are_never_cached(client):
+    for path in ("/", "/overlay/weapons", "/overlay/loadout", "/overlay/dpi"):
+        r = client.get(path)
+        assert r.status_code == 200 and "no-store" in r.headers.get("cache-control", ""), path

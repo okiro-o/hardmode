@@ -322,10 +322,18 @@ class AppState:
         self.publish_gsi()
 
 
+NO_STORE = {"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"}
+
+
 def _template(name: str) -> str:
     path = os.path.join(config.package_dir(), "templates", name)
     with open(path, encoding="utf-8") as f:
         return f.read()
+
+
+def page(name: str) -> HTMLResponse:
+    """HTML pages are never cached: OBS's browser (CEF) otherwise keeps old overlay JS after an update."""
+    return HTMLResponse(_template(name), headers=NO_STORE)
 
 
 def _loopback_origin(origin: str) -> bool:
@@ -420,16 +428,16 @@ def create_app() -> FastAPI:
 
     # ------------------------------------------------------------------ pages
     @app.get("/", response_class=HTMLResponse)
-    async def panel() -> str:
-        return _template("panel.html")
+    async def panel() -> HTMLResponse:
+        return page("panel.html")
 
     @app.get("/overlay/weapons", response_class=HTMLResponse)
-    async def overlay_weapons() -> str:
-        return _template("overlay_weapons.html")
+    async def overlay_weapons() -> HTMLResponse:
+        return page("overlay_weapons.html")
 
     @app.get("/overlay/loadout", response_class=HTMLResponse)
-    async def overlay_loadout() -> str:
-        return _template("overlay_loadout.html")
+    async def overlay_loadout() -> HTMLResponse:
+        return page("overlay_loadout.html")
 
     # -------------------------------------------------------------------- SSE
     @app.get("/events")

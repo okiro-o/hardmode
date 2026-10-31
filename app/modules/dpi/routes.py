@@ -28,10 +28,11 @@ async def _json(request: Request) -> dict:
 
 
 @router.get("/overlay/dpi", response_class=HTMLResponse)
-async def dpi_overlay() -> str:
+async def dpi_overlay() -> HTMLResponse:
     path = os.path.join(config.package_dir(), "templates", "overlay_dpi.html")
     with open(path, encoding="utf-8") as f:
-        return f.read()
+        html = f.read()
+    return HTMLResponse(html, headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"})
 
 
 @router.get("/api/dpi/status")
