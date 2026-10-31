@@ -62,12 +62,6 @@
   input[type=text]:focus, input[type=number]:focus, input[type=password]:focus, select:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(255,209,102,.14); background:#222838; }
   input[type=number] { -moz-appearance: textfield; }
   input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
-  select {
-    appearance:none; -webkit-appearance:none; cursor:pointer; padding-right:34px;
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238b93a7' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
-    background-repeat:no-repeat; background-position:right 11px center;
-  }
-  select option { background:var(--panel2); color:var(--text); }
   /* custom dropdown (native <select> popups cannot be themed on Windows) */
   .dd { position:relative; }
   .dd-btn { width:100%; height:36px; display:flex; align-items:center; justify-content:space-between; gap:8px; text-align:left; padding:0 10px; font-size:13.5px; background:var(--panel2); border:1px solid var(--line); border-radius:8px; color:var(--text); }
@@ -79,7 +73,7 @@
   .dd.open .dd-menu { display:block; animation: ddin .12s ease-out; }
   @keyframes ddin { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:none; } }
   .dd-opt { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 10px; border-radius:7px; cursor:pointer; font-size:13.5px; color:var(--text); }
-  .dd-opt:hover, .dd-opt.focus { background:var(--panel3); }
+  .dd-opt:hover { background:var(--panel3); }
   .dd-opt.sel { color:var(--accent); }
   .dd-opt.sel::after { content:"✓"; font-weight:700; }
   /* token box */
@@ -121,7 +115,7 @@
   .toc a.active { color:var(--accent); background:rgba(255,209,102,.08); }
   .doc { line-height:1.6; font-size:14px; min-width:0; }
   .doc h1 { display:none; }
-  .doc h2 { font-size:18px; text-transform:none; letter-spacing:0; margin:26px 0 10px; padding-top:14px; border-top:1px solid var(--line); letter-spacing:.02em; scroll-margin-top:110px; }
+  .doc h2 { font-size:18px; text-transform:none; margin:26px 0 10px; padding-top:14px; border-top:1px solid var(--line); letter-spacing:.02em; scroll-margin-top:110px; }
   .doc h2:first-child { border-top:0; margin-top:0; padding-top:0; }
   .doc h3 { font-size:15px; margin:18px 0 6px; }
   .doc p { margin:8px 0; }
@@ -152,7 +146,6 @@
   .check.bad .mark { background:rgba(255,94,94,.18); color:var(--bad); }
   .check .body { flex:1; min-width:0; }
   .check .t { font-weight:700; }
-  .check .t small { color:var(--muted); font-weight:500; margin-left:6px; }
   .check .s { font-size:12.5px; color:var(--muted); margin-top:2px; }
   .check .acts { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; flex:0 0 auto; }
   .check .acts button { padding:6px 10px; font-size:13px; }
@@ -701,8 +694,8 @@ function openPicker(ev, side, cat, id) {
 }
 async function pickWeapon(side, cat, oldId, newId) { closePicker(); const r = await post('/api/loadout/slot', {side, category: cat, old: oldId, new: newId}); if (r) toast('Заменено'); }
 async function pickRandom(side, cat, id) { closePicker(); await post('/api/loadout/replace', {side, category: cat, weapon: id}); }
-document.addEventListener('click', e => { if (!e.target.closest('#picker')) closePicker(); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closePicker(); });
+document.addEventListener('click', e => { if (!e.target.closest('#picker')) closePicker(); closeAllDd(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closePicker(); closeAllDd(); } });
 function showTab(t) { tab = t; lastTabClick = Date.now(); renderLoadout(); post('/api/loadout/view', {side: t}); }
 async function installCfg() { const r = await post('/api/gsi/install', {}); if (r) { toast('Конфиг записан: ' + r.path); refreshState(); } }
 async function applyManualDpi() { const v = parseInt($('dpi-manual').value, 10); if (!Number.isFinite(v)) return toast('Введите DPI', true); const r = await post('/api/dpi/apply', {value: v}); if (r && !r.ok) toast(r.error || 'Ошибка', true); }
@@ -736,8 +729,6 @@ function enhanceSelects() {
   });
 }
 function refreshDropdowns() { document.querySelectorAll('select[data-key]').forEach(s => s._ddSync && s._ddSync()); }
-document.addEventListener('click', closeAllDd);
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAllDd(); });
 enhanceSelects();
 
 async function toggleAutostart(el) { const r = await post('/api/autostart', {enabled: el.checked}); if (!r) { el.checked = !el.checked; return; } toast(r.enabled ? 'Автозапуск включён' : 'Автозапуск выключен'); }
@@ -791,7 +782,7 @@ function renderChat() {
   if (c.sent_count) parts.push(`отправлено ${c.sent_count}`); if (c.last_error) parts.push(`ошибка: ${c.last_error}`);
   $('chat-join').style.display = b.joined === false ? '' : 'none';
   $('chat-status').textContent = parts.join(' · '); $('chat-status').style.display = parts.length ? '' : 'none';
-  $('chat-log').innerHTML = (c.log||[]).slice().reverse().map(e => `<div class="${esc(e.kind)}"><span class="t">${fmtTime(e.t)}</span><span>${esc(e.text)}</span></div>`).join('');
+  renderLog('chat-log', c.log);
 }
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
 
@@ -799,6 +790,8 @@ function esc(s) { return String(s ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;'
 // ---- in-game overlay (Windows): status chips + live preview PNG
 const previewTimers = {};
 function schedulePreview(kind) {
+  const look = $('tab-look');
+  if (!look || !look.classList.contains('active') || document.hidden) return;   // nobody is looking: no PNG renders
   clearTimeout(previewTimers[kind]);
   previewTimers[kind] = setTimeout(() => {
     const img = $('ingame-prev-' + kind); if (!img) return;
@@ -823,6 +816,9 @@ function renderIngame() {
   }
 }
 async function ingamePreview(kind) { const r = await post('/api/ingame/preview', {kind}); if (!r) return; if (r.ok) toast('Показываю поверх игры 5 секунд'); else toast(r.error || 'Недоступно', true); }
+function renderLog(id, entries, cls = e => e.kind) {
+  $(id).innerHTML = (entries || []).slice().reverse().map(e => `<div class="${esc(cls(e))}"><span class="t">${fmtTime(e.t)}</span><span>${esc(e.text)}</span></div>`).join('');
+}
 function toggleLog(btn) { const log = btn.previousElementSibling; const compact = log.classList.toggle('compact'); btn.textContent = compact ? 'развернуть' : 'свернуть'; }
 // ---- statistics tab
 function fmtDur(sec) { sec = Math.round(sec || 0); const m = Math.floor(sec / 60); return m >= 60 ? `${Math.floor(m / 60)} ч ${m % 60} мин` : m ? `${m} мин` : `${sec} с`; }
@@ -914,6 +910,7 @@ async function loadHelp() {
 }
 function showMainTab(name) {
   if (name === 'help') loadHelp();
+  if (name === 'look') setTimeout(() => { schedulePreview('dpi'); schedulePreview('weapons'); }, 0);
   document.querySelectorAll('.tabpage').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
   document.querySelectorAll('.maintabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   try { localStorage.setItem('cs2r.tab', name); } catch (e) {}
@@ -955,8 +952,7 @@ function renderQueue() {
   $('btn-start').disabled = !r.loadout || r.running; $('btn-start').textContent = r.paused ? '▶ Продолжить' : '▶ Старт';
   $('btn-next').disabled = !r.running; $('btn-reroll').disabled = !r.running; $('btn-stop').disabled = !r.running;
   $('st-completed').textContent = r.completed; $('st-kills').textContent = r.kills_total; $('st-wrong').textContent = r.kills_wrong_weapon; $('st-amb').textContent = r.kills_ambiguous;
-  const log = $('log');
-  log.innerHTML = (r.log||[]).slice().reverse().map(e => { let cls = e.kind; if (e.kind==='kill') cls += e.matched ? ' ok' : ' no'; return `<div class="${esc(cls)}"><span class="t">${fmtTime(e.t)}</span><span>${esc(e.text)}</span></div>`; }).join('');
+  renderLog('log', r.log, e => e.kind + (e.kind === 'kill' ? (e.matched ? ' ok' : ' no') : ''));
 }
 
 function renderLoadout() {
@@ -1026,7 +1022,7 @@ function renderDpi() {
   if (d.guard_reapplies) info += ` · G HUB перебивал ${d.guard_reapplies} раз`;
   $('dpi-mouse-info').textContent = info || $('dpi-mouse-info').textContent;
   $('btn-dpi-spin').disabled = !d.enabled || d.busy;
-  $('dpi-log').innerHTML = (d.log||[]).slice().reverse().map(e => `<div class="${esc(e.kind)}"><span class="t">${fmtTime(e.t)}</span><span>${esc(e.text)}</span></div>`).join('');
+  renderLog('dpi-log', d.log);
 }
 
 // ------------------------------------------------------------------ OBS source sizes
@@ -1067,13 +1063,12 @@ function renderSizes() {
   $('size-weapons').textContent = txt;
   const [lw, lh] = loadoutBox(o, false), [bw, bh] = loadoutBox(o, true);
   $('size-loadout').textContent = `${lw}×${lh}`; $('size-loadout-both').textContent = `${bw}×${bh}`;
-  $('size-dpi').textContent = '600×750';
 }
 
 function renderChecks() {
   const g = S.gsi || {}, d = S.dpi || {}, c = S.chat || {}, t = S.twitch || {}, cl = S.clients || {}, r = S.roulette || {};
   const obs = p => (cl[p] && cl[p].obs) || 0, brw = p => (cl[p] && cl[p].browser) || 0;
-  const item = (cls, title, sub, acts, note) => `<div class="check ${cls}"><div class="mark">${cls==='ok'?'✓':cls==='bad'?'!':cls==='warn'?'•':'–'}</div><div class="body"><div class="t">${title}${note?`<small>${note}</small>`:''}</div><div class="s">${sub}</div></div><div class="acts">${acts||''}</div></div>`;
+  const item = (cls, title, sub, acts) => `<div class="check ${cls}"><div class="mark">${cls==='ok'?'✓':cls==='bad'?'!':cls==='warn'?'•':'–'}</div><div class="body"><div class="t">${title}</div><div class="s">${sub}</div></div><div class="acts">${acts||''}</div></div>`;
   const req = [];
   // 1. GSI config + data
   let cls = 'bad', sub = '', acts = `<button class="primary" onclick="installCfg()">Установить конфиг</button>`;
@@ -1148,20 +1143,15 @@ fetch('/api/weapons').then(r=>r.json()).then(d => { d.weapons.forEach(w => weapo
 
 const es = new EventSource('/events');
 es.addEventListener('snapshot', e => { S = JSON.parse(e.data); renderAll(); $('chip-sse').className='chip ok'; });
-es.addEventListener('roulette', e => { if (!S) return; S.roulette = JSON.parse(e.data); renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderChecks(); });
-es.addEventListener('gsi', e => { if (!S) return; S.gsi = JSON.parse(e.data); renderHeader(); renderMisc(); renderChecks(); });
-es.addEventListener('settings', e => { if (!S) return; const d = JSON.parse(e.data); S.overlay = d.overlay; S.ingame = d.ingame || S.ingame; S.gsi_token = d.gsi_token; S.port = d.port; if (S.dpi && d.dpi) S.dpi.settings = d.dpi; if (S.chat && d.chat) S.chat.settings = d.chat; if (d.roulette) S.roulette.settings = d.roulette; renderHeader(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); refreshState(); });
-es.addEventListener('dpi', e => { if (!S) return; S.dpi = JSON.parse(e.data); renderDpi(); renderSettings(); renderWheel(); renderChecks(); });
+es.addEventListener('roulette', e => { if (!S) return; S.roulette = JSON.parse(e.data); renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderChecks(); schedulePreview('weapons'); });
+es.addEventListener('gsi', e => { if (!S) return; const prev = S.gsi || {}; S.gsi = JSON.parse(e.data); renderHeader(); renderMisc(); renderChecks(); if (S.gsi.held !== prev.held || S.gsi.connected !== prev.connected) schedulePreview('weapons'); });
+es.addEventListener('settings', e => { if (!S) return; const d = JSON.parse(e.data); S.overlay = d.overlay; S.ingame = d.ingame || S.ingame; S.gsi_token = d.gsi_token; S.port = d.port; if (S.dpi && d.dpi) S.dpi.settings = d.dpi; if (S.chat && d.chat) S.chat.settings = d.chat; if (d.roulette) S.roulette.settings = d.roulette; renderHeader(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); refreshState();  renderIngame(); schedulePreview('dpi'); schedulePreview('weapons'); });
+es.addEventListener('dpi', e => { if (!S) return; S.dpi = JSON.parse(e.data); renderDpi(); renderSettings(); renderWheel(); renderChecks(); schedulePreview('dpi'); });
 es.addEventListener('twitch', e => { if (!S) return; S.twitch = JSON.parse(e.data); renderWheel(); renderChecks(); });
 es.addEventListener('clients', e => { if (!S) return; S.clients = JSON.parse(e.data); renderChecks(); });
 es.addEventListener('chat', e => { if (!S) return; S.chat = JSON.parse(e.data); renderChat(); renderSettings(); renderWheel(); renderChecks(); });
 es.addEventListener('stats', e => { if (!S) return; S.stats = JSON.parse(e.data); renderStats(); });
-es.addEventListener('dpi', () => schedulePreview('dpi'));
-es.addEventListener('dpi_spin', () => schedulePreview('dpi'));
-es.addEventListener('roulette', () => schedulePreview('weapons'));
-es.addEventListener('gsi', () => schedulePreview('weapons'));
-es.addEventListener('settings', () => { renderIngame(); schedulePreview('dpi'); schedulePreview('weapons'); });
-es.addEventListener('dpi_spin', e => { const sp = JSON.parse(e.data); toast('DPI-рулетка: ' + sp.value + (sp.reason === 'death' ? ' (смерть)' : '')); });
+es.addEventListener('dpi_spin', e => { const sp = JSON.parse(e.data); toast('DPI-рулетка: ' + sp.value + (sp.reason === 'death' ? ' (смерть)' : '')); schedulePreview('dpi'); });
 es.addEventListener('kill', e => { const k = JSON.parse(e.data); if (k.ambiguous) toast('Килл: возможно граната — не засчитан'); else if (k.counted) toast(k.advanced ? 'Килл засчитан → следующее оружие' : 'Килл засчитан'); else if (S && S.roulette.running) toast('Килл не тем оружием', true); });
 es.onerror = () => { $('chip-sse').className='chip bad'; };
 </script>

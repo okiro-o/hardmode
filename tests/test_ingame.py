@@ -1,5 +1,3 @@
-import pytest
-from fastapi.testclient import TestClient
 from PIL import Image
 
 from app import ingame, weapons as W
@@ -79,15 +77,6 @@ def test_single_value_wheel_changes_without_spinning(tmp_path, monkeypatch):
     assert svc2.spin()["instant"] is False
 
 
-@pytest.fixture
-def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("CS2R_DATA", str(tmp_path))
-    monkeypatch.setenv("CS2R_DPI_BACKEND", "fake")
-    monkeypatch.setenv("CS2R_NO_BROWSER", "1")
-    from app import main as m
-    app = m.create_app()
-    with TestClient(app, base_url="http://127.0.0.1") as c:
-        yield c
 
 
 def test_api_ingame_render_and_settings(client):

@@ -103,6 +103,7 @@ class HidppBackend:
         self._lock = threading.RLock()
         self._dev: HidppDevice | None = None
         self._values: list[int] | None = None
+        self._values_failed_at = 0.0     # last failed grid read: back off instead of hammering HID
         self._info: dict = {}
 
     # ------------------------------------------------------------------ connect
@@ -155,6 +156,7 @@ class HidppBackend:
                     info["name"] = ""
                 mode = dev.get_onboard_mode() if dev.has_feature(0x8100) else None
                 params = dev.dpi_parameters()
+                values = self.allowed_values()
                 info.update({
                     "found": True,
                     "product": info.get("candidate", {}).get("product", ""),
@@ -165,7 +167,7 @@ class HidppBackend:
                     "dpi": params["dpi_x"],
                     "dpi_y": params["dpi_y"],
                     "lod": params["lod"],
-                    "grid": f"{len(self.allowed_values())} значений, {self.allowed_values()[0]}–{self.allowed_values()[-1]}",
+                    "grid": f"{len(values)} значений, {values[0]}–{values[-1]}",
                 })
                 return info
             except HidppError as e:
@@ -173,13 +175,19 @@ class HidppBackend:
                 return {"found": False, "error": str(e)}
 
     def allowed_values(self) -> list[int]:
+        vals = self._values                   # cached grid: no lock, no HID traffic
+        if vals:
+            return vals
+        now = time.monotonic()
+        if now - self._values_failed_at < 20.0:
+            return list(grid.DEFAULT_VALUES)  # mouse was unreachable a moment ago: the default grid will do
         with self._lock:
             if self._values:
                 return self._values
             try:
-                dev = self._connect()
-                self._values = dev.dpi_ranges()
+                self._values = self._connect().dpi_ranges()
             except HidppError:
+                self._values_failed_at = now
                 return list(grid.DEFAULT_VALUES)
             return self._values
 

@@ -143,11 +143,13 @@
   let lingerTimer = null, hideTimer = null;
   function clearTimers() { clearTimeout(lingerTimer); clearTimeout(hideTimer); lingerTimer = hideTimer = null; }
   function showWheel(v) { stage.classList.toggle('wheel-hidden', !v); }
-  function showNumber(value, reasonText) {
+  let shownValue = null;   // what the big number currently displays
+  function showNumber(value, text) {
+    shownValue = value;
     const home = value === cfg.home;
     resultEl.querySelector('.v').textContent = value;
     resultEl.querySelector('.v').style.color = home ? cfg.homeColor : '';
-    resultEl.querySelector('.r').textContent = reasonText || '';
+    resultEl.querySelector('.r').textContent = text || '';
     resultEl.classList.add('show');
   }
   function hideNumber() { resultEl.classList.remove('show'); }
@@ -243,9 +245,6 @@
     if (dpi && dpi.now) serverOffset = dpi.now * 1000 - Date.now();
     sync(Date.now() + serverOffset);
   });
-  let shownValue = null;   // what the big number currently displays
-  const origShowNumber = showNumber;
-  showNumber = function (value, reasonText) { shownValue = value; origShowNumber(value, reasonText); };
   es.addEventListener('dpi', e => {
     dpi = JSON.parse(e.data);
     if (dpi.now) serverOffset = dpi.now * 1000 - Date.now();

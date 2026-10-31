@@ -121,7 +121,7 @@
       items.forEach((item, i) => {
         const s = i === 0 ? 1 : NXT.s, w = cardWidth(item);
         if (i === 1) y += GAP;
-        out.push({ x: (widest - w * s) / 2, y, s, w: w * s, h: (CUR.h + labelH) * s, boxW: w });
+        out.push({ x: (widest - w * s) / 2, y, s, w: w * s, h: (CUR.h + labelH) * s });
         y += (CUR.h + labelH) * s + (i === 0 ? 0 : GAP * 0.8);
       });
       return out;
@@ -130,7 +130,7 @@
     items.forEach((item, i) => {
       const s = i === 0 ? 1 : NXT.s, w = cardWidth(item);
       const y = i === 0 ? 0 : (CUR.h - CUR.h * NXT.s) / 2;   // vertically centre next cards on the icon row
-      out.push({ x, y, s, w: w * s, h: (CUR.h + labelH) * s, boxW: w });
+      out.push({ x, y, s, w: w * s, h: (CUR.h + labelH) * s });
       x += w * s + (i === 0 ? GAP : GAP * 0.7);
     });
     return out;

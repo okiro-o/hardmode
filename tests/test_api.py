@@ -1,19 +1,7 @@
 import json
 import os
 
-import pytest
-from fastapi.testclient import TestClient
 
-
-@pytest.fixture()
-def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("CS2R_DATA", str(tmp_path))
-    monkeypatch.setenv("CS2R_NO_BROWSER", "1")
-    from app import main as m
-
-    app = m.create_app()
-    with TestClient(app, base_url="http://127.0.0.1") as c:
-        yield c
 
 
 def test_pages_render(client):
@@ -21,6 +9,7 @@ def test_pages_render(client):
         r = client.get(path)
         assert r.status_code == 200, path
         assert "text/html" in r.headers["content-type"]
+        assert "no-store" in r.headers.get("cache-control", ""), path
     assert client.get("/static/icons/ak47.svg").status_code == 200
 
 
@@ -71,12 +60,6 @@ def test_full_flow(client):
     assert client.post("/api/roulette/reroll").status_code == 200
     assert client.post("/api/roulette/undo").status_code == 200
     # manual switch is always allowed (GSI will switch it back on the next payload if side_source == gsi)
-    assert client.post("/api/side", json={"side": "CT"}).json()["side"] == "CT"
-
-
-def test_manual_side_switch_allowed(client):
-    client.post("/api/loadout/generate", json={})
-    client.post("/api/session/start")
     assert client.post("/api/side", json={"side": "CT"}).json()["side"] == "CT"
 
 

@@ -1,20 +1,9 @@
 import logging
 
-import pytest
-from fastapi.testclient import TestClient
-
 from app import __main__ as launcher
 from app import main as m
 
 
-@pytest.fixture
-def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("CS2R_DATA", str(tmp_path))
-    monkeypatch.setenv("CS2R_DPI_BACKEND", "fake")
-    monkeypatch.setenv("CS2R_NO_BROWSER", "1")
-    app = m.create_app()
-    with TestClient(app, base_url="http://127.0.0.1") as c:
-        yield c
 
 
 def test_api_quit_calls_registered_hook(client, monkeypatch):
@@ -47,9 +36,3 @@ def test_take_over_decisions():
 def test_version_single_source():
     from app.version import VERSION
     assert m.VERSION == VERSION == launcher.VERSION
-
-
-def test_html_pages_are_never_cached(client):
-    for path in ("/", "/overlay/weapons", "/overlay/loadout", "/overlay/dpi"):
-        r = client.get(path)
-        assert r.status_code == 200 and "no-store" in r.headers.get("cache-control", ""), path

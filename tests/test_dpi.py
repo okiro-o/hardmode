@@ -1,5 +1,4 @@
 import asyncio
-import json
 import time
 
 import pytest
@@ -7,9 +6,9 @@ import pytest
 from app.gsi import GsiTracker
 from app.modules.dpi import grid
 from app.modules.dpi.backends import FakeBackend, NoneBackend, make_backend
-from app.modules.dpi.hidpp import Candidate, HidppDevice, HidppError, HOST_MODE
+from app.modules.dpi.hidpp import Candidate, HidppDevice, HidppError
 from app.modules.dpi.service import DpiService, DpiSettings
-from tests.test_gsi import ME, MATE, payload
+from tests.test_gsi import MATE, payload
 
 
 # ------------------------------------------------------------------- grid

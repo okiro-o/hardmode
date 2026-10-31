@@ -1,7 +1,6 @@
 import types
 
 import pytest
-from fastapi.testclient import TestClient
 
 from app.stats import StatsTracker, weapon_key, weapon_name
 
@@ -52,15 +51,6 @@ def test_weapon_key_and_name():
     assert weapon_name("ak47") == "AK-47" and weapon_name("molotov") == "Molotov" and weapon_name("x") == "x"
 
 
-@pytest.fixture
-def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("CS2R_DATA", str(tmp_path))
-    monkeypatch.setenv("CS2R_DPI_BACKEND", "fake")
-    monkeypatch.setenv("CS2R_NO_BROWSER", "1")
-    from app import main as m
-    app = m.create_app()
-    with TestClient(app, base_url="http://127.0.0.1") as c:
-        yield c
 
 
 def test_stats_api_and_gsi_feed(client):
@@ -84,7 +74,6 @@ def test_non_weapons_are_not_booked(tmp_path):
     snap = s.snapshot()
     assert snap["weapons"] == [] and snap["totals"]["deaths"] == 1 and snap["totals"]["bought"] == 0   # not a weapon purchase
     # legacy entries are dropped on load
-    import json
     s.data["weapons"]["healthshot"] = {"name": "healthshot", "bought": 3, "picked": 0, "kills": 0, "hs": 0, "deaths": 0}
     s.flush()
     assert "healthshot" not in StatsTracker(str(tmp_path / "stats.json")).data["weapons"]
