@@ -11,13 +11,20 @@ if not exist ".venv\Scripts\python.exe" (
 )
 ".venv\Scripts\python.exe" -m pip install -r requirements-dev.txt || (echo Не удалось установить зависимости. & pause & exit /b 1)
 ".venv\Scripts\python.exe" -c "import hid" || (echo Модуль hidapi не установился: без него exe не сможет управлять мышью. Проверьте версию Python (нужна 3.11-3.13). & pause & exit /b 1)
+rem Папка data\ рядом с exe (настройки, лог) должна пережить пересборку: PyInstaller очищает dist\hardmode.
+set "KEEP=%TEMP%\hardmode-data-keep"
+if exist "dist\hardmode\data" (
+  rd /s /q "%KEEP%" 2>nul
+  move "dist\hardmode\data" "%KEEP%" >nul
+)
 ".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean --onedir --noconsole --name hardmode ^
   --icon "app\static\icon.ico" ^
   --add-data "app\templates;app\templates" --add-data "app\static;app\static" --add-data "QUICKSTART.md;." ^
   --collect-all uvicorn --collect-all fastapi --collect-all starlette --collect-all anyio ^
   --collect-all pystray --collect-submodules PIL --hidden-import hid ^
   --hidden-import app.main --hidden-import app.modules.dpi --hidden-import app.tray ^
-  tools\entry.py || (echo Сборка не удалась, смотрите сообщения выше. & pause & exit /b 1)
+  tools\entry.py || (echo Сборка не удалась, смотрите сообщения выше. & if exist "%KEEP%" move "%KEEP%" "dist\hardmode\data" >nul & pause & exit /b 1)
+if exist "%KEEP%" move "%KEEP%" "dist\hardmode\data" >nul
 if not exist "dist\hardmode\_internal\hid*.pyd" echo ВНИМАНИЕ: в сборке нет модуля hid (hidapi): управление мышью в exe работать не будет.
 echo.
 echo Готово: dist\hardmode\hardmode.exe  (запускается в трей; папка data\ создастся рядом с exe)

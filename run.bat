@@ -7,7 +7,12 @@ if not exist ".venv\Scripts\python.exe" (
   echo [hardmode] Создаю виртуальное окружение...
   %PY% -m venv .venv || goto :nopython
   ".venv\Scripts\python.exe" -m pip install --upgrade pip >nul
+)
+rem После git pull зависимости могли измениться: ставим, если requirements.txt отличается от установленного.
+fc /b requirements.txt ".venv\requirements.installed" >nul 2>&1 || (
+  echo [hardmode] Обновляю зависимости...
   ".venv\Scripts\python.exe" -m pip install -r requirements.txt || goto :fail
+  copy /y requirements.txt ".venv\requirements.installed" >nul
 )
 echo [hardmode] Запускаю в трее. Иконка появится рядом с часами; это окно можно закрыть.
 start "" ".venv\Scripts\pythonw.exe" "%~dp0start_tray.pyw"
