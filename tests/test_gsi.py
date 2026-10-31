@@ -213,3 +213,8 @@ def test_halftime_last_kill_and_death_still_count():
     p["player"]["state"]["health"] = 0
     ev = t3.handle(p, now=1.1)
     assert kills(ev) == [] and {"type": "death"} not in ev
+
+
+def test_cfg_timing_is_gentle_on_the_game():
+    cfg = build_cfg("http://127.0.0.1:17890/gsi", "tok")
+    assert '"buffer"     "0.03"' in cfg and '"throttle"   "0.05"' in cfg and '"timeout"    "1.0"' in cfg

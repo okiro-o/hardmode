@@ -333,9 +333,9 @@ def build_cfg(uri: str, token: str) -> str:
         '"Hardmode"\n'
         "{\n"
         f'  "uri"        "{uri}"\n'
-        '  "timeout"    "5.0"\n'
-        '  "buffer"     "0.0"\n'
-        '  "throttle"   "0.0"\n'
+        '  "timeout"    "1.0"\n'    # how long the game waits for our 2xx; short so a dead endpoint never stalls it
+        '  "buffer"     "0.03"\n'   # coalesce changes within 30 ms into one payload (a kill touches several fields)
+        '  "throttle"   "0.05"\n'   # at most ~20 payloads/s instead of a burst per field
         '  "heartbeat"  "10.0"\n'
         '  "auth"\n'
         "  {\n"
