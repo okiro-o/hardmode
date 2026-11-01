@@ -72,6 +72,7 @@ class ChatSettings:
     donation_template: str = "💸 {user}: {result}"
     on_request_done: bool = True            # a viewer weapon request was fulfilled
     request_done_template: str = "✅ {weapon} для {user} — выполнено"
+    queue_template: str = "📋 @{user}: {result}"   # answer to the queue chat command
     channel_login: str = ""                 # Twitch channel login (for the anonymous chat reader)
     min_interval_s: float = 2.0
 
@@ -84,7 +85,7 @@ class ChatSettings:
         s.channel_login = s.channel_login.strip().lstrip("#").lower()[:40] if isinstance(s.channel_login, str) else ""
         s.se_jwt = s.se_jwt.strip() if isinstance(s.se_jwt, str) else ""
         for t in ("start_template", "weapon_template", "dpi_template", "viewer_template", "reject_template",
-                  "donation_template", "request_done_template"):
+                  "donation_template", "request_done_template", "queue_template"):
             v = getattr(s, t)
             if not isinstance(v, str):
                 raise ValueError(f"{t}: нужна строка")
@@ -134,6 +135,7 @@ class ChatNotifier:
         self.log: list[dict] = []
         self._reject_seen: dict[str, float] = {}   # user -> last rejection message time
         self._donation_seq = 0
+        self._queue_seen: dict[str, float] = {}     # user -> last answer to the queue command
 
     # ------------------------------------------------------------------ status
     def status(self) -> dict:
@@ -216,6 +218,22 @@ class ChatNotifier:
             self._donation_seq += 1
             self._enqueue(f"request:{self._donation_seq}",
                           render_template(self.settings.request_done_template, user=user, weapon=weapon, **extra))
+
+    def notify_queue_reply(self, user: str, result: str) -> bool:
+        """Answer the queue command; one answer per viewer per 15 s so the command cannot flood the chat."""
+        if not (self.settings.enabled and self.settings.se_jwt):
+            return False
+        key = (user or "").lower()
+        now = time.monotonic()
+        if now - self._queue_seen.get(key, 0.0) < 15.0:
+            return False
+        self._queue_seen[key] = now
+        if len(self._queue_seen) > 500:
+            for k, t in list(self._queue_seen.items()):
+                if now - t > 600:
+                    self._queue_seen.pop(k, None)
+        self._enqueue(f"queue:{key}", render_template(self.settings.queue_template, user=user, result=result))
+        return True
 
     def notify_reject(self, user: str, reason: str, **extra: Any) -> bool:
         """Tell a viewer why their value was not accepted (rate-limited per viewer)."""

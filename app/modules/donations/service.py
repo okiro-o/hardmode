@@ -76,6 +76,7 @@ class DonationSettings:
     rules: list = field(default_factory=lambda: [dict(r) for r in DEFAULT_RULES])
     aliases_extra: str = ""             # user additions, «алиас = оружие» per line
     queue_autocomplete: bool = True     # a kill with the requested weapon closes the request
+    queue_command: str = "!очередь"     # chat command: the bot answers with the viewer's place in the queue
     da_poll_s: float = 5.0
     dp_poll_s: float = 20.0
 
@@ -89,6 +90,7 @@ class DonationSettings:
             v = getattr(s, k)
             setattr(s, k, v.strip()[:200] if isinstance(v, str) else "")
         s.aliases_extra = s.aliases_extra[:5000] if isinstance(s.aliases_extra, str) else ""
+        s.queue_command = s.queue_command.strip().lower()[:30] if isinstance(s.queue_command, str) else ""
         s.rules = _rules(s.rules)
         s.da_poll_s = max(2.0, min(120.0, config.to_float(s.da_poll_s, "da_poll_s")))
         s.dp_poll_s = max(20.0, min(300.0, config.to_float(s.dp_poll_s, "dp_poll_s")))

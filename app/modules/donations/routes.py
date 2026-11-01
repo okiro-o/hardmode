@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from ... import weapons as W
-from ...web import NO_STORE, json_body as _json
+from ...web import NO_STORE, json_body as _json, page
 from . import aliases as A
 from .providers import Donation, ProviderError
 
@@ -122,6 +122,11 @@ async def aliases_check(request: Request) -> dict:
 
 
 # ----------------------------------------------------------------------------- viewer queue
+@router.get("/overlay/requests", response_class=HTMLResponse)
+async def overlay_requests() -> HTMLResponse:
+    return page("overlay_requests.html")
+
+
 @router.get("/api/queue")
 async def queue_status(request: Request) -> dict:
     return _state(request).queue.snapshot()

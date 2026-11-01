@@ -269,3 +269,53 @@ def test_da_callback_page_reports_bad_state(client):
     r = client.get("/donations/da/callback?code=x&state=y")
     assert r.status_code == 200 and "устарела" in r.text and "no-store" in r.headers.get("cache-control", "")
     assert client.post("/api/donations/da/connect", json={}).status_code == 400   # no app id/secret yet
+
+
+# ----------------------------------------------------------------------------- queue widget & chat command
+def test_queue_describe_for_viewer():
+    import tempfile, os
+    q = ViewerQueue(os.path.join(tempfile.mkdtemp(), "q.json"))
+    assert q.describe_for("Alice") == "очередь пуста"
+    q.add("awp", "", "Bob"); q.add(None, "?", "alice"); q.add("ak47", "", "Carl"); q.add("nova", "", "Dan")
+    assert q.describe_for("Alice", "alice_login") == "твои заявки: оружие уточняется — №2"
+    assert q.describe_for("Eve") == "у тебя нет заявок. В очереди 4: AWP, оружие уточняется, AK-47…"
+
+
+def test_queue_chat_command_answers_and_starts_reader(client, monkeypatch):
+    st = client.app.state.app
+    replies, started = [], []
+    monkeypatch.setattr(st.chat, "notify_queue_reply", lambda user, result: replies.append((user, result)) or True)
+    monkeypatch.setattr(st.twitch, "start", lambda channel: started.append(channel))
+    client.post("/api/queue/add", json={"weapon": "awp", "user": "Viewer_One"})
+    client.post("/api/twitch/chat", json={"user": "Viewer_One", "text": "!очередь"})
+    client.post("/api/twitch/chat", json={"user": "Other", "text": "!ОЧЕРЕДЬ пж"})
+    client.post("/api/twitch/chat", json={"user": "Other", "text": "!очередьх"})
+    assert replies == [("Viewer_One", "твои заявки: AWP — №1"), ("Other", "у тебя нет заявок. В очереди 1: AWP")]
+    # the reader runs for the command only when the SE bot can answer and a channel is set
+    client.post("/api/settings", json={"chat": {"channel_login": "mychannel"}})
+    assert started == []
+    client.post("/api/settings", json={"chat": {"enabled": True, "se_jwt": "x.e30.y"}})
+    assert started == ["mychannel"]
+    client.post("/api/settings", json={"donations": {"queue_command": ""}})
+    client.post("/api/twitch/chat", json={"user": "Viewer_One", "text": "!очередь"})
+    assert len(replies) == 2
+
+
+def test_queue_reply_is_rate_limited_per_viewer():
+    from app.chat import ChatNotifier, ChatSettings
+    sent = []
+    n = ChatNotifier(ChatSettings(enabled=True, se_jwt="x"), lambda *a: None)
+    n._enqueue = lambda kind, msg: sent.append(msg)
+    assert n.notify_queue_reply("Alice", "очередь пуста") is True
+    assert n.notify_queue_reply("alice", "очередь пуста") is False
+    assert n.notify_queue_reply("Bob", "очередь пуста") is True
+    assert sent == ["📋 @Alice: очередь пуста", "📋 @Bob: очередь пуста"]
+    assert ChatNotifier(ChatSettings(), lambda *a: None).notify_queue_reply("A", "x") is False   # bot off
+
+
+def test_queue_widget_page_and_settings(client):
+    r = client.get("/overlay/requests")
+    assert r.status_code == 200 and "Очередь зрителей" in r.text and "no-store" in r.headers["cache-control"]
+    body = client.post("/api/settings", json={"overlay": {"queue_max": 99, "queue_amount": "1", "queue_title": False}}).json()
+    assert (body["overlay"]["queue_max"], body["overlay"]["queue_amount"], body["overlay"]["queue_title"]) == (10, True, False)
+    assert client.get("/api/state").json()["urls"]["overlay_requests"].endswith("/overlay/requests")

@@ -179,9 +179,12 @@ class AppState:
 
     # ------------------------------------------------------------ twitch chat
     def sync_twitch(self) -> None:
-        """Start/stop the anonymous chat reader according to the settings."""
+        """Start/stop the anonymous chat reader: needed for viewer DPI values, and for the queue command
+        when the StreamElements bot can answer it."""
         channel = self.chat.settings.channel_login
-        if self.dpi.settings.viewer_enabled and channel:
+        cs = self.chat.settings
+        queue_cmd = bool(self.donations.settings.queue_command and cs.enabled and cs.se_jwt)
+        if channel and (self.dpi.settings.viewer_enabled or queue_cmd):
             self.twitch.start(channel)
         else:
             self.twitch.stop()
@@ -190,6 +193,8 @@ class AppState:
         self.broker.call_threadsafe(self.handle_chat_message, msg)
 
     def handle_chat_message(self, msg: IrcMessage) -> None:
+        if self._queue_command(msg):
+            return
         s = self.dpi.settings
         if not s.viewer_enabled:
             return
@@ -213,6 +218,16 @@ class AppState:
             if not res["ok"]:
                 self._viewer_rejected(user, text, res["error"])
 
+    def _queue_command(self, msg: IrcMessage) -> bool:
+        """``!очередь``: the bot tells the viewer where their requests are. Returns True if handled."""
+        cmd = self.donations.settings.queue_command
+        text = (msg.trailing or "").strip().lower()
+        if not cmd or not (text == cmd or text.startswith(cmd + " ")):
+            return False
+        user = msg.display_name or msg.user
+        self.chat.notify_queue_reply(user, self.queue.describe_for(user, msg.user))
+        return True
+
     def _viewer_rejected(self, user: str, text: str, error: str) -> None:
         self.dpi._log("viewer", f"{user}: «{text[:30]}» не принято ({error})")
         self.dpi._changed()
@@ -228,6 +243,7 @@ class AppState:
             "overlay_weapons": base + "/overlay/weapons",
             "overlay_loadout": base + "/overlay/loadout",
             "overlay_dpi": base + "/overlay/dpi",
+            "overlay_requests": base + "/overlay/requests",
             "gsi": base + "/gsi",
         }
 
@@ -577,7 +593,7 @@ def create_app() -> FastAPI:
                 except ValueError as e:
                     raise HTTPException(400, f"Некорректные настройки {label}: {e}")
                 setattr(s, section, owner.settings.to_dict())
-        if "dpi" in body or "chat" in body:
+        if "dpi" in body or "chat" in body or "donations" in body:
             state.sync_twitch()
         if "overlay" in body:
             rejected += [f"overlay.{k}" for k in s.overlay.apply(body["overlay"] or {})]

@@ -122,6 +122,9 @@ class OverlaySettings:
     align: str = "left"           # left | center | right (horizontal) == top | middle | bottom (vertical)
     loadout_layout: str = "rows"  # loadout overlay: "rows" (category per row) | "columns" (like the in-game screen)
     loadout_names: bool = True    # loadout overlay: weapon names under silhouettes
+    queue_max: int = 5            # viewer queue overlay: rows shown, the rest as «+ ещё N»
+    queue_amount: bool = False    # viewer queue overlay: show the donation amount
+    queue_title: bool = True      # viewer queue overlay: «Очередь зрителей» header
 
     def apply(self, patch: dict | None) -> list[str]:
         """Apply a validated patch. Returns a list of rejected keys (invalid values)."""
@@ -158,7 +161,12 @@ class OverlaySettings:
                     self.align = v
                 else:
                     rejected.append(k)
-            elif k in ("labels", "show_counter", "show_kills", "show_match", "loadout_names"):
+            elif k == "queue_max":
+                try:
+                    self.queue_max = max(1, min(10, int(float(v))))
+                except (TypeError, ValueError):
+                    rejected.append(k)
+            elif k in ("labels", "show_counter", "show_kills", "show_match", "loadout_names", "queue_amount", "queue_title"):
                 setattr(self, k, to_bool(v))
             else:
                 rejected.append(k)

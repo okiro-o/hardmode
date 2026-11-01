@@ -359,6 +359,7 @@
           <div id="requests-history" style="margin:6px 0;"></div>
           <div class="row">
             <label class="inline"><input type="checkbox" data-key="donations.queue_autocomplete"> Закрывать заявку киллом с этим оружием</label>
+            <label class="f" style="flex:1 1 200px;"><span>Команда в чате (пусто — выключена)</span><input type="text" data-key="donations.queue_command" placeholder="!очередь"></label>
             <button onclick="post('/api/queue/clear')">Очистить историю</button>
           </div>
         </details>
@@ -528,6 +529,18 @@
           <label class="inline" style="align-self:end;"><input type="checkbox" data-key="overlay.loadout_names"> Названия под силуэтами</label>
         </div>
         <div class="hint" style="margin-top:8px;">Размер источника: <b id="size-loadout">—</b>, обе стороны <b id="size-loadout-both">—</b></div>
+      </section>
+
+      <section>
+        <h2>Виджет зрительской очереди</h2>
+        <div class="url"><span class="name">Ссылка для OBS</span><code id="url-requests"></code><button onclick="copyText('url-requests')">Копировать</button><a id="open-requests" target="_blank"><button>Открыть</button></a></div>
+        <div class="form" style="margin-top:8px;">
+          <label class="f"><span>Строк на экране</span><input type="number" min="1" max="10" step="1" data-key="overlay.queue_max"></label>
+          <div></div>
+          <label class="inline"><input type="checkbox" data-key="overlay.queue_title"> Заголовок</label>
+          <label class="inline"><input type="checkbox" data-key="overlay.queue_amount"> Сумма доната</label>
+        </div>
+        <div class="hint" style="margin-top:8px;">Размер источника: <b id="size-requests">—</b></div>
       </section>
 
 <section>
@@ -781,6 +794,7 @@
             <label class="f full"><span>Отказ зрителю</span><input type="text" data-key="chat.reject_template"></label>
             <label class="f full"><span>Донат</span><input type="text" data-key="chat.donation_template"></label>
             <label class="f full"><span>Заявка выполнена</span><input type="text" data-key="chat.request_done_template"></label>
+            <label class="f full"><span>Ответ на команду очереди</span><input type="text" data-key="chat.queue_template"></label>
           </div>
         </details>
         <div class="log compact" id="chat-log" style="margin-top:10px;"></div><button class="logtoggle" onclick="toggleLog(this)">развернуть</button>
@@ -1229,6 +1243,7 @@ function renderMisc() {
   $('version').textContent = 'v' + S.version;
   $('url-weapons').textContent = S.urls.overlay_weapons; $('open-weapons').href = S.urls.overlay_weapons + '?bg=1b1e26';
   $('url-loadout').textContent = S.urls.overlay_loadout; $('open-loadout').href = S.urls.overlay_loadout + '?bg=1b1e26';
+  $('url-requests').textContent = S.urls.overlay_requests; $('open-requests').href = S.urls.overlay_requests + '?bg=1b1e26';
   $('url-dpi').textContent = S.urls.overlay_dpi; $('open-dpi').href = S.urls.overlay_dpi + '?bg=1b1e26';
   $('gsi-uri').textContent = S.urls.gsi;
   $('cs2-dir').textContent = S.cs2_cfg_dir || 'не найдена автоматически — скачайте конфиг и положите в game/csgo/cfg вручную';
@@ -1290,6 +1305,12 @@ function weaponsBox(o, r) {
   const w = 24 + totalW * sc, h = 24 + (totalH + (counter ? counterGap + counter : 0)) * sc;
   return [Math.ceil(w), Math.ceil(h)];
 }
+function queueBox(o) {
+  // mirrors overlay_requests.html: pad 14, title 40, rows of 56 with gap 8, «+ ещё N» line 28 (+8)
+  const n = Math.max(1, Math.min(10, +o.queue_max || 5));
+  const h = 14 * 2 + (o.queue_title !== false ? 40 : 0) + n * 56 + (n - 1) * 8 + 36;
+  return [420, h];   // the panel's «Масштаб» belongs to the weapons widget; this one scales only via ?scale=
+}
 function loadoutBox(o, both) {
   const names = o.loadout_names !== false; const cellH = names ? 64 : 46; const PAD = 14, TITLE = 44;
   if (o.loadout_layout === 'columns') {
@@ -1309,6 +1330,7 @@ function renderSizes() {
   $('size-weapons').textContent = txt;
   const [lw, lh] = loadoutBox(o, false), [bw, bh] = loadoutBox(o, true);
   $('size-loadout').textContent = `${lw}×${lh}`; $('size-loadout-both').textContent = `${bw}×${bh}`;
+  const [qw, qh] = queueBox(o); $('size-requests').textContent = `${qw}×${qh}`;
 }
 
 function renderChecks() {
@@ -1329,7 +1351,7 @@ function renderChecks() {
   if (r.loadout) req.push(item('ok', 'Лоадаут', r.running ? 'сгенерирован, гонка идёт' : 'сгенерирован, выставьте его в игре и нажмите «Старт»', `<button onclick="showMainTab('weapons')">Открыть</button>`));
   else req.push(item('warn', 'Лоадаут', 'ещё не сгенерирован', `<button class="primary" onclick="post('/api/loadout/generate',{sides:['T','CT']})">Сгенерировать</button>`));
   // 3. OBS: weapon widget
-  const wObs = obs('weapons'), lObs = obs('loadout'), dObs = obs('dpi');
+  const wObs = obs('weapons'), lObs = obs('loadout'), dObs = obs('dpi'), qObs = obs('requests');
   req.push(item(wObs ? 'ok' : 'warn', 'OBS: виджет оружия', wObs ? `подключён из OBS (${wObs})` : (brw('weapons') ? 'открыт только в браузере, в OBS источника пока нет' : 'добавьте источник «Браузер» с этой ссылкой: ' + (S.urls ? S.urls.overlay_weapons : '')), `<button onclick="copyText('url-weapons')">Скопировать ссылку</button>`));
   // 4. Mouse (if DPI enabled)
   const ds = d.settings || {}, m = d.mouse || {};
@@ -1348,6 +1370,7 @@ function renderChecks() {
   $('checks').innerHTML = req.join('');
   // optional
   const opt = [];
+  opt.push(item(qObs ? 'ok' : 'off', 'OBS: виджет зрительской очереди', qObs ? `подключён из OBS (${qObs})` : 'заявки зрителей на стриме: ' + (S.urls ? S.urls.overlay_requests || '' : ''), `<button onclick="copyText('url-requests')">Скопировать ссылку</button>`));
   opt.push(item(lObs ? 'ok' : 'off', 'OBS: виджет лоадаута', lObs ? `подключён из OBS (${lObs})` : 'для предматчевой паузы: ' + (S.urls ? S.urls.overlay_loadout : ''), `<button onclick="copyText('url-loadout')">Скопировать ссылку</button>`));
   const cs = c.settings || {};
   if (cs.enabled) opt.push(item(cs.se_jwt_set && !c.last_error ? 'ok' : 'warn', 'Чат через StreamElements', !cs.se_jwt_set ? 'нет токена' : c.last_error ? 'ошибка: ' + c.last_error : (c.channel && c.channel.username ? `канал ${c.channel.username}` : 'токен сохранён, нажмите «Проверить»'), `<button onclick="verifyChat()">Проверить</button><button onclick="showMainTab('general')">Настроить</button>`));

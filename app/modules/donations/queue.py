@@ -147,6 +147,20 @@ class ViewerQueue:
             self.entries = self.pending()
         self._changed()
 
+    def describe_for(self, *names: str) -> str:
+        """Answer to the chat command: this viewer's requests with positions, else a short overview."""
+        wanted = {n.lower() for n in names if n}
+        with self._lock:
+            pend = self.pending()
+            mine = [(i + 1, e) for i, e in enumerate(pend) if str(e.get("user", "")).lower() in wanted]
+            label = lambda e: (W.BY_ID[e["weapon"]].name if e.get("weapon") in W.BY_ID else "оружие уточняется")
+            if mine:
+                return "твои заявки: " + ", ".join(f"{label(e)} — №{n}" for n, e in mine[:5])
+            if not pend:
+                return "очередь пуста"
+            top = ", ".join(label(e) for e in pend[:3]) + ("…" if len(pend) > 3 else "")
+            return f"у тебя нет заявок. В очереди {len(pend)}: {top}"
+
     def on_kill(self, weapon: str | None) -> dict | None:
         """A kill with ``weapon``: close the oldest open request for it. Returns the closed entry."""
         if not weapon:

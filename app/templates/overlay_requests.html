@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Hardmode — viewer queue overlay</title>
+<style>
+  /* Deterministic geometry (pre-scale), mirrored by queueBox() in the panel for the OBS source size:
+     width 420 | pad 14 | title 40 | row 56, gap 8 | "+ ещё N" line 28 (+8 gap) */
+  html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+  body { font-family: "Segoe UI", Roboto, Arial, sans-serif; }
+  #root { --color: #ffffff; --accent: #ffd166; --ok: #4cd964; color: var(--color); position: absolute; left: 0; top: 0;
+          transform-origin: 0 0; width: 392px; padding: 14px; }
+  #root.empty { display: none; }
+  h1 { margin: 0; height: 40px; line-height: 32px; font-size: 22px; letter-spacing: .12em; text-transform: uppercase;
+       text-shadow: 0 2px 8px rgba(0,0,0,.85); white-space: nowrap; }
+  h1 span { color: var(--accent); }
+  .no-title h1 { display: none; }
+  .rows { display: flex; flex-direction: column; gap: 8px; }
+  .row { display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 10px; border-radius: 12px;
+         background: rgba(10, 12, 18, .55); box-sizing: border-box; }
+  .row.new { animation: in .35s ease-out both; }
+  .row.first { box-shadow: inset 3px 0 0 var(--accent); }
+  .row .n { width: 22px; font-size: 18px; font-weight: 800; text-align: center; opacity: .8; }
+  .row.first .n { color: var(--accent); opacity: 1; }
+  .row .iconwrap { flex: 0 0 110px; height: 40px; filter: drop-shadow(0 2px 5px rgba(0,0,0,.6)); }
+  .row .icon { width: 100%; height: 100%; background: var(--color); -webkit-mask: var(--mask) no-repeat center / contain; mask: var(--mask) no-repeat center / contain; }
+  .row.first .icon { background: var(--accent); }
+  .row .q { width: 100%; height: 100%; display: grid; place-items: center; font-size: 26px; font-weight: 800; opacity: .8; }
+  .row .text { min-width: 0; flex: 1; }
+  .row .w { font-size: 17px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 4px rgba(0,0,0,.9); }
+  .row .u { font-size: 13px; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 4px rgba(0,0,0,.9); }
+  .row.done { animation: out 1.6s ease-in both; box-shadow: inset 3px 0 0 var(--ok); }
+  .row.done .n { color: var(--ok); opacity: 1; }
+  .row.done .icon { background: var(--ok); }
+  .more { height: 28px; line-height: 28px; margin-top: 8px; padding-left: 12px; font-size: 14px; opacity: .8; text-shadow: 0 1px 4px rgba(0,0,0,.9); }
+  @keyframes in { from { opacity: 0; transform: translateX(-24px); } to { opacity: 1; transform: none; } }
+  @keyframes out { 0%, 55% { opacity: 1; transform: none; } 100% { opacity: 0; transform: translateX(24px); } }
+</style>
+</head>
+<body>
+<div id="root" class="empty"></div>
+<script>
+(() => {
+  const qs = new URLSearchParams(location.search);
+  const root = document.getElementById('root');
+  const hex = v => /^#?[0-9a-fA-F]{6}$/.test(v) ? '#' + v.replace('#', '') : null;
+  const bool = v => v === '1' || v === 'true' || v === 'yes';
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, ch => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch]));
+  if (qs.has('bg') && hex(qs.get('bg'))) document.body.style.background = hex(qs.get('bg'));
+  let cfg = { color: '#ffffff', accent: '#ffd166', queue_max: 5, queue_amount: false, queue_title: true };
+  let queue = { pending: [], history: [] };
+  let known = null;              // ids pending at the previous update
+  const leaving = new Map();     // id -> {entry, t0}: shown with a ✓ for a moment after it was fulfilled
+  let rendered = new Set();      // ids on screen: only rows that were not there yet slide in
+
+  function money(a, cur) { const c = ({'': '₽', RUB: '₽', USD: '$', EUR: '€'})[(cur || '').toUpperCase()] ?? cur; return `${+a} ${c}`; }
+  function opt() {
+    const n = parseInt(qs.get('max'), 10);
+    return {
+      color: (qs.has('color') && hex(qs.get('color'))) || cfg.color,
+      accent: (qs.has('accent') && hex(qs.get('accent'))) || cfg.accent,
+      max: Number.isFinite(n) ? Math.max(1, Math.min(10, n)) : cfg.queue_max,
+      amount: qs.has('amount') ? bool(qs.get('amount')) : cfg.queue_amount,
+      title: qs.has('title') ? bool(qs.get('title')) : cfg.queue_title,
+      scale: parseFloat(qs.get('scale')) || 1,
+    };
+  }
+  function row(e, i, o, cls = '', style = '') {
+    const icon = e.icon ? `<div class="icon" style="--mask:url('${e.icon}')"></div>` : '<div class="q">?</div>';
+    const who = `от ${esc(e.user)}` + (o.amount && e.amount != null ? ` · ${money(e.amount, e.currency)}` : '');
+    return `<div class="row ${cls}" style="${style}"><div class="n">${cls === 'done' ? '✓' : i + 1}</div><div class="iconwrap">${icon}</div>`
+         + `<div class="text"><div class="w">${esc(e.name || 'оружие уточняется')}</div><div class="u">${who}</div></div></div>`;
+  }
+  function render() {
+    const o = opt();
+    root.style.setProperty('--color', o.color);
+    root.style.setProperty('--accent', o.accent);
+    root.style.transform = `scale(${o.scale})`;
+    root.classList.toggle('no-title', !o.title);
+    const pending = queue.pending || [];
+    const ghosts = [...leaving.values()].slice(0, o.max);
+    const shown = pending.slice(0, Math.max(0, o.max - ghosts.length));   // ✓-rows count: the OBS source never overflows
+    const now = performance.now();
+    root.classList.toggle('empty', !pending.length && !ghosts.length);
+    root.innerHTML = `<h1>Очередь зрителей <span>${pending.length || ''}</span></h1><div class="rows">`
+      + ghosts.map(g => row(g.entry, 0, o, 'done', `animation-delay:-${((now - g.t0) / 1000).toFixed(2)}s`)).join('')
+      + shown.map((e, i) => row(e, i, o, (i === 0 ? 'first ' : '') + (rendered.has(e.id) ? '' : 'new'))).join('')
+      + '</div>' + (pending.length > shown.length ? `<div class="more">+ ещё ${pending.length - shown.length}</div>` : '');
+    rendered = new Set(shown.map(e => e.id));
+  }
+  function update(q) {
+    const ids = new Set((q.pending || []).map(e => e.id));
+    if (known) {
+      for (const h of q.history || []) {
+        if (h.status === 'done' && known.has(h.id) && !ids.has(h.id) && !leaving.has(h.id)) {
+          leaving.set(h.id, { entry: h, t0: performance.now() });
+          setTimeout(() => { leaving.delete(h.id); render(); }, 1600);
+        }
+      }
+    }
+    known = ids;
+    queue = q;
+    render();
+  }
+
+  const es = new EventSource('/events');
+  es.addEventListener('snapshot', e => { const d = JSON.parse(e.data); cfg = { ...cfg, ...(d.overlay || {}) }; known = null; update(d.queue || { pending: [], history: [] }); });
+  es.addEventListener('queue', e => update(JSON.parse(e.data)));
+  es.addEventListener('settings', e => { const d = JSON.parse(e.data); cfg = { ...cfg, ...(d.overlay || {}) }; render(); });
+})();
+</script>
+</body>
+</html>
