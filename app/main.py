@@ -97,8 +97,8 @@ class AppState:
                                          publish=self.broker.publish, call_threadsafe=self.broker.call_threadsafe)
         self.donations.add_wheel = lambda v, u: self.dpi.add_viewer_value(v, u, source="donation", per_user_limit=False)
         self.donations.force_next = lambda v, u: self.dpi.force_next(v, u, source="donation")
-        self.donations.queue_weapon = lambda w, text, user, amount, cur, guess=False: self.queue.add(
-            w, text, user, amount, cur, guess=guess)
+        self.donations.queue_weapon = lambda w, text, user, amount, cur, by_side=None: self.queue.add(
+            w, text, user, amount, cur, by_side=by_side)
         self.donations.current_side = lambda: self.gsi.status.team or self.roulette.side
         self.donations.chat_result = lambda user, text: self.chat.notify_donation(user, text, ok=True)
         self.donations.chat_reject = lambda user, text: self.chat.notify_donation(user, text, ok=False)

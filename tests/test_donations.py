@@ -111,8 +111,8 @@ class Harness:
         self.svc.add_wheel = lambda v, u: (self.calls.append(("wheel", v, u)) or {"ok": True, "value": v})
         self.svc.force_next = lambda v, u: (self.calls.append(("next", v, u)) or
                                             ({"ok": False, "error": "вне диапазона 400–6400"} if v > 6400 else {"ok": True, "value": v}))
-        self.svc.queue_weapon = lambda w, text, user, amount, cur, guess=False: (
-            self.calls.append(("weapon", w, user, guess)) or {"name": {"awp": "AWP"}.get(w), "position": 1})
+        self.svc.queue_weapon = lambda w, text, user, amount, cur, by_side=None: (
+            self.calls.append(("weapon", w, user, by_side)) or {"name": {"awp": "AWP"}.get(w), "position": 1})
         self.svc.chat_result = lambda u, t: self.chat.append(("ok", u, t))
         self.svc.chat_reject = lambda u, t: self.chat.append(("no", u, t))
 
@@ -144,7 +144,7 @@ def test_keyword_rule_queues_unrecognised_weapon_and_max_bound(tmp_path):
              {"enabled": False, "min": 0, "max": 0, "keyword": "", "action": "next_dpi"}]
     h = Harness(tmp_path, rules=rules)
     assert h.donate(150, "!ствол базука")["text"] == "оружие (уточнит стример) в очереди, №1"
-    assert h.calls[-1] == ("weapon", None, "Alice", False)
+    assert h.calls[-1] == ("weapon", None, "Alice", None)
     assert h.donate(150, "awp")["text"] == "без действия"                  # no keyword: weapon rule skipped
     assert h.donate(250, "1600")["text"] == "без действия"                 # above max of the wheel rule
     assert h.donate(150, "1600")["action"] == "wheel_value"
@@ -154,12 +154,12 @@ def test_ambiguous_weapon_uses_the_current_side(tmp_path):
     h = Harness(tmp_path)
     h.svc.current_side = lambda: "CT"
     h.donate(300, "плетку плиз")
-    assert h.calls[-1] == ("weapon", "scar20", "Alice", True)
+    assert h.calls[-1] == ("weapon", "scar20", "Alice", "CT")
     h.svc.current_side = lambda: "T"
     h.donate(300, "плетку")
-    assert h.calls[-1] == ("weapon", "g3sg1", "Alice", True)
+    assert h.calls[-1] == ("weapon", "g3sg1", "Alice", "T")
     h.donate(300, "awp")
-    assert h.calls[-1] == ("weapon", "awp", "Alice", False)
+    assert h.calls[-1] == ("weapon", "awp", "Alice", None)
 
 
 def test_rules_validation():

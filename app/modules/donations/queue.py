@@ -75,8 +75,8 @@ class ViewerQueue:
 
     # ------------------------------------------------------------------ changes
     def add(self, weapon: str | None, text: str, user: str, amount: float | None = None,
-            currency: str = "", source: str = "donation", guess: bool = False) -> dict:
-        """``guess``: the alias named several weapons and one was picked by side — the panel offers to change it."""
+            currency: str = "", source: str = "donation", by_side: str | None = None) -> dict:
+        """``by_side``: the alias named several weapons («плётка») and the one of this side was taken."""
         if weapon is not None and weapon not in W.BY_ID:
             weapon = None
         with self._lock:
@@ -84,7 +84,7 @@ class ViewerQueue:
                 raise ValueError("очередь переполнена")
             entry = {"id": self._next_id, "weapon": weapon, "text": str(text or "")[:200], "user": str(user or "?")[:40],
                      "amount": amount, "currency": currency, "source": source, "t": time.time(), "status": "pending",
-                     "guess": bool(guess)}
+                     "by_side": by_side}
             self._next_id += 1
             self.entries.append(entry)
             position = len(self.pending())
@@ -121,7 +121,7 @@ class ViewerQueue:
             if not e or e["status"] != "pending":
                 return None
             e["weapon"] = weapon
-            e["guess"] = False
+            e["by_side"] = None
         self._changed()
         return self._view(e)
 

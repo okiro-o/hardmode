@@ -400,7 +400,8 @@ class DonationService:
             side = self.current_side()
             wid = next((w for w in candidates if side and W.BY_ID[w].usable_by(side)), candidates[0] if candidates else None)
             try:
-                e = self.queue_weapon(wid, d.message, d.user, d.amount, d.currency, guess=len(candidates) > 1)
+                e = self.queue_weapon(wid, d.message, d.user, d.amount, d.currency,
+                                      by_side=side if len(candidates) > 1 else None)
             except ValueError as err:
                 return {"ok": False, "action": action, "text": str(err)}
             what = e.get("name") or "оружие (уточнит стример)"
