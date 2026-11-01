@@ -410,3 +410,71 @@ def test_reward_request_chat_message():
     assert [m for _, m in sent] == ["🎯 Alice заказал AWP, №2 в очереди", "🎯 Alice заказал AK-47, №3 в очереди"]
     assert sent[0][0] != sent[1][0]                                # never merged: points were spent
     assert ChatSettings.from_dict({"on_request": "0"}).on_request is False
+
+
+# ----------------------------------------------------------------------------- queue order by loadout
+def _q(avail):
+    import tempfile, os
+    published = []
+    q = ViewerQueue(os.path.join(tempfile.mkdtemp(), "q.json"), publish=lambda ev, d: published.append(d))
+    q.available = lambda: avail["ids"]
+    return q, published
+
+
+def test_queue_puts_weapons_outside_loadout_last():
+    avail = {"ids": {"awp", "ak47", "deagle", "knife"}}
+    q, _ = _q(avail)
+    assert q.add("awp", "", "A")["position"] == 1
+    out = q.add("negev", "", "B")
+    assert (out["position"], out["in_loadout"]) == (2, False)
+    q.add(None, "базука", "C")                                      # unrecognised: stays where it came
+    assert q.add("ak47", "", "D")["position"] == 3                   # jumps over the Negev
+    q.add("nova", "", "E")
+    snap = q.snapshot()["pending"]
+    assert [(e["weapon"], e["in_loadout"]) for e in snap] == [
+        ("awp", True), (None, True), ("ak47", True), ("negev", False), ("nova", False)]
+    assert q.describe_for("B") == "твои заявки: Negev — №4"
+    # ↑ cannot lift a request outside the loadout over the playable ones; inside its group it moves
+    neg, nova = snap[3]["id"], snap[4]["id"]
+    assert q.move(neg, -1) is False and q.move(snap[2]["id"], 1) is False
+    assert q.move(nova, -1) is True
+    assert [e["weapon"] for e in q.snapshot()["pending"]][3:] == ["nova", "negev"]
+    # a kill with the weapon still closes it
+    assert q.on_kill("negev")["user"] == "B"
+
+
+def test_queue_without_loadout_keeps_arrival_order_and_refresh_republishes():
+    avail = {"ids": None}
+    q, published = _q(avail)
+    q.add("negev", "", "A"); q.add("awp", "", "B")
+    assert [e["weapon"] for e in q.snapshot()["pending"]] == ["negev", "awp"]
+    assert all(e["in_loadout"] for e in q.snapshot()["pending"])
+    n = len(published)
+    q.refresh()                                                     # still no loadout: nothing to say
+    assert len(published) == n
+    avail["ids"] = {"awp"}
+    q.refresh()
+    assert len(published) == n + 1 and [e["weapon"] for e in published[-1]["pending"]] == ["awp", "negev"]
+    q.refresh()                                                     # same loadout: no repeat
+    assert len(published) == n + 1
+
+
+def test_queue_order_follows_the_app_loadout(client):
+    st = client.app.state.app
+    assert st.loadout_weapons() is None                             # no loadout yet: arrival order
+    lo = {"T": {"starting": "glock", "pistol": ["p250", "elite", "tec9", "cz75a"],
+                "mid": ["mac10", "mp7", "mp5sd", "ump45", "p90"], "rifle": ["galilar", "ak47", "sg556", "ssg08", "awp"]},
+          "CT": {"starting": "usp_silencer", "pistol": ["p250", "elite", "fiveseven", "cz75a"],
+                 "mid": ["mp9", "mp7", "mp5sd", "ump45", "p90"], "rifle": ["famas", "m4a1", "m4a1_silencer", "aug", "ssg08"]}}
+    client.post("/api/queue/add", json={"weapon": "negev", "user": "A"})
+    client.post("/api/queue/add", json={"weapon": "hkp2000", "user": "B"})   # CT starts with the USP-S
+    client.post("/api/queue/add", json={"weapon": "m4a1", "user": "C"})
+    client.post("/api/queue/add", json={"weapon": "taser", "user": "D"})
+    order = lambda: [e["weapon"] for e in client.get("/api/queue").json()["pending"]]
+    assert order() == ["negev", "hkp2000", "m4a1", "taser"]
+    st.roulette.set_loadout(lo)
+    assert {"knife", "taser", "glock", "usp_silencer"} <= st.loadout_weapons()
+    assert order() == ["m4a1", "taser", "negev", "hkp2000"]
+    # the streamer puts the requested weapon into the loadout: the request moves up at once
+    st.roulette.set_loadout({**lo, "CT": {**lo["CT"], "mid": ["mp9", "mp7", "mp5sd", "ump45", "negev"]}})
+    assert order() == ["negev", "m4a1", "taser", "hkp2000"]

@@ -115,6 +115,7 @@
   .req .icon.unknown { -webkit-mask:none; mask:none; background:transparent; color:var(--accent); font-size:22px; text-align:center; line-height:32px; }
   .req .body { flex:1; min-width:0; }
   .req .body .who { color:var(--muted); font-size:12px; }
+  .req .body .who.out { color:var(--accent); }
   .req .body .txt { color:var(--muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .req .acts { display:flex; gap:4px; }
   .req .acts button { padding:4px 9px; }
@@ -1069,12 +1070,12 @@ function renderRequests() {
   chip.className = 'chip' + (n ? ' warn' : ''); chip.querySelector('b').textContent = n ? `заявок: ${n}` : 'пусто';
   $('requests').innerHTML = n ? q.pending.map((e, i) => `<div class="req ${i === 0 ? 'first' : ''}">
       ${e.icon ? `<div class="icon" style="--mask:url('${e.icon}')"></div>` : '<div class="icon unknown">?</div>'}
-      <div class="body"><div><b>${esc(e.name || 'не распознано')}</b>${e.by_side ? ` <span class="who">(за ${esc(e.by_side)})</span>` : ''} <span class="who">${esc(e.user)}${e.amount != null ? ' · ' + fmtMoney(e.amount, e.currency) : ''}${e.source === 'reward' ? ' · баллы' : ''} · ${fmtTime(e.t).slice(0, 5)}</span></div>
+      <div class="body"><div><b>${esc(e.name || 'не распознано')}</b>${e.by_side ? ` <span class="who">(за ${esc(e.by_side)})</span>` : ''} <span class="who">${esc(e.user)}${e.amount != null ? ' · ' + fmtMoney(e.amount, e.currency) : ''}${e.source === 'reward' ? ' · баллы' : ''} · ${fmtTime(e.t).slice(0, 5)}</span>${e.in_loadout === false ? ' <span class="who out">не в лоадауте</span>' : ''}</div>
         ${e.text ? `<div class="txt" title="${esc(e.text)}">«${esc(e.text)}»</div>` : ''}</div>
       <div class="acts">
         ${e.name ? '' : `<button onclick="openAnyPicker(event, 'Какое оружие?', w => post('/api/queue/resolve', {id: ${e.id}, weapon: w}))">Выбрать</button>`}
         <button title="Выполнено" onclick="post('/api/queue/done', {id: ${e.id}})">✓</button>
-        <button title="Выше" onclick="post('/api/queue/move', {id: ${e.id}, delta: -1})" ${i === 0 ? 'disabled' : ''}>↑</button>
+        <button title="Выше" onclick="post('/api/queue/move', {id: ${e.id}, delta: -1})" ${i === 0 || (q.pending[i - 1].in_loadout !== false) !== (e.in_loadout !== false) ? 'disabled' : ''}>↑</button>
         <button title="Убрать" onclick="post('/api/queue/dismiss', {id: ${e.id}})">×</button>
       </div></div>`).join('') : '<div class="muted">Пусто. Сюда попадает оружие из донатов.</div>';
   $('requests-history').innerHTML = q.history.length ? q.history.map(e => `<div class="muted">${e.status === 'done' ? '✓' : '×'} ${esc(e.name || 'не распознано')} — ${esc(e.user)}${e.auto ? ' (киллом)' : ''}</div>`).join('') : '<div class="muted">пока ничего</div>';

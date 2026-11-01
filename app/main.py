@@ -88,6 +88,7 @@ class AppState:
         self._announced: tuple[bool, int | None] = (self.roulette.running, self.roulette.current_uid())
         self.ingame = IngameOverlays(self.settings.ingame, self.ingame_state, self.ingame_colors)
         self.queue = ViewerQueue(os.path.join(config.data_dir(), "viewer_queue.json"), publish=self.broker.publish)
+        self.queue.available = self.loadout_weapons
         try:
             donation_settings = DonationSettings.from_dict(self.settings.donations)
         except ValueError:
@@ -121,6 +122,15 @@ class AppState:
         self.save_state()
         self._announce_weapon()
         self.broker.publish("roulette", self.roulette.snapshot())
+        self.queue.refresh()          # a new loadout reorders the viewer queue
+
+    def loadout_weapons(self) -> set[str] | None:
+        """Everything the streamer can play with the current loadout (both sides, knife, zeus); None = no loadout."""
+        lo = self.roulette.loadout
+        if not lo:
+            return None
+        return {w for side in L.SIDES
+                for w in L.side_pool_ids(lo, side, include_starting=True, include_knife=True, include_zeus=True)}
 
     def _announce_weapon(self) -> None:
         """Chat notification when the current weapon changes (start, kill, button, reroll, side switch)."""
