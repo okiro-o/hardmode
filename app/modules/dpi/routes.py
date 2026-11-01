@@ -98,16 +98,6 @@ async def dpi_viewer_add(request: Request) -> dict:
     return res
 
 
-@router.post("/api/dpi/forced/remove")
-async def dpi_forced_remove(request: Request) -> dict:
-    body = await _json(request)
-    try:
-        idx = int(body.get("index"))
-    except (TypeError, ValueError):
-        raise HTTPException(400, "index")
-    return {"ok": _svc(request).remove_forced(idx)}
-
-
 @router.post("/api/dpi/viewer/remove")
 async def dpi_viewer_remove(request: Request) -> dict:
     body = await _json(request)

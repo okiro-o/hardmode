@@ -49,7 +49,6 @@ class DpiSettings:
     viewer_per_user: int = 1        # pending values per viewer
     viewer_reward_id: str = ""      # Twitch custom reward id (learned from the first redemption)
     viewer_command: str = ""        # optional chat command, e.g. "!dpi" (empty = rewards only)
-    viewer_announce: bool = True    # confirm additions in chat (through the StreamElements bot)
     home_dpi: int = 3200            # the streamer's normal DPI ("вернуть мой DPI"), highlighted on the wheel
     home_color: str = "#ff6b6b"     # overlay: colour of the home-DPI segment
     backend: str = "auto"           # auto | hidpp | fake | none
@@ -99,7 +98,7 @@ class DpiSettings:
         if s.wheel_mode not in ("spin", "always"):
             s.wheel_mode = "spin"
         for b in ("enabled", "auto_on_death", "auto_on_kill", "exclude_current", "guard", "show_current", "use_range",
-                  "viewer_enabled", "viewer_announce"):
+                  "viewer_enabled"):
             v = getattr(s, b)
             if isinstance(v, str):
                 v = v.strip().lower() not in ("", "0", "false", "no", "off", "нет")
@@ -136,7 +135,6 @@ class DpiService:
         self.busy = False
         self.consumed: list[int] = []           # bag mode: values already rolled in this cycle
         self.viewer_values: list[dict] = []     # [{value, user, t}] one-shot values added by viewers
-        self.forced: list[dict] = []            # [{value, user, t, source}] results ordered by donors, FIFO
         self.learn_reward = False               # next reward redemption seen in chat becomes the reward id
         self.on_applied: Callable[[int, str], None] | None = None   # external hook (chat notifications)
         self.on_spin: Callable[[int, str], None] | None = None      # external hook (statistics)
@@ -286,27 +284,6 @@ class DpiService:
         self._changed()
         return {"ok": True, "value": iv, "user": user}
 
-    def force_next(self, value: Any, user: str, source: str = "donation") -> dict:
-        """Queue a fixed result: the next spin lands on this value (added to the wheel for that spin)."""
-        iv, err = self._viewer_value(value)
-        if err:
-            return {"ok": False, "error": err}
-        if len(self.forced) >= 20:
-            return {"ok": False, "error": "очередь заказанных значений переполнена"}
-        entry = {"value": iv, "user": (user or "?")[:40], "t": time.time(), "source": source}
-        self.forced.append(entry)
-        self._log("viewer", f"{entry['user']} заказал следующий DPI: {iv} ({source})", value=iv, user=entry["user"])
-        self._changed()
-        return {"ok": True, "value": iv, "user": entry["user"], "position": len(self.forced)}
-
-    def remove_forced(self, index: int) -> bool:
-        if 0 <= index < len(self.forced):
-            e = self.forced.pop(index)
-            self._log("viewer", f"Убран заказ следующего DPI {e['value']} ({e.get('user')})")
-            self._changed()
-            return True
-        return False
-
     def remove_viewer_value(self, index: int) -> bool:
         if 0 <= index < len(self.viewer_values):
             e = self.viewer_values.pop(index)
@@ -353,7 +330,6 @@ class DpiService:
             "weights": weights,
             "wheel": self.wheel_info(segs),
             "learn_reward": self.learn_reward,
-            "forced": list(self.forced),
             "last_spin": self.last_spin,
             "log": self.log[-20:],
             "spins": self.spins,
@@ -375,24 +351,11 @@ class DpiService:
         idx = self._rng.choices(range(len(vals)), weights=w, k=1)[0]
         return idx, vals[idx], vals, weights
 
-    def _forced_pick(self, value: int) -> tuple[int, int, list[int], list[int]]:
-        """The wheel as it is, plus ``value`` as a normal segment if it is not on it; land on it."""
-        vals, weights = self.segments()
-        if value not in vals:
-            i = next((k for k, v in enumerate(vals) if v > value), len(vals))
-            vals = vals[:i] + [value] + vals[i:]
-            weights = weights[:i] + [1] + weights[i:]
-        return vals.index(value), value, vals, weights
-
     def spin(self, reason: str = "manual") -> dict:
         """Start a spin: choose the result, publish the animation, schedule the apply."""
         if not self.settings.enabled:
             raise ValueError("DPI-рулетка выключена в настройках")
-        forced = self.forced.pop(0) if self.forced else None
-        if forced:
-            idx, value, vals, weights = self._forced_pick(int(forced["value"]))
-        else:
-            idx, value, vals, weights = self.pick()
+        idx, value, vals, weights = self.pick()
         instant = len(vals) <= 1          # nothing to spin: the number just changes on screen
         self.spins += 1
         self._last_spin_at = time.monotonic()
@@ -410,7 +373,6 @@ class DpiService:
             "reason": reason,
             "apply_at": self.settings.apply_at,
             "applied": None,
-            "forced_by": forced["user"] if forced else None,
         }
         self.last_spin = spin
         self._consume(value)
@@ -419,9 +381,7 @@ class DpiService:
                 self.on_spin(value, reason)
             except Exception:
                 pass
-        if forced:
-            self._log("spin", f"Крутим: {value} DPI — заказал {forced['user']} ({reason})", value=value, reason=reason)
-        elif instant:
+        if instant:
             self._log("spin", f"{value} DPI без кручения: на колесе одно значение ({reason})", value=value, reason=reason)
         else:
             self._log("spin", f"Крутим: {value} DPI ({reason})", value=value, reason=reason)
@@ -617,7 +577,7 @@ class DpiService:
             config.write_json_atomic(self.state_path, {
                 "current_dpi": self.current_dpi, "target_dpi": self.target_dpi, "last_spin": self.last_spin,
                 "spins": self.spins, "deaths": self.deaths, "log": self.log, "consumed": self.consumed,
-                "viewer_values": self.viewer_values, "forced": self.forced})
+                "viewer_values": self.viewer_values})
         except OSError:
             pass
 
@@ -636,7 +596,5 @@ class DpiService:
         self.spins = int(d.get("spins", 0) or 0) if isinstance(d.get("spins", 0), int) else 0
         self.deaths = int(d.get("deaths", 0) or 0) if isinstance(d.get("deaths", 0), int) else 0
         self.consumed = [int(v) for v in (d.get("consumed") or []) if isinstance(v, (int, float))]
-        self.forced = [e for e in (d.get("forced") or [])
-                       if isinstance(e, dict) and isinstance(e.get("value"), (int, float))][:20]
         self.viewer_values = [e for e in (d.get("viewer_values") or [])
                               if isinstance(e, dict) and isinstance(e.get("value"), (int, float))][:60]

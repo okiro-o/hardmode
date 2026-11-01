@@ -6,7 +6,9 @@ the next match) and closes them in the panel; a kill with the requested weapon c
 request for it automatically (``autocomplete``). Requests whose weapon was not recognised keep the raw
 text and wait until the streamer picks the weapon by hand.
 
-Order: requests for a weapon outside the current loadout (``available``, both sides plus knife and zeus) go
+Knife and Zeus can be requested only while they are in the race (``allowed``, user's rule 0.21.1).
+
+Order: requests for a weapon outside the current loadout (``available``: both sides, knife/Zeus when in the race) go
 after all the others, keeping their own order (user's rule, 0.20.1); unrecognised requests stay in place.
 Without a loadout nothing is reordered. The stored order is the arrival order (plus manual moves), the
 partition is applied on every read, so a new loadout reorders the queue at once (``refresh``).
@@ -35,6 +37,8 @@ class ViewerQueue:
         self._next_id = 1
         # weapon ids the streamer can play now (the loadout), None = no loadout: wired by app.main
         self.available: Callable[[], set[str] | None] = lambda: None
+        # None when the weapon may be requested, else the reason (knife/Zeus switched off in the race)
+        self.allowed: Callable[[str], str | None] = lambda weapon: None
         self._avail_key: frozenset | None = None
         self._load()
 
@@ -115,6 +119,8 @@ class ViewerQueue:
         """``by_side``: the alias named several weapons («плётка») and the one of this side was taken."""
         if weapon is not None and weapon not in W.BY_ID:
             weapon = None
+        if weapon is not None and (why := self.allowed(weapon)):
+            raise ValueError(why)
         avail = self._available()
         with self._lock:
             if len(self.pending(ordered=False)) >= MAX_PENDING:
@@ -153,6 +159,8 @@ class ViewerQueue:
         """The streamer picked the weapon for a request that was not recognised (or fixes a wrong one)."""
         if weapon not in W.BY_ID:
             raise ValueError("неизвестное оружие")
+        if why := self.allowed(weapon):
+            raise ValueError(why)
         with self._lock:
             e = self._find(entry_id)
             if not e or e["status"] != "pending":

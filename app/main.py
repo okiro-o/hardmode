@@ -82,14 +82,15 @@ class AppState:
         self.dpi.on_applied = lambda value, reason: (self.chat.notify_dpi(value, reason), self.stats.on_dpi_applied(value))
         self.dpi.on_spin = lambda value, reason: (self.stats.on_dpi_roll(value, reason),
                                                   self.broker.publish("stats", self.stats.snapshot()))
-        self.dpi.on_viewer_added = lambda e: (self.chat.notify_viewer(e["user"], e["value"])
-                                              if self.dpi.settings.viewer_announce else None)
+        # confirmations are switched in the chat settings («Зритель добавил DPI»), not in the DPI block
+        self.dpi.on_viewer_added = lambda e: self.chat.notify_viewer(e["user"], e["value"])
         self.twitch = TwitchChatReader(on_message=self._twitch_from_thread,
                                        on_status=lambda: self.broker.publish_threadsafe("twitch", self.twitch.status()))
         self._announced: tuple[bool, int | None] = (self.roulette.running, self.roulette.current_uid())
         self.ingame = IngameOverlays(self.settings.ingame, self.ingame_state, self.ingame_colors)
         self.queue = ViewerQueue(os.path.join(config.data_dir(), "viewer_queue.json"), publish=self.broker.publish)
         self.queue.available = self.loadout_weapons
+        self.queue.allowed = self.queue_refusal
         try:
             donation_settings = DonationSettings.from_dict(self.settings.donations)
         except ValueError:
@@ -98,7 +99,6 @@ class AppState:
         self.donations = DonationService(donation_settings, os.path.join(config.data_dir(), "donations.json"),
                                          publish=self.broker.publish, call_threadsafe=self.broker.call_threadsafe)
         self.donations.add_wheel = lambda v, u: self.dpi.add_viewer_value(v, u, source="donation", per_user_limit=False)
-        self.donations.force_next = lambda v, u: self.dpi.force_next(v, u, source="donation")
         self.donations.queue_weapon = lambda w, text, user, amount, cur, by_side=None, source="donation": self.queue.add(
             w, text, user, amount, cur, source=source, by_side=by_side)
         self.donations.current_side = lambda: self.gsi.status.team or self.roulette.side
@@ -126,12 +126,21 @@ class AppState:
         self.queue.refresh()          # a new loadout reorders the viewer queue
 
     def loadout_weapons(self) -> set[str] | None:
-        """Everything the streamer can play with the current loadout (both sides, knife, zeus); None = no loadout."""
-        lo = self.roulette.loadout
+        """Everything the streamer can play with the current loadout (both sides; knife and Zeus when they are
+        in the race); None = no loadout."""
+        lo, rs = self.roulette.loadout, self.roulette.settings
         if not lo:
             return None
         return {w for side in L.SIDES
-                for w in L.side_pool_ids(lo, side, include_starting=True, include_knife=True, include_zeus=True)}
+                for w in L.side_pool_ids(lo, side, include_starting=True, include_knife=rs.include_knife,
+                                         include_zeus=rs.include_zeus)}
+
+    def queue_refusal(self, weapon: str) -> str | None:
+        """Knife and Zeus go into the viewer queue only while they take part in the race (user's rule)."""
+        rs = self.roulette.settings
+        if (weapon == "knife" and not rs.include_knife) or (weapon == "taser" and not rs.include_zeus):
+            return f"{W.get(weapon).name} сейчас не принимается"
+        return None
 
     def _announce_weapon(self) -> None:
         """Chat notification when the current weapon changes (start, kill, button, reroll, side switch)."""
@@ -275,10 +284,9 @@ class AppState:
     def _viewer_rejected(self, user: str, text: str, error: str) -> None:
         self.dpi._log("viewer", f"{user}: «{text[:30]}» не принято ({error})")
         self.dpi._changed()
-        if self.dpi.settings.viewer_announce:
-            s = self.dpi.settings
-            reason = {"не число": f"нужно число от {s.viewer_min} до {s.viewer_max}"}.get(error, error)
-            self.chat.notify_reject(user, reason)
+        s = self.dpi.settings
+        reason = {"не число": f"нужно число от {s.viewer_min} до {s.viewer_max}"}.get(error, error)
+        self.chat.notify_reject(user, reason)
 
     def urls(self) -> dict:
         base = f"http://127.0.0.1:{self.settings.port}"
@@ -356,10 +364,9 @@ class AppState:
                 continue
             if ev["type"] != "kill":
                 continue
-            if self.donations.settings.queue_autocomplete:
-                closed = self.queue.on_kill(ev["weapon"])
-                if closed:
-                    self.chat.notify_request_done(closed["user"], closed["name"])
+            closed = self.queue.on_kill(ev["weapon"])     # a kill with a requested weapon fulfils the request
+            if closed:
+                self.chat.notify_request_done(closed["user"], closed["name"])
             if batch_advanced and ev["index"] > 0:
                 # a double/collateral in one payload: the extra kill belongs to the weapon that
                 # just finished, it must not be judged against the next one

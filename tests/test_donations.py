@@ -108,9 +108,8 @@ class Harness:
         self.chat = []
         self.svc = DonationService(DonationSettings.from_dict({"enabled": True, **settings}), str(tmp_path / "don.json"),
                                    publish=lambda e, d: None, call_threadsafe=lambda fn, *a: fn(*a))
-        self.svc.add_wheel = lambda v, u: (self.calls.append(("wheel", v, u)) or {"ok": True, "value": v})
-        self.svc.force_next = lambda v, u: (self.calls.append(("next", v, u)) or
-                                            ({"ok": False, "error": "вне диапазона 400–6400"} if v > 6400 else {"ok": True, "value": v}))
+        self.svc.add_wheel = lambda v, u: (self.calls.append(("wheel", v, u)) or
+                                           ({"ok": False, "error": "вне диапазона 400–6400"} if v > 6400 else {"ok": True, "value": v}))
         self.svc.queue_weapon = lambda w, text, user, amount, cur, by_side=None, source="donation": (
             self.calls.append(("weapon", w, user, by_side)) or {"name": {"awp": "AWP"}.get(w), "position": 1})
         self.svc.chat_result = lambda u, t: self.chat.append(("ok", u, t))
@@ -124,7 +123,7 @@ class Harness:
 def test_default_rules_route_by_amount_and_content(tmp_path):
     h = Harness(tmp_path)
     assert h.donate(300, "awp плиз")["text"] == "AWP в очереди, №1"
-    assert h.donate(600, "1600")["text"] == "следующий DPI будет 1600"
+    assert h.donate(600, "1600")["text"] == "1600 DPI на колесе"         # no «next DPI» any more (0.21.1)
     assert h.donate(100, "1600")["text"] == "1600 DPI на колесе"
     assert h.donate(600, "awp 1600")["action"] == "weapon"                 # the weapon rule is first
     low = h.donate(100, "awp")                                            # weapon recognised, too cheap
@@ -132,7 +131,8 @@ def test_default_rules_route_by_amount_and_content(tmp_path):
     assert h.donate(20, "спасибо за стрим")["text"] == "без действия"
     bad = h.donate(700, "99999")
     assert bad["ok"] is False and "вне диапазона" in bad["text"]
-    assert [c[0] for c in h.calls] == ["weapon", "next", "wheel", "weapon", "next"]
+    assert [c[0] for c in h.calls] == ["weapon", "wheel", "wheel", "weapon", "wheel"]
+    assert [r["action"] for r in h.svc.settings.rules] == ["weapon", "wheel_value"]
     assert ("no", "Alice", "оружие в зрительскую очередь — от 300 ₽") in h.chat
     assert not any("спасибо" in t for _, _, t in h.chat)                  # no action, no hint: silence
     assert len(h.svc.state["log"]) == 7
@@ -143,6 +143,7 @@ def test_keyword_rule_queues_unrecognised_weapon_and_max_bound(tmp_path):
              {"enabled": True, "min": 50, "max": 199, "keyword": "", "action": "wheel_value"},
              {"enabled": False, "min": 0, "max": 0, "keyword": "", "action": "next_dpi"}]
     h = Harness(tmp_path, rules=rules)
+    assert len(h.svc.settings.rules) == 2                                  # an old «next DPI» rule is dropped
     assert h.donate(150, "!ствол базука")["text"] == "оружие (уточнит стример) в очереди, №1"
     assert h.calls[-1] == ("weapon", None, "Alice", None)
     assert h.donate(150, "awp")["text"] == "без действия"                  # no keyword: weapon rule skipped
@@ -228,7 +229,7 @@ def test_da_oauth_flow_and_refresh(tmp_path, monkeypatch):
 
 
 # ----------------------------------------------------------------------------- app wiring
-def test_api_test_donation_reaches_queue_wheel_and_next_spin(client):
+def test_api_test_donation_reaches_queue_and_wheel(client):
     s = client.post("/api/settings", json={"donations": {"enabled": True, "dp_api_key": "secret-key"}})
     assert s.status_code == 200 and "secret-key" not in s.text and s.json()["donations"]["dp_api_key_set"] is True
     assert "secret-key" not in client.get("/api/state").text and "secret-key" not in client.get("/api/donations").text
@@ -239,11 +240,10 @@ def test_api_test_donation_reaches_queue_wheel_and_next_spin(client):
     assert client.post("/api/donations/test", json={"user": "Bob", "amount": 100, "message": "1600"}).json()["action"] == "wheel_value"
     dpi = client.get("/api/state").json()["dpi"]
     assert any(e["value"] == 1600 and e["user"] == "Bob" for e in dpi["wheel"]["viewer"])
-    assert client.post("/api/donations/test", json={"user": "Carl", "amount": 600, "message": "2400"}).json()["action"] == "next_dpi"
-    assert client.get("/api/state").json()["dpi"]["forced"][0]["value"] == 2400
-    spin = client.post("/api/dpi/spin", json={}).json()
-    assert spin["value"] == 2400 and spin["forced_by"] == "Carl" and 2400 in spin["values"]
-    assert client.get("/api/state").json()["dpi"]["forced"] == []
+    assert client.post("/api/donations/test", json={"user": "Carl", "amount": 600, "message": "2400"}).json()["action"] == "wheel_value"
+    assert "forced" not in client.get("/api/state").json()["dpi"]
+    assert "forced_by" not in client.post("/api/dpi/spin", json={}).json()
+    assert client.post("/api/dpi/forced/remove", json={"index": 0}).status_code in (404, 405)
     assert client.post("/api/donations/aliases/check", json={"text": "морковку 1600"}).json()["weapon"] == "mp5sd"
     lst = client.get("/api/donations/aliases").json()["weapons"]
     assert any(w["id"] == "xm1014" and "крокодил*" in w["aliases"] for w in lst)
@@ -462,6 +462,7 @@ def test_queue_without_loadout_keeps_arrival_order_and_refresh_republishes():
 def test_queue_order_follows_the_app_loadout(client):
     st = client.app.state.app
     assert st.loadout_weapons() is None                             # no loadout yet: arrival order
+    client.post("/api/settings", json={"roulette": {"include_zeus": True}})   # Zeus may be requested
     lo = {"T": {"starting": "glock", "pistol": ["p250", "elite", "tec9", "cz75a"],
                 "mid": ["mac10", "mp7", "mp5sd", "ump45", "p90"], "rifle": ["galilar", "ak47", "sg556", "ssg08", "awp"]},
           "CT": {"starting": "usp_silencer", "pistol": ["p250", "elite", "fiveseven", "cz75a"],
@@ -473,8 +474,46 @@ def test_queue_order_follows_the_app_loadout(client):
     order = lambda: [e["weapon"] for e in client.get("/api/queue").json()["pending"]]
     assert order() == ["negev", "hkp2000", "m4a1", "taser"]
     st.roulette.set_loadout(lo)
-    assert {"knife", "taser", "glock", "usp_silencer"} <= st.loadout_weapons()
+    assert {"taser", "glock", "usp_silencer"} <= st.loadout_weapons() and "knife" not in st.loadout_weapons()
     assert order() == ["m4a1", "taser", "negev", "hkp2000"]
     # the streamer puts the requested weapon into the loadout: the request moves up at once
     st.roulette.set_loadout({**lo, "CT": {**lo["CT"], "mid": ["mp9", "mp7", "mp5sd", "ump45", "negev"]}})
     assert order() == ["negev", "m4a1", "taser", "hkp2000"]
+
+
+# ----------------------------------------------------------------------------- knife and Zeus follow the race
+def test_knife_and_zeus_only_when_in_the_race(client, monkeypatch):
+    st = client.app.state.app
+    rejected = []
+    monkeypatch.setattr(st.chat, "notify_reject", lambda user, reason: rejected.append((user, reason)) or True)
+    r = client.post("/api/queue/add", json={"weapon": "knife", "user": "A"})
+    assert r.status_code == 400 and "Нож сейчас не принимается" in r.text
+    # channel points and donations are refused with the reason in chat
+    client.post("/api/settings", json={"donations": {"reward_enabled": True, "reward_id": "rw", "enabled": True}})
+    client.post("/api/twitch/chat", json={"user": "B", "text": "зевс", "reward_id": "rw"})
+    assert rejected == [("B", "Zeus x27 сейчас не принимается")]
+    res = client.post("/api/donations/test", json={"user": "C", "amount": 500, "message": "ножом!"}).json()
+    assert res["ok"] is False and res["text"] == "Нож сейчас не принимается"
+    assert st.queue.pending() == []
+    # an unrecognised request cannot be resolved to a knife either
+    e = client.post("/api/queue/add", json={"weapon": None, "user": "D", "text": "?"}).json()
+    assert client.post("/api/queue/resolve", json={"id": e["id"], "weapon": "knife"}).status_code == 400
+    # switched on in the race settings: accepted
+    client.post("/api/settings", json={"roulette": {"include_knife": True, "include_zeus": True}})
+    assert client.post("/api/queue/add", json={"weapon": "knife", "user": "A"}).status_code == 200
+    client.post("/api/twitch/chat", json={"user": "B", "text": "зевс", "reward_id": "rw"})
+    assert [x["weapon"] for x in st.queue.pending()] == [None, "knife", "taser"]
+
+
+def test_viewer_dpi_chat_follows_the_chat_switches_only(client, monkeypatch):
+    st = client.app.state.app
+    said, rejected = [], []
+    monkeypatch.setattr(st.chat, "notify_viewer", lambda user, dpi: said.append((user, dpi)))
+    monkeypatch.setattr(st.chat, "notify_reject", lambda user, reason: rejected.append((user, reason)) or True)
+    # an old settings file with the removed DPI switch still loads (the key is ignored)
+    assert client.post("/api/settings", json={"dpi": {"viewer_enabled": True, "viewer_announce": False}}).status_code == 200
+    assert "viewer_announce" not in client.get("/api/settings").json()["dpi"]
+    client.post("/api/twitch/chat", json={"user": "A", "text": "1600", "reward_id": "any"})
+    client.post("/api/twitch/chat", json={"user": "B", "text": "много", "reward_id": "any"})
+    assert said == [("A", 1600)] and rejected and rejected[0][0] == "B"
+    assert "queue_autocomplete" not in client.get("/api/settings").json()["donations"]

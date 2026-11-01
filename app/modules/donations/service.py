@@ -3,13 +3,14 @@
 Flow: the polling thread asks DonationAlerts / DonatePay for their latest donations, keeps only the ones
 newer than the remembered ``last_id`` and hands each of them to the event-loop thread (``handle``), where
 the first matching rule turns it into an action. Actions only create effects that wait for their moment
-(a value on the wheel, the next spin's result, a request in the viewer queue) — never «reroll now»: a CS2
-round is over before the donation arrives (user's decision 2026-10-31).
+(a value on the wheel, a request in the viewer queue) — never «reroll now»: a CS2 round is over before the
+donation arrives (user's decision 2026-10-31). «Next DPI» (0.18.0) was removed in 0.21.1 for the same
+reason: a late donation would reroll something the donor did not mean (user's decision 2026-11-01).
 
 Rules (top to bottom, the first one that fits wins):
 ``{enabled, min, max (0 = no limit), keyword (optional, substring), action}``. A rule fits when the
 amount is in range, the keyword (if any) is in the message and the message carries what the action
-needs: a number for ``wheel_value`` / ``next_dpi``, a recognised weapon for ``weapon`` (with a keyword a
+needs: a number for ``wheel_value``, a recognised weapon for ``weapon`` (with a keyword a
 request is queued even if the weapon is not recognised — the streamer picks it by hand).
 
 Replays: the first poll of an account only remembers the newest id. After a restart, donations that came
@@ -37,18 +38,17 @@ log = logging.getLogger("hardmode.donations")
 
 ACTIONS = {
     "weapon": "оружие в зрительскую очередь",
-    "next_dpi": "следующий DPI",
     "wheel_value": "число на колесо DPI",
 }
 DEFAULT_RULES = [
     {"enabled": True, "min": 300.0, "max": 0.0, "keyword": "", "action": "weapon"},
-    {"enabled": True, "min": 500.0, "max": 0.0, "keyword": "", "action": "next_dpi"},
     {"enabled": True, "min": 50.0, "max": 0.0, "keyword": "", "action": "wheel_value"},
 ]
 MAX_RULES = 20
 MAX_LOG = 50
 FRESH_S = 600.0          # after a restart: donations older than this are not replayed
 SECRETS = ("da_client_secret", "dp_api_key")
+REMOVED_ACTIONS = ("next_dpi",)   # rules with these actions are dropped from old settings
 
 
 def _rules(value) -> list[dict]:
@@ -59,6 +59,8 @@ def _rules(value) -> list[dict]:
         if not isinstance(r, dict):
             raise ValueError(f"правило {i}: нужен объект")
         action = r.get("action")
+        if action in REMOVED_ACTIONS:
+            continue
         if action not in ACTIONS:
             raise ValueError(f"правило {i}: неизвестное действие {action!r}")
         lo = max(0.0, min(1e7, config.to_float(r.get("min", 0), f"правило {i}: от")))
@@ -79,7 +81,6 @@ class DonationSettings:
     dp_include_test: bool = False       # DonatePay «тестовое оповещение» (status=user) counts as a donation
     rules: list = field(default_factory=lambda: [dict(r) for r in DEFAULT_RULES])
     aliases_extra: str = ""             # user additions, «алиас = оружие» per line
-    queue_autocomplete: bool = True     # a kill with the requested weapon closes the request
     queue_command: str = "!очередь"     # chat command: the bot answers with the viewer's place in the queue
     reward_enabled: bool = False        # a channel-points reward puts a weapon into the queue
     reward_id: str = ""                 # Twitch custom-reward-id of that reward (learnt from a redemption)
@@ -90,7 +91,7 @@ class DonationSettings:
     def from_dict(cls, d: dict | None) -> "DonationSettings":
         s = cls()
         config.assign_fields(s, d, "donations")
-        for b in ("enabled", "da_enabled", "dp_enabled", "dp_include_test", "queue_autocomplete", "reward_enabled"):
+        for b in ("enabled", "da_enabled", "dp_enabled", "dp_include_test", "reward_enabled"):
             setattr(s, b, config.to_bool(getattr(s, b)))
         for k in ("da_client_id", "da_client_secret", "dp_api_key", "reward_id"):
             v = getattr(s, k)
@@ -136,7 +137,6 @@ class DonationService:
         self.status_: dict = {"da": {"error": None, "last_poll": None}, "dp": {"error": None, "last_poll": None}}
         # actions, wired by app.main (all called on the event-loop thread)
         self.add_wheel: Callable[[int, str], dict] = lambda v, u: {"ok": False, "error": "колесо недоступно"}
-        self.force_next: Callable[[int, str], dict] = lambda v, u: {"ok": False, "error": "колесо недоступно"}
         self.queue_weapon: Callable[..., dict] = lambda *a, **k: {}
         self.current_side: Callable[[], str | None] = lambda: None   # T/CT: picks «плётка» = G3SG1 or SCAR-20
         self.chat_result: Callable[[str, str], None] = lambda user, text: None
@@ -407,12 +407,10 @@ class DonationService:
     def _perform(self, action: str, payload: Any, d: P.Donation) -> dict:
         if action == "weapon":
             return {**self._enqueue(payload[0] if payload else [], d.message, d.user, d.amount, d.currency), "action": action}
-        res = (self.add_wheel if action == "wheel_value" else self.force_next)(int(payload), d.user)
+        res = self.add_wheel(int(payload), d.user)
         if not res.get("ok"):
             return {"ok": False, "action": action, "text": str(res.get("error") or "не принято")}
-        if action == "wheel_value":
-            return {"ok": True, "action": action, "text": f"{res['value']} DPI на колесе"}
-        return {"ok": True, "action": action, "text": f"следующий DPI будет {res['value']}"}
+        return {"ok": True, "action": action, "text": f"{res['value']} DPI на колесе"}
 
     def _enqueue(self, candidates: list[str], text: str, user: str, amount: float | None, currency: str,
                  source: str = "donation") -> dict:

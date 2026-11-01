@@ -26,6 +26,7 @@
   main { padding:16px 20px 60px; max-width:1500px; margin:0 auto; }
   .tabpage { display:none; }
   .tabpage.active { display:grid; grid-template-columns: 1.1fr .9fr; gap:16px; }
+  .tabpage.single.active { grid-template-columns: 1fr; }
   @media (max-width: 1100px) { .tabpage.active { grid-template-columns: 1fr; } }
   .col { display:flex; flex-direction:column; gap:16px; min-width:0; }
   section { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; min-width:0; }
@@ -77,10 +78,10 @@
   .dd-opt.sel { color:var(--accent); }
   .dd-opt.sel::after { content:"✓"; font-weight:700; }
   /* token box */
-  .tokenbox { display:flex; align-items:center; gap:0; background:var(--panel2); border:1px solid var(--line); border-radius:10px; overflow:hidden; transition: border-color .15s, box-shadow .15s; }
+  .tokenbox { display:flex; align-items:center; gap:0; background:var(--panel2); border:1px solid var(--line); border-radius:8px; overflow:hidden; transition: border-color .15s, box-shadow .15s; }
   .tokenbox:focus-within { border-color:var(--accent); box-shadow:0 0 0 3px rgba(255,209,102,.14); }
-  .tokenbox input { flex:1; height:40px; border:0 !important; background:transparent !important; box-shadow:none !important; border-radius:0; padding:0 12px; font-family: ui-monospace, Consolas, monospace; font-size:13px; letter-spacing:.04em; min-width:0; }
-  .tokenbox button { border:0; border-left:1px solid var(--line); border-radius:0; height:40px; padding:0 14px; background:transparent; }
+  .tokenbox input { flex:1; height:34px; border:0 !important; background:transparent !important; box-shadow:none !important; border-radius:0; padding:0 12px; font-family: ui-monospace, Consolas, monospace; font-size:13px; letter-spacing:.04em; min-width:0; }
+  .tokenbox button { border:0; border-left:1px solid var(--line); border-radius:0; height:34px; padding:0 14px; background:transparent; }
   .tokenbox button:hover { background:var(--panel3); }
   .tokenbox button.eye { width:44px; padding:0; font-size:16px; }
   .tokenbox button.primary { background:var(--accent); color:#1a1a1a; }
@@ -115,25 +116,30 @@
   .req .icon.unknown { -webkit-mask:none; mask:none; background:transparent; color:var(--accent); font-size:22px; text-align:center; line-height:32px; }
   .req .body { flex:1; min-width:0; }
   .req .body .who { color:var(--muted); font-size:12px; }
-  .req .body .who.out { color:var(--accent); }
+  .req .body .l1 { display:flex; align-items:center; flex-wrap:wrap; gap:4px 6px; }
+  .req .tag { font-size:11px; line-height:16px; padding:0 6px; border-radius:6px; border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
+  .req .tag.out { color:var(--accent); border-color:rgba(255,209,102,.45); }
   .req .body .txt { color:var(--muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .req .acts { display:flex; gap:4px; }
   .req .acts button { padding:4px 9px; }
   .req.first { border-color:rgba(255,209,102,.5); }
-  .rule { display:grid; grid-template-columns: auto minmax(160px, 1.5fr) 74px 74px minmax(70px, 1fr) auto; gap:8px; align-items:center;
-    padding:8px; border:1px solid var(--line); border-radius:10px; background:var(--panel2); margin-bottom:6px; }
+  /* a rule is two lines: [on] action … ↑↓× / [on] от · до · слово — fits the narrow right column */
+  .rule { display:grid; grid-template-columns: auto 1fr 1fr 1.6fr auto; grid-template-areas: "on act act act acts" "on min max kw kw";
+    gap:6px 8px; align-items:center; padding:8px; border:1px solid var(--line); border-radius:10px; background:var(--panel2); margin-bottom:6px; }
   .rule.off { opacity:.55; }
-  .rule input[type=number], .rule input[type=text] { height:32px; }
-  .rule .acts { display:flex; gap:2px; }
-  .rule .acts button { padding:3px 7px; }
-  .rulehead { display:grid; grid-template-columns: auto minmax(160px, 1.5fr) 74px 74px minmax(70px, 1fr) auto; gap:8px; padding:0 8px 4px;
-    font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
-  .rulehead span:first-child { width:40px; }
+  .rule .ron { grid-area:on; padding:4px; }
+  .rule .ract { grid-area:act; min-width:0; }
+  .rule .acts { grid-area:acts; display:flex; gap:2px; justify-self:end; }
+  .rule .acts button { height:32px; padding:0 9px; }
+  .rule .dd-btn { height:32px; }
+  .rule .rmin { grid-area:min; } .rule .rmax { grid-area:max; } .rule .rkw { grid-area:kw; }
+  .rule .rf { display:flex; align-items:center; gap:6px; min-width:0; font-size:11.5px; color:var(--muted); white-space:nowrap; }
+  .rule .rf input { flex:1 1 auto; min-width:0; height:32px; }
+  @media (max-width: 520px) { .rule { grid-template-columns: auto 1fr 1fr; grid-template-areas: "on act acts" "on min max" "on kw kw"; } }
   .aliaslist { display:grid; grid-template-columns: 110px 1fr; gap:4px 12px; font-size:12.5px; margin-top:6px; }
   .aliaslist b { font-weight:600; }
   .aliaslist .extra { color:var(--accent); }
   .log .don.no span:last-child { color:var(--bad); }
-  @media (max-width: 900px) { .rule, .rulehead { grid-template-columns: auto 1fr 70px 70px; } .rule .kw, .rulehead .kw { grid-column: 2 / 4; } }
   /* help */
   .help { display:grid; grid-template-columns: 220px 1fr; gap:16px; }
   .toc { position:sticky; top:120px; align-self:start; display:flex; flex-direction:column; gap:2px; }
@@ -256,6 +262,11 @@
   .dpibox .v { font-size:40px; font-weight:900; color:var(--accent); line-height:1.1; }
   .dpibox .l { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; }
   .inlinefield { width:110px !important; }
+  .form .pair { grid-column:1 / -1; display:grid; grid-template-columns: minmax(140px, .75fr) 1.25fr; gap:10px 16px; }
+  @media (max-width: 520px) { .form .pair { grid-template-columns: 1fr; } }
+  .inrow { display:flex; gap:8px; align-items:stretch; }
+  .inrow > input { flex:1 1 auto; min-width:0; }
+  .inrow > button { flex:0 0 auto; height:36px; padding:0 12px; }
 </style>
 </head>
 <body>
@@ -271,6 +282,7 @@
   <nav class="maintabs">
     <button data-tab="startup" onclick="showMainTab('startup')">⚡ Startup</button>
     <button data-tab="weapons" onclick="showMainTab('weapons')">🔫 Оружие</button>
+    <button data-tab="loadout" onclick="showMainTab('loadout')">🎒 Лоадаут</button>
     <button data-tab="dpi" onclick="showMainTab('dpi')">🎡 DPI</button>
     <button data-tab="look" onclick="showMainTab('look')">🎨 Вид</button>
     <button data-tab="donations" onclick="showMainTab('donations')">💸 Донаты</button>
@@ -336,44 +348,28 @@
         </details>
         <div class="log compact" id="log"></div><button class="logtoggle" onclick="toggleLog(this)">развернуть</button>
       </section>
-
-<section id="sec-loadout">
-        <h2>Лоадаут
-          <span class="right">
-            <button class="primary" onclick="post('/api/loadout/generate',{sides:['T','CT']})">🎲 Сгенерировать</button>
-            <button onclick="post('/api/loadout/generate',{sides:['T']})">только T</button>
-            <button onclick="post('/api/loadout/generate',{sides:['CT']})">только CT</button>
-            <button onclick="copyLoadout()" title="Скопировать список оружия текстом">⧉</button>
-          </span>
-        </h2>
-        <div class="row" style="margin-bottom:6px;">
-          <div class="tabs"><button class="T" data-tab="T" onclick="showTab('T')">T</button><button class="CT" data-tab="CT" onclick="showTab('CT')">CT</button></div>
-        </div>
-        <div id="loadout"></div>
-      </section>
     </div>
     <div class="col">
       <section id="sec-requests">
         <h2>Зрительская очередь <span class="right"><span class="chip" id="chip-requests"><span class="dot"></span><b>пусто</b></span></span></h2>
         <div id="requests"></div>
-        <details style="margin-top:6px;"><summary>Выполнено недавно и настройки</summary>
-          <div id="requests-history" style="margin:6px 0;"></div>
-          <div class="row">
-            <label class="inline"><input type="checkbox" data-key="donations.queue_autocomplete"> Закрывать заявку киллом с этим оружием</label>
-            <label class="f" style="flex:1 1 200px;"><span>Команда в чате (пусто — выключена)</span><input type="text" data-key="donations.queue_command" placeholder="!очередь"></label>
-            <button onclick="post('/api/queue/clear')">Очистить историю</button>
-          </div>
+        <details style="margin-top:6px;"><summary>Выполнено недавно</summary>
+          <div id="requests-history" style="margin:6px 0 8px;"></div>
+          <button onclick="post('/api/queue/clear')">Очистить историю</button>
         </details>
-        <details style="margin-top:6px;" id="wreward-box"><summary>Оружие за баллы канала <span class="muted" id="wreward-sum"></span></summary>
+        <details style="margin-top:6px;" id="wreward-box"><summary>Twitch: оружие за баллы и команда очереди <span class="muted" id="wreward-sum"></span></summary>
           <div class="form" style="margin-top:8px;">
-            <label class="inline"><input type="checkbox" data-key="donations.reward_enabled"> Включено</label>
-            <label class="f"><span>Канал Twitch (логин)</span><input type="text" data-key="chat.channel_login" placeholder="например, mychannel"></label>
-            <label class="f full"><span>Награда «оружие в очередь»</span>
-              <div class="row" style="flex-wrap:nowrap;">
-                <input type="text" id="wreward-id" readonly placeholder="не задана" style="flex:1;">
-                <button id="btn-wlearn" onclick="learnWeaponReward()" title="Следующее выкупленное сообщение-награда станет этой наградой">Определить</button>
-                <button onclick="post('/api/queue/reward/learn',{on:false,clear:true})" title="Сбросить привязку">×</button>
-              </div></label>
+            <label class="inline full"><input type="checkbox" data-key="donations.reward_enabled"> Оружие за баллы канала</label>
+            <div class="pair">
+              <label class="f"><span>Канал Twitch (логин)</span><input type="text" data-key="chat.channel_login" placeholder="например, mychannel"></label>
+              <label class="f"><span>Награда «оружие в очередь»</span>
+                <div class="inrow">
+                  <input type="text" id="wreward-id" readonly placeholder="не задана">
+                  <button id="btn-wlearn" onclick="learnWeaponReward()" title="Следующее выкупленное сообщение-награда станет этой наградой">Определить</button>
+                  <button onclick="post('/api/queue/reward/learn',{on:false,clear:true})" title="Сбросить привязку">×</button>
+                </div></label>
+            </div>
+            <label class="f"><span>Команда в чате (пусто — выключена)</span><input type="text" data-key="donations.queue_command" placeholder="!очередь"></label>
             <div class="hint full" id="wreward-hint"></div>
           </div>
         </details>
@@ -443,7 +439,7 @@
       <section>
         <h2>Настройки DPI</h2>
         <div class="form">
-          <label class="inline"><input type="checkbox" data-key="dpi.enabled"> DPI-рулетка включена</label>
+          <label class="inline full"><input type="checkbox" data-key="dpi.enabled"> DPI-рулетка включена</label>
           <label class="inline"><input type="checkbox" data-key="dpi.auto_on_death"> Крутить после каждой смерти</label>
           <label class="inline"><input type="checkbox" data-key="dpi.auto_on_kill"> Крутить после каждого килла</label>
           <label class="f"><span>Мой обычный DPI</span><input type="number" min="100" max="44000" step="10" data-key="dpi.home_dpi"></label>
@@ -471,30 +467,29 @@
           <label class="f"><span>Макс. DPI</span><input type="number" min="100" max="44000" step="10" data-key="dpi.max_dpi"></label>
           <label class="f"><span>Шаг</span><input type="number" min="10" max="5000" step="10" data-key="dpi.step"></label>
           <label class="f"><span>Своё значение</span>
-            <div class="row" style="flex-wrap:nowrap;">
-              <input type="number" id="custom-dpi" min="100" max="44000" step="10" placeholder="DPI" style="flex:1;" onkeydown="if(event.key==='Enter') addCustomDpi()">
+            <div class="inrow">
+              <input type="number" id="custom-dpi" min="100" max="44000" step="10" placeholder="DPI" onkeydown="if(event.key==='Enter') addCustomDpi()">
               <button onclick="addCustomDpi()">Добавить</button>
             </div></label>
         </div>
         <div class="chips" id="custom-chips" style="margin-top:8px;"></div>
         <h3>На колесе сейчас</h3>
         <div class="chips" id="wheel-chips"></div>
-        <h3 id="forced-h" style="display:none;">Следующие по донатам</h3>
-        <div class="chips" id="forced-chips"></div>
       </section>
 
       <section id="sec-viewers">
-        <h2>Зрители добавляют DPI <span class="right"><span class="chip" id="chip-twitch"><span class="dot"></span><b>чат: выкл</b></span></span></h2>
+        <h2>DPI от зрителей <span class="right"><span class="chip" id="chip-twitch"><span class="dot"></span><b>чат: выкл</b></span></span></h2>
         <div class="form">
-          <label class="inline"><input type="checkbox" data-key="dpi.viewer_enabled"> Включено</label>
-          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="dpi.viewer_announce"> Подтверждать в чате</label>
-          <label class="f"><span>Канал Twitch (логин)</span><input type="text" data-key="chat.channel_login" placeholder="например, mychannel"></label>
-          <label class="f"><span>Награда за баллы канала</span>
-            <div class="row" style="flex-wrap:nowrap;">
-              <input type="text" id="reward-id" readonly placeholder="не задана" style="flex:1;">
-              <button id="btn-learn" onclick="learnReward()" title="Следующее выкупленное сообщение-награда станет этой наградой">Определить</button>
-              <button onclick="post('/api/dpi/reward/learn',{on:false,clear:true})" title="Сбросить привязку">×</button>
-            </div></label>
+          <label class="inline full"><input type="checkbox" data-key="dpi.viewer_enabled"> Включено</label>
+          <div class="pair">
+            <label class="f"><span>Канал Twitch (логин)</span><input type="text" data-key="chat.channel_login" placeholder="например, mychannel"></label>
+            <label class="f"><span>Награда за баллы канала</span>
+              <div class="inrow">
+                <input type="text" id="reward-id" readonly placeholder="не задана">
+                <button id="btn-learn" onclick="learnReward()" title="Следующее выкупленное сообщение-награда станет этой наградой">Определить</button>
+                <button onclick="post('/api/dpi/reward/learn',{on:false,clear:true})" title="Сбросить привязку">×</button>
+              </div></label>
+          </div>
           <label class="f"><span>Мин. DPI от зрителей</span><input type="number" min="100" max="44000" step="100" data-key="dpi.viewer_min"></label>
           <label class="f"><span>Макс. DPI от зрителей</span><input type="number" min="100" max="44000" step="100" data-key="dpi.viewer_max"></label>
         </div>
@@ -504,14 +499,34 @@
             <label class="f"><span>Значений от одного зрителя</span><input type="number" min="1" max="10" data-key="dpi.viewer_per_user"></label>
             <label class="f"><span>Чат-команда (пусто — только награда)</span><input type="text" data-key="dpi.viewer_command" placeholder="!dpi"></label>
             <label class="f"><span>Тест: добавить как зритель</span>
-              <div class="row" style="flex-wrap:nowrap;">
-                <input type="number" id="viewer-test-dpi" min="100" max="44000" step="100" placeholder="DPI" value="1600" style="flex:1;">
+              <div class="inrow">
+                <input type="number" id="viewer-test-dpi" min="100" max="44000" step="100" placeholder="DPI" value="1600">
                 <button onclick="post('/api/dpi/viewer/add',{value:$('viewer-test-dpi').value,user:'тест'})">Добавить</button>
                 <button onclick="post('/api/dpi/viewer/clear')" title="Убрать все зрительские значения">Очистить</button>
               </div></label>
           </div>
         </details>
         <div class="chips" id="viewer-chips" style="margin-top:8px;"></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ================= TAB: LOADOUT ================= -->
+  <div class="tabpage single" id="tab-loadout">
+    <div class="col">
+<section id="sec-loadout">
+        <h2>Лоадаут
+          <span class="right">
+            <button class="primary" onclick="post('/api/loadout/generate',{sides:['T','CT']})">🎲 Сгенерировать</button>
+            <button onclick="post('/api/loadout/generate',{sides:['T']})">только T</button>
+            <button onclick="post('/api/loadout/generate',{sides:['CT']})">только CT</button>
+            <button onclick="copyLoadout()" title="Скопировать список оружия текстом">⧉</button>
+          </span>
+        </h2>
+        <div class="row" style="margin-bottom:6px;">
+          <div class="tabs"><button class="T" data-tab="T" onclick="showTab('T')">T</button><button class="CT" data-tab="CT" onclick="showTab('CT')">CT</button></div>
+        </div>
+        <div id="loadout"></div>
       </section>
     </div>
   </div>
@@ -694,8 +709,8 @@
           <label class="f"><span>Имя</span><input type="text" id="test-user" value="тест"></label>
           <label class="f"><span>Сумма, ₽</span><input type="number" id="test-amount" min="0" step="10" value="300"></label>
           <label class="f full"><span>Сообщение</span>
-            <div class="row" style="flex-wrap:nowrap;">
-              <input type="text" id="test-message" placeholder="например, закинь крокодила" style="flex:1;" onkeydown="if(event.key==='Enter') testDonation()">
+            <div class="inrow">
+              <input type="text" id="test-message" placeholder="например, закинь крокодила" onkeydown="if(event.key==='Enter') testDonation()">
               <button class="primary" onclick="testDonation()">Отправить</button>
             </div></label>
         </div>
@@ -947,9 +962,6 @@ function renderWheel() {
   const home = +((d.settings && d.settings.home_dpi) || 0), homeColor = (d.settings && d.settings.home_color) || '#ff6b6b';
   $('wheel-chips').innerHTML = all.map(v => `<span class="chip2 ${consumed.has(v) && !viewerVals.has(v) ? 'consumed' : ''} ${viewerVals.has(v) ? 'viewer' : ''}" style="${v === home ? 'border-color:' + homeColor + ';box-shadow:inset 0 0 0 1px ' + homeColor : ''}" title="${consumed.has(v) ? 'уже выпало в этом круге' : viewerVals.has(v) ? 'от зрителя' : ''}">${v}${wts[String(v)] > 1 ? ' ×' + wts[String(v)] : ''}</span>`).join('') || '<span class="hint">—</span>';
   $('viewer-chips').innerHTML = (w.viewer||[]).length ? w.viewer.map((e,i) => `<span class="chip2 viewer">${e.value} <span class="u">${esc(e.user)}</span><button title="Убрать" onclick="post('/api/dpi/viewer/remove',{index:${i}})">×</button></span>`).join('') : '<span class="hint">зрители пока ничего не добавили</span>';
-  const forced = d.forced || [];
-  $('forced-h').style.display = forced.length ? '' : 'none';
-  $('forced-chips').innerHTML = forced.map((e, i) => `<span class="chip2 viewer">${i + 1}. ${e.value} <span class="u">${esc(e.user)}</span><button title="Убрать" onclick="post('/api/dpi/forced/remove',{index:${i}})">×</button></span>`).join('');
   $('reward-id').value = (d.settings && d.settings.viewer_reward_id) || '';
   $('btn-learn').textContent = d.learn_reward ? '⏳ жду награду…' : 'Определить';
   const t = S.twitch || {}; const chip = $('chip-twitch');
@@ -1092,7 +1104,8 @@ function renderRequests() {
   chip.className = 'chip' + (n ? ' warn' : ''); chip.querySelector('b').textContent = n ? `заявок: ${n}` : 'пусто';
   $('requests').innerHTML = n ? q.pending.map((e, i) => `<div class="req ${i === 0 ? 'first' : ''}">
       ${e.icon ? `<div class="icon" style="--mask:url('${e.icon}')"></div>` : '<div class="icon unknown">?</div>'}
-      <div class="body"><div><b>${esc(e.name || 'не распознано')}</b>${e.by_side ? ` <span class="who">(за ${esc(e.by_side)})</span>` : ''} <span class="who">${esc(e.user)}${e.amount != null ? ' · ' + fmtMoney(e.amount, e.currency) : ''}${e.source === 'reward' ? ' · баллы' : ''} · ${fmtTime(e.t).slice(0, 5)}</span>${e.in_loadout === false ? ' <span class="who out">не в лоадауте</span>' : ''}</div>
+      <div class="body"><div class="l1"><b>${esc(e.name || 'не распознано')}</b>${e.by_side ? `<span class="tag">за ${esc(e.by_side)}</span>` : ''}${e.in_loadout === false ? '<span class="tag out">не в лоадауте</span>' : ''}</div>
+        <div class="who">${esc(e.user)}${e.amount != null ? ' · ' + fmtMoney(e.amount, e.currency) : ''}${e.source === 'reward' ? ' · баллы' : ''} · ${fmtTime(e.t).slice(0, 5)}</div>
         ${e.text ? `<div class="txt" title="${esc(e.text)}">«${esc(e.text)}»</div>` : ''}</div>
       <div class="acts">
         ${e.name ? '' : `<button onclick="openAnyPicker(event, 'Какое оружие?', w => post('/api/queue/resolve', {id: ${e.id}, weapon: w}))">Выбрать</button>`}
@@ -1117,7 +1130,9 @@ function renderWeaponReward() {
 function openAnyPicker(ev, title, onPick) {
   ev.stopPropagation();
   window.__anyPick = w => { closePicker(); onPick(w); };
-  $('picker-grid').innerHTML = Object.values(weapons).map(w => `<div class="pick" onclick="__anyPick('${w.id}')"><div class="icon" style="--mask:url('${w.icon}')"></div><div class="name">${esc(w.name)}</div></div>`).join('');
+  const rs = (S.roulette && S.roulette.settings) || {};
+  const allowed = w => (w.id !== 'knife' || rs.include_knife) && (w.id !== 'taser' || rs.include_zeus);   // as the server checks
+  $('picker-grid').innerHTML = Object.values(weapons).filter(allowed).map(w => `<div class="pick" onclick="__anyPick('${w.id}')"><div class="icon" style="--mask:url('${w.icon}')"></div><div class="name">${esc(w.name)}</div></div>`).join('');
   $('picker-title').textContent = title;
   const p = $('picker'); p.classList.add('open');
   const r = ev.currentTarget.getBoundingClientRect(), W = p.offsetWidth || 440;
@@ -1148,7 +1163,7 @@ async function loadAliases() {
   const d = await (await fetch('/api/donations/aliases')).json();
   $('alias-list').innerHTML = d.weapons.map(w => `<b>${esc(w.name)}</b><span>${w.aliases.map(esc).join(', ')}${w.extra.length ? ', <span class="extra">' + w.extra.map(esc).join(', ') + '</span>' : ''}</span>`).join('');
 }
-const RULE_ACTIONS = {weapon: 'оружие в очередь', next_dpi: 'следующий DPI', wheel_value: 'число на колесо'};
+const RULE_ACTIONS = {weapon: 'оружие в очередь', wheel_value: 'число на колесо'};
 function rulesNow() { return JSON.parse(JSON.stringify((S.donations && S.donations.settings && S.donations.settings.rules) || [])); }
 async function saveRules(rules) { const r = await post('/api/settings', {donations: {rules}}); if (r) toast('Сохранено'); }
 function ruleSet(i, key, value) { const rules = rulesNow(); if (!rules[i]) return; rules[i][key] = value; saveRules(rules); }
@@ -1158,14 +1173,13 @@ function addRule() { const rules = rulesNow(); rules.push({enabled: true, min: 1
 function renderRules() {
   const box = $('rules'); if (!box || box.contains(document.activeElement)) return;
   const rules = rulesNow();
-  box.innerHTML = (rules.length ? '<div class="rulehead"><span></span><span>действие</span><span>от, ₽</span><span>до, ₽</span><span class="kw">слово</span><span></span></div>' : '')
-    + rules.map((r, i) => `<div class="rule ${r.enabled ? '' : 'off'}">
-      <label class="inline" title="Включено"><input type="checkbox" ${r.enabled ? 'checked' : ''} onchange="ruleSet(${i}, 'enabled', this.checked)"></label>
-      <select data-key="rule.action" onchange="ruleSet(${i}, 'action', this.value)">${Object.entries(RULE_ACTIONS).map(([k, l]) => `<option value="${k}" ${k === r.action ? 'selected' : ''}>${l}</option>`).join('')}</select>
-      <input type="number" min="0" step="10" value="${r.min}" title="от, ₽" onchange="ruleSet(${i}, 'min', +this.value || 0)">
-      <input type="number" min="0" step="10" value="${r.max || ''}" placeholder="—" title="до, ₽ (пусто — без предела)" onchange="ruleSet(${i}, 'max', +this.value || 0)">
-      <input class="kw" type="text" value="${esc(r.keyword)}" placeholder="не нужно" onchange="ruleSet(${i}, 'keyword', this.value)">
+  box.innerHTML = rules.map((r, i) => `<div class="rule ${r.enabled ? '' : 'off'}">
+      <label class="inline ron" title="Включено"><input type="checkbox" ${r.enabled ? 'checked' : ''} onchange="ruleSet(${i}, 'enabled', this.checked)"></label>
+      <div class="ract"><select data-key="rule.action" onchange="ruleSet(${i}, 'action', this.value)">${Object.entries(RULE_ACTIONS).map(([k, l]) => `<option value="${k}" ${k === r.action ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <span class="acts"><button title="Выше" onclick="ruleMove(${i}, -1)" ${i === 0 ? 'disabled' : ''}>↑</button><button title="Ниже" onclick="ruleMove(${i}, 1)" ${i === rules.length - 1 ? 'disabled' : ''}>↓</button><button title="Удалить" onclick="ruleDel(${i})">×</button></span>
+      <label class="rf rmin">от, ₽<input type="number" min="0" step="10" value="${r.min}" onchange="ruleSet(${i}, 'min', +this.value || 0)"></label>
+      <label class="rf rmax">до, ₽<input type="number" min="0" step="10" value="${r.max || ''}" placeholder="—" title="пусто — без предела" onchange="ruleSet(${i}, 'max', +this.value || 0)"></label>
+      <label class="rf rkw">слово<input type="text" value="${esc(r.keyword)}" placeholder="не нужно" title="правило сработает, только если это слово есть в сообщении" onchange="ruleSet(${i}, 'keyword', this.value)"></label>
     </div>`).join('') || '<div class="muted">Правил нет: донаты только записываются в журнал.</div>';
   enhanceSelects();
 }
@@ -1230,7 +1244,7 @@ function showMainTab(name) {
 }
 (function initTab() {
   let name = (location.hash || '').replace('#', '');
-  const TABS = ['startup', 'weapons', 'dpi', 'look', 'donations', 'stats', 'general', 'help'];
+  const TABS = ['startup', 'weapons', 'loadout', 'dpi', 'look', 'donations', 'stats', 'general', 'help'];
   if (!TABS.includes(name)) { try { name = localStorage.getItem('cs2r.tab') || ''; } catch (e) { name = ''; } }
   if (!TABS.includes(name)) name = '';
   showMainTab(name || 'weapons');
@@ -1400,7 +1414,7 @@ function renderChecks() {
   else { sub = 'конфиг ещё не установлен; после установки перезапустите CS2'; }
   req.push(item(cls, 'CS2: данные из игры', sub, acts));
   // 2. Loadout
-  if (r.loadout) req.push(item('ok', 'Лоадаут', r.running ? 'сгенерирован, гонка идёт' : 'сгенерирован, выставьте его в игре и нажмите «Старт»', `<button onclick="showMainTab('weapons')">Открыть</button>`));
+  if (r.loadout) req.push(item('ok', 'Лоадаут', r.running ? 'сгенерирован, гонка идёт' : 'сгенерирован, выставьте его в игре и нажмите «Старт»', `<button onclick="showMainTab('loadout')">Открыть</button>`));
   else req.push(item('warn', 'Лоадаут', 'ещё не сгенерирован', `<button class="primary" onclick="post('/api/loadout/generate',{sides:['T','CT']})">Сгенерировать</button>`));
   // 3. OBS: weapon widget
   const wObs = obs('weapons'), lObs = obs('loadout'), dObs = obs('dpi'), qObs = obs('requests');
