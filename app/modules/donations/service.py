@@ -73,12 +73,9 @@ def _rules(value) -> list[dict]:
 @dataclass
 class DonationSettings:
     enabled: bool = False
-    da_enabled: bool = True
     da_client_id: str = ""
     da_client_secret: str = ""          # secret
-    dp_enabled: bool = True
     dp_api_key: str = ""                # secret
-    dp_include_test: bool = False       # DonatePay «тестовое оповещение» (status=user) counts as a donation
     rules: list = field(default_factory=lambda: [dict(r) for r in DEFAULT_RULES])
     aliases_extra: str = ""             # user additions, «алиас = оружие» per line
     queue_command: str = "!очередь"     # chat command: the bot answers with the viewer's place in the queue
@@ -91,7 +88,7 @@ class DonationSettings:
     def from_dict(cls, d: dict | None) -> "DonationSettings":
         s = cls()
         config.assign_fields(s, d, "donations")
-        for b in ("enabled", "da_enabled", "dp_enabled", "dp_include_test", "reward_enabled"):
+        for b in ("enabled", "reward_enabled"):
             setattr(s, b, config.to_bool(getattr(s, b)))
         for k in ("da_client_id", "da_client_secret", "dp_api_key", "reward_id"):
             v = getattr(s, k)
@@ -297,9 +294,10 @@ class DonationService:
                 continue
             now = time.monotonic()
             jobs = []
-            if s.da_enabled and self.state["da"].get("access_token"):
+            # one switch for everything (``enabled``); a service is polled while it is connected (0.21.2)
+            if self.state["da"].get("access_token"):
                 jobs.append(("da", s.da_poll_s, self._poll_da))
-            if s.dp_enabled and s.dp_api_key:
+            if s.dp_api_key:
                 jobs.append(("dp", s.dp_poll_s, self._poll_dp))
             for name, period, fn in jobs:
                 if now < due[name]:
@@ -333,10 +331,7 @@ class DonationService:
         self.ingest("da", items)
 
     def _poll_dp(self) -> None:
-        items = P.dp_transactions(self.settings.dp_api_key)
-        if not self.settings.dp_include_test:
-            items = [d for d in items if not d.test]
-        self.ingest("dp", items)
+        self.ingest("dp", P.dp_transactions(self.settings.dp_api_key))
 
     def ingest(self, provider: str, items: list[P.Donation], now: float | None = None) -> list[P.Donation]:
         """Pick the donations that were not seen yet and hand them to the loop thread. Returns them."""

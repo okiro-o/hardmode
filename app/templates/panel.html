@@ -683,7 +683,6 @@
           <div class="row full">
             <button class="primary" onclick="daConnect()">Подключить</button>
             <button onclick="post('/api/donations/da/disconnect')">Отключить</button>
-            <label class="inline"><input type="checkbox" data-key="donations.da_enabled"> Получать донаты</label>
           </div>
         </div>
         <h3>DonatePay <span class="chip" id="chip-dp" style="margin-left:8px;"><span class="dot"></span><b>—</b></span></h3>
@@ -697,8 +696,6 @@
             </div></label>
           <div class="row full">
             <button onclick="dpVerify()">Проверить ключ</button>
-            <label class="inline"><input type="checkbox" data-key="donations.dp_enabled"> Получать донаты</label>
-            <label class="inline"><input type="checkbox" data-key="donations.dp_include_test"> Учитывать тестовые оповещения</label>
           </div>
         </div>
       </section>

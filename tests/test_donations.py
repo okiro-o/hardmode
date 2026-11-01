@@ -65,7 +65,7 @@ def test_parse_da_and_dp():
                      "created_at": {"date": "2026-11-01 13:00:00.000000", "timezone": "Europe/Moscow"}})
     assert (dp.id, dp.user, dp.amount, dp.message, dp.test) == ("11", "Bob", 150.0, "1600", False)
     assert dp.created_ts == P.parse_da({"id": 1, "created_at": "2026-11-01 10:00:00"}).created_ts   # 13:00 MSK = 10:00 UTC
-    assert P.parse_dp({"id": 12, "sum": "1", "status": "user", "type": "donation"}).test is True
+    assert P.parse_dp({"id": 12, "sum": "1", "status": "user", "type": "donation"}) is None   # dashboard test alert
     assert P.parse_dp({"id": 13, "sum": "1", "status": "cancel", "type": "donation"}) is None
     assert P.parse_dp({"id": 14, "sum": "1", "status": "success", "type": "cashout"}) is None
 

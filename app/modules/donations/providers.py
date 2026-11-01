@@ -12,7 +12,8 @@ DonatePay (personal API key from the DonatePay dashboard, no OAuth):
 * user:         ``GET https://donatepay.ru/api/v1/user?access_token=KEY``
 * transactions: ``GET https://donatepay.ru/api/v1/transactions?access_token=KEY&limit&order&type=donation``
   item: ``{id, what, sum: "100.00", status: success|user|cancel|wait, type, vars: {name, comment}, comment,
-  created_at: {date, timezone}}``; ``status=user`` = test notification from the dashboard.
+  created_at: {date, timezone}}``; ``status=user`` = test notification from the dashboard: it carries no text
+  of the streamer's choice, so it is never treated as a donation (0.21.2, user's decision).
   limit: one request per method per key every ~20 s.
 Source: antim0118/DonatePayAPI (C#, mirrors the official page that is behind a login).
 """
@@ -157,11 +158,11 @@ _TZ_OFFSETS = {"utc": 0, "europe/moscow": 3}
 
 
 def parse_dp(r: dict) -> Donation | None:
-    """None for anything that is not a finished donation (cashouts, cancelled, pending)."""
+    """None for anything that is not a finished donation (cashouts, cancelled, pending, dashboard tests)."""
     if not isinstance(r, dict) or r.get("id") is None:
         return None
     status = str(r.get("status") or "")
-    if r.get("type") not in (None, "donation") or status not in ("success", "user"):
+    if r.get("type") not in (None, "donation") or status != "success":
         return None
     v = r.get("vars") if isinstance(r.get("vars"), dict) else {}
     message = v.get("comment") or r.get("comment") or ""
@@ -174,5 +175,4 @@ def parse_dp(r: dict) -> Donation | None:
     except ValueError:
         pass
     return Donation(provider="dp", id=str(r["id"]), user=str(v.get("name") or r.get("what") or "аноним")[:40],
-                    amount=_float(r.get("sum")), currency="RUB", message=str(message)[:500], created_ts=ts,
-                    test=(status == "user"))
+                    amount=_float(r.get("sum")), currency="RUB", message=str(message)[:500], created_ts=ts)
