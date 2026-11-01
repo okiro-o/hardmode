@@ -68,6 +68,10 @@ class ChatSettings:
     on_reject: bool = True
     reject_template: str = "❌ {user}: {reason}"
     reject_cooldown_s: float = 30.0         # at most one rejection message per viewer per this interval
+    on_donation: bool = True                # what a donation did (or why it did nothing)
+    donation_template: str = "💸 {user}: {result}"
+    on_request_done: bool = True            # a viewer weapon request was fulfilled
+    request_done_template: str = "✅ {weapon} для {user} — выполнено"
     channel_login: str = ""                 # Twitch channel login (for the anonymous chat reader)
     min_interval_s: float = 2.0
 
@@ -75,11 +79,12 @@ class ChatSettings:
     def from_dict(cls, d: dict | None) -> "ChatSettings":
         s = cls()
         config.assign_fields(s, d, "chat")
-        for b in ("enabled", "on_start", "on_weapon", "on_dpi", "on_viewer", "on_reject"):
+        for b in ("enabled", "on_start", "on_weapon", "on_dpi", "on_viewer", "on_reject", "on_donation", "on_request_done"):
             setattr(s, b, config.to_bool(getattr(s, b)))
         s.channel_login = s.channel_login.strip().lstrip("#").lower()[:40] if isinstance(s.channel_login, str) else ""
         s.se_jwt = s.se_jwt.strip() if isinstance(s.se_jwt, str) else ""
-        for t in ("start_template", "weapon_template", "dpi_template", "viewer_template", "reject_template"):
+        for t in ("start_template", "weapon_template", "dpi_template", "viewer_template", "reject_template",
+                  "donation_template", "request_done_template"):
             v = getattr(s, t)
             if not isinstance(v, str):
                 raise ValueError(f"{t}: нужна строка")
@@ -128,6 +133,7 @@ class ChatNotifier:
         self.last_error: str | None = None
         self.log: list[dict] = []
         self._reject_seen: dict[str, float] = {}   # user -> last rejection message time
+        self._donation_seq = 0
 
     # ------------------------------------------------------------------ status
     def status(self) -> dict:
@@ -196,6 +202,20 @@ class ChatNotifier:
         if self.settings.on_viewer:
             # one queue slot per viewer so confirmations for different people do not collapse
             self._enqueue(f"viewer:{user.lower()}", render_template(self.settings.viewer_template, user=user, dpi=dpi, **extra))
+
+    def notify_donation(self, user: str, result: str, ok: bool = True, **extra: Any) -> None:
+        """What a donation did. Never rate-limited and never merged with other donations: the donor paid."""
+        if not self.settings.on_donation:
+            return
+        self._donation_seq += 1
+        template = self.settings.donation_template if ok else self.settings.reject_template
+        self._enqueue(f"donation:{self._donation_seq}", render_template(template, user=user, result=result, reason=result, **extra))
+
+    def notify_request_done(self, user: str, weapon: str, **extra: Any) -> None:
+        if self.settings.on_request_done:
+            self._donation_seq += 1
+            self._enqueue(f"request:{self._donation_seq}",
+                          render_template(self.settings.request_done_template, user=user, weapon=weapon, **extra))
 
     def notify_reject(self, user: str, reason: str, **extra: Any) -> bool:
         """Tell a viewer why their value was not accepted (rate-limited per viewer)."""

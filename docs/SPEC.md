@@ -2,7 +2,7 @@
 
 Этот документ — источник правды о приложении: зачем оно, как устроено, какие решения приняты
 и почему, что отклонено, что в бэклоге. Обновляется при каждом значимом изменении.
-Последнее обновление: 2026-11-01, версия приложения 0.17.2. Название продукта: **Hardmode** (до 0.13.0 — CS2 Roulette; переименовано по просьбе пользователя: «roulette» ассоциируется со скам-сайтами, «CS2» — чужой знак).
+Последнее обновление: 2026-11-01, версия приложения 0.18.0. Название продукта: **Hardmode** (до 0.13.0 — CS2 Roulette; переименовано по просьбе пользователя: «roulette» ассоциируется со скам-сайтами, «CS2» — чужой знак).
 
 ## 1. Назначение и пользователь
 
@@ -63,7 +63,8 @@ push-обновлений, обычные HTML/JS-страницы без сбо
 | `app/modules/dpi/routes.py` | `/api/dpi/*`, `/overlay/dpi` |
 | `app/ingame.py` | оверлей поверх игры (Windows): layered Win32-окна через ctypes (click-through, no-activate, topmost), рендер Pillow, собственный растеризатор SVG-силуэтов (M/L/H/V/C/S/Z, вложенные контуры = дырки, 3× суперсэмплинг), менеджер-поток с опросом состояния |
 | `app/docs.py` | мини-рендер Markdown → HTML для вкладки «Справка» (заголовки с id, списки, таблицы, код, жирный, ссылки; всё экранируется) |
-| `app/templates/panel.html` | панель: вкладки «Startup», «Оружие», «DPI», «Вид», «Статистика», «Общее», «Справка» |
+| `app/templates/panel.html` | панель: вкладки «Startup», «Оружие», «DPI», «Вид», «Донаты», «Статистика», «Общее», «Справка» |
+| `app/modules/donations/` | донаты DonationAlerts/DonatePay, правила, зрительская очередь, словарь оружия (см. §6d) |
 | `app/web.py` | общие HTTP-помощники: страницы без кэша (`page`), разбор JSON-тела (`json_body`) |
 | `app/stats.py` | статистика стрима (см. §6c), data/stats.json |
 | `app/version.py` | единственное место с номером версии |
@@ -75,7 +76,8 @@ push-обновлений, обычные HTML/JS-страницы без сбо
 | `docs/DPI_PLAN.md` | исследование способов управления DPI (HID++ / G HUB WS / Lua / fallback) |
 | `QUICKSTART.md`, `README.md` | инструкции пользователю; QUICKSTART.md — единственный источник справки, он же рендерится во вкладке «Справка» (`GET /api/docs`) |
 
-Данные: `data/settings.json` (настройки), `data/state.json` (гонка), `data/dpi_state.json`.
+Данные: `data/settings.json` (настройки), `data/state.json` (гонка), `data/dpi_state.json`, `data/stats.json`,
+`data/donations.json` (токены DA, last_id, журнал), `data/viewer_queue.json`.
 Корректные файлы переживают обновления; битые бэкапятся и пересоздаются.
 
 ## 4. Правила CS2, на которые опирается код
@@ -241,6 +243,51 @@ push-обновлений, обычные HTML/JS-страницы без сбо
 - «Когда применять новый DPI» (`dpi.apply_at`) возвращён в настройки DPI как режим для Deathmatch (0.16.0). Идеи на потом: виджет «итоги стрима» для OBS, вклад зрителей (чьи значения
   выпадали), серии киллов.
 
+## 6d. Донаты (0.18.0)
+
+- Пакет `app/modules/donations/`: `aliases.py` (словарь оружия), `queue.py` (зрительская очередь),
+  `providers.py` (HTTP-клиенты), `service.py` (настройки, правила, поток опроса, разбор), `routes.py`.
+- Провайдеры. DonationAlerts: OAuth authorization code, приложение заводит стример в кабинете DA
+  (`/application/clients`), redirect `http://127.0.0.1:<port>/donations/da/callback` (GET-маршрут вне `/api`,
+  проверка `state`, обмен кода в executor); токен `POST /oauth/token` (form), refresh при истечении и на 401;
+  донаты `GET /api/v1/alerts/donations?page=1`, профиль `GET /api/v1/user/oauth`, скоупы `oauth-user-show
+  oauth-donation-index`, лимит 60 запросов/мин. Источник: npm `@donation-alerts/api-call|auth|api` 4.0.0 (официальная
+  страница apidoc с машины разработки недоступна). DonatePay: личный ключ, `GET /api/v1/transactions?
+  access_token&limit&order=DESC&type=donation`, `status=success` (и `user` = тестовое оповещение, по
+  настройке), не чаще раза в 20 с; источник — C#-клиент antim0118/DonatePayAPI (официальная страница за логином).
+  Сумма DA — `amount_in_user_currency`, иначе `amount`; DP — RUB.
+- Опрос: поток `donations`, DA каждые `da_poll_s` (5 с), DP каждые `dp_poll_s` (≥20 с), экспоненциальная пауза
+  при ошибках (до ×12). Дедупликация по `last_id` на провайдера в data/donations.json: первый опрос аккаунта
+  только запоминает максимум; после перезапуска донаты новее `last_id` обрабатываются, если им ≤ 10 минут
+  (`FRESH_S`). Разбор — на потоке event loop (`call_threadsafe`).
+- Правила (`donations.rules`, сверху вниз, первое подходящее): `{enabled, min, max(0 = без предела), keyword,
+  action}`; действия **только отложенные** (решение пользователя 2026-10-31, «перекрутить» отклонено):
+  `weapon` → зрительская очередь, `next_dpi` → `DpiService.force_next` (FIFO, следующее кручение встаёт на
+  значение, оно добавляется сегментом на это кручение, `spin.forced_by`), `wheel_value` →
+  `add_viewer_value(per_user_limit=False)`. Число и оружие ищутся после вырезания ключевого слова. Если
+  содержимое узнано, но суммы не хватило, отказ в чат «<действие> — от N ₽». По умолчанию: weapon ≥300,
+  next_dpi ≥500, wheel_value ≥50. Журнал 50 последних донатов (data/donations.json).
+- Секреты `da_client_secret`, `dp_api_key` — только в settings.json; наружу `*_set`; токены DA — в
+  donations.json. Смена `da_client_id` сбрасывает токены. `GET /api/settings` отдаёт `public_dict`.
+- Словарь (`aliases.py`): текст и алиасы нормализуются одинаково (нижний регистр, ё→е, транслит кириллицы,
+  разделители), алиас может занимать до 4 соседних токенов, `*` в конце = префикс токена; самое раннее
+  совпадение, при равенстве самое длинное; визуальные двойники с кириллической «р» (`р250`) — отдельные
+  алиасы. Исключены слова-ловушки («хм», «новая», «тек*», «маг*», «57»). Пользовательские добавки —
+  `donations.aliases_extra`, строки «алиас = оружие», ошибки показываются в панели. Число: первое целое
+  2–5 цифр (или «1 600», «1.600»), не приклеенное слева к букве.
+- Зрительская очередь (`queue.py`, data/viewer_queue.json): заявки `{id, weapon|None, text, user, amount,
+  currency, source, t, status}`, история 30 закрытых; закрытие киллом этим оружием (`queue_autocomplete`,
+  в `handle_gsi`), ручные done/dismiss/move/resolve. Гонку не трогает.
+- Чат SE: `on_donation`/`donation_template` («💸 {user}: {result}»), отказы донатов через `reject_template`,
+  без кулдауна и без схлопывания; `on_request_done`/`request_done_template`.
+- API: `GET /api/donations`, `POST /api/donations/da/connect|disconnect`, `GET /donations/da/callback`,
+  `POST /api/donations/dp/verify`, `POST /api/donations/test`, `GET /api/donations/aliases`,
+  `POST /api/donations/aliases/check`, `GET /api/queue`, `POST /api/queue/add|done|dismiss|resolve|move|clear`,
+  `POST /api/dpi/forced/remove`; SSE `queue`, `donations`. Панель: вкладка «Донаты», блок «Зрительская очередь»
+  на вкладке «Оружие», «Следующие по донатам» на вкладке «DPI», пункт в Startup.
+- Не проверено с реальными аккаунтами (на 2026-11-01): регистрация приложения DA и допустимость адреса
+  127.0.0.1 в нём, формат ответов DA/DP вживую. Тестируется кнопкой «Тестовый донат» и юнит-тестами.
+
 ## 6b. Оверлей поверх игры (Windows)
 
 - Назначение: стример видит текущий DPI и текущее оружие (+ следующие) поверх CS2, не глядя на
@@ -328,7 +375,7 @@ current, home, homecolor, color, accent, bg, debug`.
 
 ## 8. Панель (UI)
 
-Семь вкладок (0.13.0, «Статистика» с 0.15.0; запоминаются в localStorage/hash, `hashchange` переключает). Принцип: настройки
+Восемь вкладок (0.13.0, «Статистика» с 0.15.0, «Донаты» с 0.18.0; запоминаются в localStorage/hash, `hashchange` переключает). Принцип: настройки
 каждой вкладки должны влезать в экран; редкие настройки — в `<details>` «Дополнительно» внутри блока;
 логи свёрнуты до 84px с кнопкой «развернуть»; статистика гонки — строка `.statline` в блоке. Удалены
 из UI: блок хоткеев (сам модуль удалён в 0.16.x), дубль «Виджеты для OBS», длительность

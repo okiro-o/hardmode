@@ -28,6 +28,9 @@ from .gsi import GsiTracker, build_cfg
 from .ingame import IngameOverlays
 from .chat import ChatNotifier, ChatSettings
 from .modules import dpi
+from .modules.donations import routes as donation_routes
+from .modules.donations.queue import ViewerQueue
+from .modules.donations.service import DonationService, DonationSettings
 from .modules.dpi import DpiService, DpiSettings
 from .roulette import Roulette
 from .stats import StatsTracker
@@ -84,6 +87,19 @@ class AppState:
                                        on_status=lambda: self.broker.publish_threadsafe("twitch", self.twitch.status()))
         self._announced: tuple[bool, int | None] = (self.roulette.running, self.roulette.current_uid())
         self.ingame = IngameOverlays(self.settings.ingame, self.ingame_state, self.ingame_colors)
+        self.queue = ViewerQueue(os.path.join(config.data_dir(), "viewer_queue.json"), publish=self.broker.publish)
+        try:
+            donation_settings = DonationSettings.from_dict(self.settings.donations)
+        except ValueError:
+            donation_settings = DonationSettings()
+        self.settings.donations = donation_settings.to_dict()
+        self.donations = DonationService(donation_settings, os.path.join(config.data_dir(), "donations.json"),
+                                         publish=self.broker.publish, call_threadsafe=self.broker.call_threadsafe)
+        self.donations.add_wheel = lambda v, u: self.dpi.add_viewer_value(v, u, source="donation", per_user_limit=False)
+        self.donations.force_next = lambda v, u: self.dpi.force_next(v, u, source="donation")
+        self.donations.queue_weapon = lambda w, text, user, amount, cur: self.queue.add(w, text, user, amount, cur)
+        self.donations.chat_result = lambda user, text: self.chat.notify_donation(user, text, ok=True)
+        self.donations.chat_reject = lambda user, text: self.chat.notify_donation(user, text, ok=False)
         self._save_lock = threading.Lock()
         self._last_gsi_publish = 0.0
         self._last_gsi_key: tuple = ()
@@ -229,6 +245,8 @@ class AppState:
             "overlay": self.settings.overlay.__dict__,
             "ingame": self.ingame_info(),
             "stats": self.stats.snapshot(),
+            "queue": self.queue.snapshot(),
+            "donations": self.donations.status(),
             "urls": self.urls(),
             "gsi_token": self.settings.gsi_token,
             "port": self.settings.port,
@@ -245,7 +263,7 @@ class AppState:
         return {"overlay": self.settings.overlay.__dict__,
                 "ingame": self.ingame_info(),
                 "roulette": self.roulette.settings.to_dict(), "dpi": self.dpi.settings.to_dict(),
-                "chat": self.chat.settings.public_dict(),
+                "chat": self.chat.settings.public_dict(), "donations": self.donations.settings.public_dict(),
                 "gsi_token": self.settings.gsi_token, "port": self.settings.port}
 
     def publish_gsi(self, force: bool = False) -> None:
@@ -276,6 +294,10 @@ class AppState:
                 continue
             if ev["type"] != "kill":
                 continue
+            if self.donations.settings.queue_autocomplete:
+                closed = self.queue.on_kill(ev["weapon"])
+                if closed:
+                    self.chat.notify_request_done(closed["user"], closed["name"])
             if batch_advanced and ev["index"] > 0:
                 # a double/collateral in one payload: the extra kill belongs to the weapon that
                 # just finished, it must not be judged against the next one
@@ -339,6 +361,7 @@ def create_app() -> FastAPI:
         state.dpi.start(loop)
         state.ingame.start()
         state.chat.start()
+        state.donations.start()
         state.sync_twitch()
         stop = asyncio.Event()
 
@@ -367,6 +390,7 @@ def create_app() -> FastAPI:
             state.dpi.stop()
             state.ingame.stop()
             state.chat.stop()
+            state.donations.stop()
             state.twitch.stop()
             state.stats.flush()
             state.save_state()
@@ -380,6 +404,7 @@ def create_app() -> FastAPI:
 
     app.mount("/static", StaticFiles(directory=os.path.join(config.package_dir(), "static")), name="static")
     app.include_router(dpi.router)
+    app.include_router(donation_routes.router)
 
     # ------------------------------------------------------------------ pages
     @app.get("/", response_class=HTMLResponse)
@@ -530,6 +555,7 @@ def create_app() -> FastAPI:
         d["roulette"] = state.roulette.settings.to_dict()
         d["dpi"] = state.dpi.settings.to_dict()
         d["chat"] = state.chat.settings.public_dict()   # never expose the JWT
+        d["donations"] = state.donations.settings.public_dict()   # nor the DA secret / DonatePay key
         return d
 
     @app.post("/api/settings")
@@ -537,11 +563,12 @@ def create_app() -> FastAPI:
         body = await _json(request)
         s = state.settings
         rejected: list[str] = []
-        for section in ("roulette", "overlay", "dpi", "chat", "ingame"):
+        for section in ("roulette", "overlay", "dpi", "chat", "ingame", "donations"):
             if section in body and body[section] is not None and not isinstance(body[section], dict):
                 raise HTTPException(400, f"{section}: нужен объект")
         # sections validated by their own module: the module keeps the typed settings, AppSettings the dict copy
-        for section, owner, label in (("chat", state.chat, "чата"), ("dpi", state.dpi, "DPI"), ("roulette", state.roulette, "рулетки")):
+        for section, owner, label in (("chat", state.chat, "чата"), ("dpi", state.dpi, "DPI"), ("roulette", state.roulette, "рулетки"),
+                                      ("donations", state.donations, "донатов")):
             if section in body:
                 try:
                     owner.update_settings(body[section] or {})

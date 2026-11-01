@@ -106,6 +106,33 @@
   .tbl th:first-child, .tbl td:first-child { text-align:left; font-weight:600; }
   .tbl td.muted { color:var(--muted); text-align:left; font-weight:400; }
   .tbl td.sortedcol { color:var(--text); }
+  textarea { width:100%; background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 10px;
+    font: 13px/1.45 ui-monospace, Consolas, monospace; resize:vertical; }
+  textarea:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(255,209,102,.14); }
+  .hint.bad { color:var(--bad); }
+  .req { display:flex; align-items:center; gap:12px; padding:8px 10px; border:1px solid var(--line); border-radius:10px; background:var(--panel2); margin-bottom:6px; }
+  .req .icon { flex:0 0 96px; height:32px; background:#fff; -webkit-mask: var(--mask) no-repeat center / contain; mask: var(--mask) no-repeat center / contain; }
+  .req .icon.unknown { -webkit-mask:none; mask:none; background:transparent; color:var(--accent); font-size:22px; text-align:center; line-height:32px; }
+  .req .body { flex:1; min-width:0; }
+  .req .body .who { color:var(--muted); font-size:12px; }
+  .req .body .txt { color:var(--muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .req .acts { display:flex; gap:4px; }
+  .req .acts button { padding:4px 9px; }
+  .req.first { border-color:rgba(255,209,102,.5); }
+  .rule { display:grid; grid-template-columns: auto minmax(160px, 1.5fr) 74px 74px minmax(70px, 1fr) auto; gap:8px; align-items:center;
+    padding:8px; border:1px solid var(--line); border-radius:10px; background:var(--panel2); margin-bottom:6px; }
+  .rule.off { opacity:.55; }
+  .rule input[type=number], .rule input[type=text] { height:32px; }
+  .rule .acts { display:flex; gap:2px; }
+  .rule .acts button { padding:3px 7px; }
+  .rulehead { display:grid; grid-template-columns: auto minmax(160px, 1.5fr) 74px 74px minmax(70px, 1fr) auto; gap:8px; padding:0 8px 4px;
+    font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+  .rulehead span:first-child { width:40px; }
+  .aliaslist { display:grid; grid-template-columns: 110px 1fr; gap:4px 12px; font-size:12.5px; margin-top:6px; }
+  .aliaslist b { font-weight:600; }
+  .aliaslist .extra { color:var(--accent); }
+  .log .don.no span:last-child { color:var(--bad); }
+  @media (max-width: 900px) { .rule, .rulehead { grid-template-columns: auto 1fr 70px 70px; } .rule .kw, .rulehead .kw { grid-column: 2 / 4; } }
   /* help */
   .help { display:grid; grid-template-columns: 220px 1fr; gap:16px; }
   .toc { position:sticky; top:120px; align-self:start; display:flex; flex-direction:column; gap:2px; }
@@ -245,6 +272,7 @@
     <button data-tab="weapons" onclick="showMainTab('weapons')">🔫 Оружие</button>
     <button data-tab="dpi" onclick="showMainTab('dpi')">🎡 DPI</button>
     <button data-tab="look" onclick="showMainTab('look')">🎨 Вид</button>
+    <button data-tab="donations" onclick="showMainTab('donations')">💸 Донаты</button>
     <button data-tab="stats" onclick="showMainTab('stats')">📊 Статистика</button>
     <button data-tab="general" onclick="showMainTab('general')">⚙ Общее</button>
     <button data-tab="help" onclick="showMainTab('help')">📖 Справка</button>
@@ -324,6 +352,18 @@
       </section>
     </div>
     <div class="col">
+      <section id="sec-requests">
+        <h2>Зрительская очередь <span class="right"><span class="chip" id="chip-requests"><span class="dot"></span><b>пусто</b></span></span></h2>
+        <div id="requests"></div>
+        <details style="margin-top:6px;"><summary>Выполнено недавно и настройки</summary>
+          <div id="requests-history" style="margin:6px 0;"></div>
+          <div class="row">
+            <label class="inline"><input type="checkbox" data-key="donations.queue_autocomplete"> Закрывать заявку киллом с этим оружием</label>
+            <button onclick="post('/api/queue/clear')">Очистить историю</button>
+          </div>
+        </details>
+      </section>
+
       <section>
         <h2>Настройки гонки</h2>
         <div class="form">
@@ -424,6 +464,8 @@
         <div class="chips" id="custom-chips" style="margin-top:8px;"></div>
         <h3>На колесе сейчас</h3>
         <div class="chips" id="wheel-chips"></div>
+        <h3 id="forced-h" style="display:none;">Следующие по донатам</h3>
+        <div class="chips" id="forced-chips"></div>
       </section>
 
       <section id="sec-viewers">
@@ -558,6 +600,87 @@
     </div>
   </div>
 
+  <!-- ================= TAB: DONATIONS ================= -->
+  <div class="tabpage" id="tab-donations">
+    <div class="col">
+      <section id="sec-donations">
+        <h2>Донаты <span class="right"><span class="chip" id="chip-donations"><span class="dot"></span><b>выкл</b></span></span></h2>
+        <label class="inline"><input type="checkbox" data-key="donations.enabled"> Донаты включены</label>
+        <h3>DonationAlerts <span class="chip" id="chip-da" style="margin-left:8px;"><span class="dot"></span><b>—</b></span></h3>
+        <div class="form">
+          <div class="f full"><span>Адрес возврата (вписать в приложение DonationAlerts)</span>
+            <div class="url" style="margin:0;"><code id="da-redirect"></code><button onclick="copyText('da-redirect')">Копировать</button></div></div>
+          <label class="f"><span>ID приложения</span><input type="text" data-key="donations.da_client_id" placeholder="например, 12345" autocomplete="off"></label>
+          <label class="f"><span>Секрет приложения <span id="da-secret-state" class="muted"></span></span>
+            <div class="tokenbox">
+              <input type="password" id="da-secret" placeholder="вставьте секрет" autocomplete="off" spellcheck="false">
+              <button type="button" class="eye" onclick="toggleVisible('da-secret')" title="Показать/скрыть">👁</button>
+              <button type="button" class="primary" onclick="saveSecret('da_client_secret', 'da-secret')">Сохранить</button>
+            </div></label>
+          <div class="row full">
+            <button class="primary" onclick="daConnect()">Подключить</button>
+            <button onclick="post('/api/donations/da/disconnect')">Отключить</button>
+            <label class="inline"><input type="checkbox" data-key="donations.da_enabled"> Получать донаты</label>
+          </div>
+        </div>
+        <h3>DonatePay <span class="chip" id="chip-dp" style="margin-left:8px;"><span class="dot"></span><b>—</b></span></h3>
+        <div class="form">
+          <label class="f full"><span>Ключ API <span id="dp-key-state" class="muted"></span></span>
+            <div class="tokenbox">
+              <input type="password" id="dp-key" placeholder="вставьте ключ" autocomplete="off" spellcheck="false">
+              <button type="button" class="eye" onclick="toggleVisible('dp-key')" title="Показать/скрыть">👁</button>
+              <button type="button" class="primary" onclick="saveSecret('dp_api_key', 'dp-key')">Сохранить</button>
+              <button type="button" onclick="clearSecret('dp_api_key')" title="Удалить сохранённый ключ">Удалить</button>
+            </div></label>
+          <div class="row full">
+            <button onclick="dpVerify()">Проверить ключ</button>
+            <label class="inline"><input type="checkbox" data-key="donations.dp_enabled"> Получать донаты</label>
+            <label class="inline"><input type="checkbox" data-key="donations.dp_include_test"> Учитывать тестовые оповещения</label>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Тестовый донат</h2>
+        <div class="form">
+          <label class="f"><span>Имя</span><input type="text" id="test-user" value="тест"></label>
+          <label class="f"><span>Сумма, ₽</span><input type="number" id="test-amount" min="0" step="10" value="300"></label>
+          <label class="f full"><span>Сообщение</span>
+            <div class="row" style="flex-wrap:nowrap;">
+              <input type="text" id="test-message" placeholder="например, закинь крокодила" style="flex:1;" onkeydown="if(event.key==='Enter') testDonation()">
+              <button class="primary" onclick="testDonation()">Отправить</button>
+            </div></label>
+        </div>
+      </section>
+
+      <section>
+        <h2>Последние донаты</h2>
+        <div class="log" id="don-log"></div>
+      </section>
+    </div>
+
+    <div class="col">
+      <section>
+        <h2>Правила <span class="right"><button onclick="addRule()">+ правило</button></span></h2>
+        <div id="rules"></div>
+      </section>
+
+      <section>
+        <h2>Псевдонимы оружия</h2>
+        <div class="form">
+          <label class="f full"><span>Проверить текст</span><input type="text" id="alias-check" placeholder="например, закинь крокодила" oninput="checkAlias()"></label>
+          <div class="hint full" id="alias-result"></div>
+          <label class="f full"><span>Свои псевдонимы: «алиас = оружие», по одному в строке, * в конце — любое окончание</span>
+            <textarea data-key="donations.aliases_extra" rows="4" placeholder="бабах = awp&#10;железк* = m4a1-s"></textarea></label>
+          <div class="hint full bad" id="alias-errors"></div>
+        </div>
+        <details style="margin-top:6px;" ontoggle="if(this.open) loadAliases()"><summary>Встроенный словарь</summary>
+          <div id="alias-list" class="aliaslist"></div>
+        </details>
+      </section>
+    </div>
+  </div>
+
   <!-- ================= TAB: STATS ================= -->
   <div class="tabpage" id="tab-stats" style="grid-template-columns: 1fr;">
     <section>
@@ -643,17 +766,21 @@
           <label class="inline"><input type="checkbox" data-key="chat.on_dpi"> Новый DPI</label>
           <label class="inline"><input type="checkbox" data-key="chat.on_viewer"> Зритель добавил DPI</label>
           <label class="inline"><input type="checkbox" data-key="chat.on_reject"> Отказ зрителю (почему не принято)</label>
+          <label class="inline"><input type="checkbox" data-key="chat.on_donation"> Что сделал донат</label>
+          <label class="inline"><input type="checkbox" data-key="chat.on_request_done"> Заявка зрителя выполнена</label>
         </div>
         <details style="margin-top:6px;"><summary>Тексты сообщений и интервалы</summary>
           <div class="form" style="margin-top:8px;">
             <label class="f"><span>Минимум между сообщениями, с</span><input type="number" min="0.5" max="60" step="0.5" data-key="chat.min_interval_s"></label>
             <label class="f"><span>Не чаще одного отказа на зрителя, с</span><input type="number" min="0" max="3600" step="5" data-key="chat.reject_cooldown_s"></label>
-            <div class="hint full">Подстановки: <span class="kbd">{weapon}</span> <span class="kbd">{completed}</span> <span class="kbd">{kills}</span> <span class="kbd">{side}</span> <span class="kbd">{dpi}</span> <span class="kbd">{user}</span> <span class="kbd">{reason}</span></div>
+            <div class="hint full">Подстановки: <span class="kbd">{weapon}</span> <span class="kbd">{completed}</span> <span class="kbd">{kills}</span> <span class="kbd">{side}</span> <span class="kbd">{dpi}</span> <span class="kbd">{user}</span> <span class="kbd">{reason}</span> <span class="kbd">{result}</span></div>
             <label class="f full"><span>Старт</span><input type="text" data-key="chat.start_template"></label>
             <label class="f full"><span>Новое оружие</span><input type="text" data-key="chat.weapon_template"></label>
             <label class="f full"><span>Новый DPI</span><input type="text" data-key="chat.dpi_template"></label>
             <label class="f full"><span>Зритель добавил DPI</span><input type="text" data-key="chat.viewer_template"></label>
             <label class="f full"><span>Отказ зрителю</span><input type="text" data-key="chat.reject_template"></label>
+            <label class="f full"><span>Донат</span><input type="text" data-key="chat.donation_template"></label>
+            <label class="f full"><span>Заявка выполнена</span><input type="text" data-key="chat.request_done_template"></label>
           </div>
         </details>
         <div class="log compact" id="chat-log" style="margin-top:10px;"></div><button class="logtoggle" onclick="toggleLog(this)">развернуть</button>
@@ -768,6 +895,9 @@ function renderWheel() {
   const home = +((d.settings && d.settings.home_dpi) || 0), homeColor = (d.settings && d.settings.home_color) || '#ff6b6b';
   $('wheel-chips').innerHTML = all.map(v => `<span class="chip2 ${consumed.has(v) && !viewerVals.has(v) ? 'consumed' : ''} ${viewerVals.has(v) ? 'viewer' : ''}" style="${v === home ? 'border-color:' + homeColor + ';box-shadow:inset 0 0 0 1px ' + homeColor : ''}" title="${consumed.has(v) ? 'уже выпало в этом круге' : viewerVals.has(v) ? 'от зрителя' : ''}">${v}${wts[String(v)] > 1 ? ' ×' + wts[String(v)] : ''}</span>`).join('') || '<span class="hint">—</span>';
   $('viewer-chips').innerHTML = (w.viewer||[]).length ? w.viewer.map((e,i) => `<span class="chip2 viewer">${e.value} <span class="u">${esc(e.user)}</span><button title="Убрать" onclick="post('/api/dpi/viewer/remove',{index:${i}})">×</button></span>`).join('') : '<span class="hint">зрители пока ничего не добавили</span>';
+  const forced = d.forced || [];
+  $('forced-h').style.display = forced.length ? '' : 'none';
+  $('forced-chips').innerHTML = forced.map((e, i) => `<span class="chip2 viewer">${i + 1}. ${e.value} <span class="u">${esc(e.user)}</span><button title="Убрать" onclick="post('/api/dpi/forced/remove',{index:${i}})">×</button></span>`).join('');
   $('reward-id').value = (d.settings && d.settings.viewer_reward_id) || '';
   $('btn-learn').textContent = d.learn_reward ? '⏳ жду награду…' : 'Определить';
   const t = S.twitch || {}; const chip = $('chip-twitch');
@@ -901,6 +1031,96 @@ function downloadStatsCsv() {
   const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'hardmode-stats-' + new Date().toISOString().slice(0, 10) + '.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
+// ---- viewer weapon queue
+function fmtMoney(a, cur) { const c = ({'': '₽', RUB: '₽', USD: '$', EUR: '€'})[(cur || '').toUpperCase()] ?? cur; return a == null ? '' : `${+a} ${c}`; }
+function renderRequests() {
+  const q = S.queue; if (!q || !$('requests')) return;
+  const chip = $('chip-requests'); const n = q.pending.length;
+  chip.className = 'chip' + (n ? ' warn' : ''); chip.querySelector('b').textContent = n ? `заявок: ${n}` : 'пусто';
+  $('requests').innerHTML = n ? q.pending.map((e, i) => `<div class="req ${i === 0 ? 'first' : ''}">
+      ${e.icon ? `<div class="icon" style="--mask:url('${e.icon}')"></div>` : '<div class="icon unknown">?</div>'}
+      <div class="body"><div><b>${esc(e.name || 'не распознано')}</b> <span class="who">${esc(e.user)}${e.amount != null ? ' · ' + fmtMoney(e.amount, e.currency) : ''} · ${fmtTime(e.t).slice(0, 5)}</span></div>
+        ${e.text ? `<div class="txt" title="${esc(e.text)}">«${esc(e.text)}»</div>` : ''}</div>
+      <div class="acts">
+        ${e.name ? '' : `<button onclick="openAnyPicker(event, 'Какое оружие?', w => post('/api/queue/resolve', {id: ${e.id}, weapon: w}))">Выбрать</button>`}
+        <button title="Выполнено" onclick="post('/api/queue/done', {id: ${e.id}})">✓</button>
+        <button title="Выше" onclick="post('/api/queue/move', {id: ${e.id}, delta: -1})" ${i === 0 ? 'disabled' : ''}>↑</button>
+        <button title="Убрать" onclick="post('/api/queue/dismiss', {id: ${e.id}})">×</button>
+      </div></div>`).join('') : '<div class="muted">Пусто. Сюда попадает оружие из донатов.</div>';
+  $('requests-history').innerHTML = q.history.length ? q.history.map(e => `<div class="muted">${e.status === 'done' ? '✓' : '×'} ${esc(e.name || 'не распознано')} — ${esc(e.user)}${e.auto ? ' (киллом)' : ''}</div>`).join('') : '<div class="muted">пока ничего</div>';
+}
+function openAnyPicker(ev, title, onPick) {
+  ev.stopPropagation();
+  window.__anyPick = w => { closePicker(); onPick(w); };
+  $('picker-grid').innerHTML = Object.values(weapons).map(w => `<div class="pick" onclick="__anyPick('${w.id}')"><div class="icon" style="--mask:url('${w.icon}')"></div><div class="name">${esc(w.name)}</div></div>`).join('');
+  $('picker-title').textContent = title;
+  const p = $('picker'); p.classList.add('open');
+  const r = ev.currentTarget.getBoundingClientRect(), W = p.offsetWidth || 440;
+  p.style.left = Math.max(12, Math.min(window.scrollX + r.left, window.scrollX + window.innerWidth - W - 12)) + 'px';
+  p.style.top = (window.scrollY + r.bottom + 8) + 'px';
+}
+
+// ---- donations
+function toggleVisible(id) { const i = $(id); i.type = i.type === 'password' ? 'text' : 'password'; }
+async function saveSecret(key, inputId) { const v = $(inputId).value.trim(); if (!v) return toast('Пусто', true); const r = await post('/api/settings', {donations: {[key]: v}}); if (r) { $(inputId).value = ''; toast('Сохранено'); } }
+async function clearSecret(key) { if (!confirm('Удалить сохранённый ключ?')) return; const r = await post('/api/settings', {donations: {[key]: ''}}); if (r) toast('Удалено'); }
+async function daConnect() { const r = await post('/api/donations/da/connect', {}); if (r && r.url) { window.open(r.url, '_blank'); toast('Разрешите доступ в открывшейся вкладке DonationAlerts'); } }
+async function dpVerify() { toast('Проверяю…'); const r = await post('/api/donations/dp/verify', {}); if (r) toast(r.ok ? 'DonatePay: ' + (r.user || 'ключ принят') : (r.error || 'Ошибка'), !r.ok); }
+async function testDonation() {
+  const r = await post('/api/donations/test', {user: $('test-user').value, amount: $('test-amount').value, message: $('test-message').value});
+  if (r) toast((r.ok ? '' : '✗ ') + r.text, !r.ok);
+}
+let aliasTimer = null;
+function checkAlias() {
+  clearTimeout(aliasTimer);
+  aliasTimer = setTimeout(async () => {
+    const text = $('alias-check').value; if (!text.trim()) { $('alias-result').textContent = ''; return; }
+    const r = await post('/api/donations/aliases/check', {text}); if (!r) return;
+    $('alias-result').textContent = (r.name ? `оружие: ${r.name} (по «${r.matched}»)` : 'оружие не найдено') + (r.number != null ? ` · число: ${r.number}` : '');
+  }, 250);
+}
+async function loadAliases() {
+  const d = await (await fetch('/api/donations/aliases')).json();
+  $('alias-list').innerHTML = d.weapons.map(w => `<b>${esc(w.name)}</b><span>${w.aliases.map(esc).join(', ')}${w.extra.length ? ', <span class="extra">' + w.extra.map(esc).join(', ') + '</span>' : ''}</span>`).join('');
+}
+const RULE_ACTIONS = {weapon: 'оружие в очередь', next_dpi: 'следующий DPI', wheel_value: 'число на колесо'};
+function rulesNow() { return JSON.parse(JSON.stringify((S.donations && S.donations.settings && S.donations.settings.rules) || [])); }
+async function saveRules(rules) { const r = await post('/api/settings', {donations: {rules}}); if (r) toast('Сохранено'); }
+function ruleSet(i, key, value) { const rules = rulesNow(); if (!rules[i]) return; rules[i][key] = value; saveRules(rules); }
+function ruleMove(i, d) { const rules = rulesNow(); const j = i + d; if (j < 0 || j >= rules.length) return; [rules[i], rules[j]] = [rules[j], rules[i]]; saveRules(rules); }
+function ruleDel(i) { const rules = rulesNow(); rules.splice(i, 1); saveRules(rules); }
+function addRule() { const rules = rulesNow(); rules.push({enabled: true, min: 100, max: 0, keyword: '', action: 'wheel_value'}); saveRules(rules); }
+function renderRules() {
+  const box = $('rules'); if (!box || box.contains(document.activeElement)) return;
+  const rules = rulesNow();
+  box.innerHTML = (rules.length ? '<div class="rulehead"><span></span><span>действие</span><span>от, ₽</span><span>до, ₽</span><span class="kw">слово</span><span></span></div>' : '')
+    + rules.map((r, i) => `<div class="rule ${r.enabled ? '' : 'off'}">
+      <label class="inline" title="Включено"><input type="checkbox" ${r.enabled ? 'checked' : ''} onchange="ruleSet(${i}, 'enabled', this.checked)"></label>
+      <select data-key="rule.action" onchange="ruleSet(${i}, 'action', this.value)">${Object.entries(RULE_ACTIONS).map(([k, l]) => `<option value="${k}" ${k === r.action ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <input type="number" min="0" step="10" value="${r.min}" title="от, ₽" onchange="ruleSet(${i}, 'min', +this.value || 0)">
+      <input type="number" min="0" step="10" value="${r.max || ''}" placeholder="—" title="до, ₽ (пусто — без предела)" onchange="ruleSet(${i}, 'max', +this.value || 0)">
+      <input class="kw" type="text" value="${esc(r.keyword)}" placeholder="не нужно" onchange="ruleSet(${i}, 'keyword', this.value)">
+      <span class="acts"><button title="Выше" onclick="ruleMove(${i}, -1)" ${i === 0 ? 'disabled' : ''}>↑</button><button title="Ниже" onclick="ruleMove(${i}, 1)" ${i === rules.length - 1 ? 'disabled' : ''}>↓</button><button title="Удалить" onclick="ruleDel(${i})">×</button></span>
+    </div>`).join('') || '<div class="muted">Правил нет: донаты только записываются в журнал.</div>';
+  enhanceSelects();
+}
+function renderDonations() {
+  const d = S.donations; if (!d || !$('chip-donations')) return;
+  const st = d.settings || {};
+  const set = (id, cls, text) => { const c = $(id); c.className = 'chip ' + cls; c.querySelector('b').textContent = text; };
+  set('chip-donations', st.enabled ? 'ok' : '', st.enabled ? 'включены' : 'выкл');
+  if (d.da.connected) set('chip-da', d.da.error ? 'bad' : 'ok', d.da.error ? 'ошибка: ' + d.da.error : 'подключено: ' + (d.da.user || 'аккаунт'));
+  else set('chip-da', st.da_client_id && st.da_client_secret_set ? 'warn' : '', st.da_client_id && st.da_client_secret_set ? 'нажмите «Подключить»' : 'не настроено');
+  if (st.dp_api_key_set) set('chip-dp', d.dp.error ? 'bad' : (d.dp.verified ? 'ok' : 'warn'), d.dp.error ? 'ошибка: ' + d.dp.error : (d.dp.verified ? 'ключ принят: ' + (d.dp.user || '') : 'ключ не проверен'));
+  else set('chip-dp', '', 'нет ключа');
+  $('da-secret-state').textContent = st.da_client_secret_set ? '— сохранён' : '— не задан';
+  $('dp-key-state').textContent = st.dp_api_key_set ? '— сохранён' : '— не задан';
+  $('da-redirect').textContent = `http://127.0.0.1:${S.port}/donations/da/callback`;
+  $('alias-errors').textContent = (d.alias_errors || []).join(' · ');
+  const P = {da: 'DA', dp: 'DP', test: 'тест'};
+  $('don-log').innerHTML = (d.log || []).map(e => `<div class="don ${e.ok ? 'ok' : 'no'}"><span class="t">${fmtTime(e.t)}</span><span>${P[e.provider] || e.provider} · <b>${esc(e.user)}</b> ${fmtMoney(e.amount, e.currency)}${e.message ? ' «' + esc(e.message.slice(0, 60)) + '»' : ''} → ${esc(e.result)}</span></div>`).join('') || '<div class="muted">пока пусто</div>';
+  renderRules();
+}
 let helpLoaded = false;
 async function loadHelp() {
   if (helpLoaded) return; helpLoaded = true;
@@ -944,7 +1164,7 @@ function showMainTab(name) {
 }
 (function initTab() {
   let name = (location.hash || '').replace('#', '');
-  const TABS = ['startup', 'weapons', 'dpi', 'look', 'stats', 'general', 'help'];
+  const TABS = ['startup', 'weapons', 'dpi', 'look', 'donations', 'stats', 'general', 'help'];
   if (!TABS.includes(name)) { try { name = localStorage.getItem('cs2r.tab') || ''; } catch (e) { name = ''; } }
   if (!TABS.includes(name)) name = '';
   showMainTab(name || 'weapons');
@@ -996,7 +1216,7 @@ function renderLoadout() {
 
 function renderSettings() {
   const r = S.roulette.settings, o = S.overlay;
-  const src = { roulette: r, overlay: o, dpi: (S.dpi && S.dpi.settings) || {}, chat: (S.chat && S.chat.settings) || {}, ingame: S.ingame || {} };
+  const src = { roulette: r, overlay: o, dpi: (S.dpi && S.dpi.settings) || {}, chat: (S.chat && S.chat.settings) || {}, ingame: S.ingame || {}, donations: (S.donations && S.donations.settings) || {} };
   document.querySelectorAll('[data-key]').forEach(el => {
     if (document.activeElement === el) return;
     const [grp, key] = el.dataset.key.split('.'); const v = src[grp] ? src[grp][key] : undefined; if (v === undefined) return;
@@ -1135,6 +1355,9 @@ function renderChecks() {
   if (ds.viewer_enabled) opt.push(item(t.connected ? (ds.viewer_reward_id ? 'ok' : 'warn') : 'warn', 'Зрители: DPI за баллы канала', !cs.channel_login ? 'укажите логин канала' : !t.connected ? (t.last_error ? 'чат: ' + t.last_error : 'подключаюсь к чату…') : (ds.viewer_reward_id ? `чат #${t.channel} читается, награда задана` : `чат #${t.channel} читается; нажмите «Определить» и выкупите награду`), `<button onclick="showMainTab('dpi')">Настроить</button>`));
   else opt.push(item('off', 'Зрители: DPI за баллы канала', 'зрители добавляют значения на колесо', `<button onclick="showMainTab('dpi')">Настроить</button>`));
   const a = S.autostart || {};
+  const dn = S.donations || {}, dns = dn.settings || {};
+  if (dns.enabled) opt.push(item((dn.da && dn.da.connected) || (dn.dp && dn.dp.verified) ? 'ok' : 'warn', 'Донаты', [dn.da && dn.da.connected ? 'DonationAlerts подключён' : '', dn.dp && dn.dp.verified ? 'DonatePay: ключ принят' : ''].filter(Boolean).join(' · ') || 'не подключён ни один сервис', `<button onclick="showMainTab('donations')">Открыть</button>`));
+  else opt.push(item('off', 'Донаты', 'оружие в зрительскую очередь, DPI на колесо', `<button onclick="showMainTab('donations')">Настроить</button>`));
   opt.push(item(a.enabled ? 'ok' : 'off', 'Автозапуск с Windows', a.available ? (a.enabled ? 'включён' : 'выключен') : 'только в Windows', a.available ? `<button onclick="post('/api/autostart',{enabled:${!a.enabled}}).then(()=>refreshState())">${a.enabled ? 'Выключить' : 'Включить'}</button>` : ''));
   $('checks-optional').innerHTML = opt.join('');
   const bad = (req.join('').match(/class="check (bad|warn)"/g) || []).length;
@@ -1143,7 +1366,7 @@ function renderChecks() {
   if (!window.__tabChosen && bad && !window.__autoStartup) { window.__autoStartup = true; showMainTab('startup'); }
 }
 
-function renderAll() { if (!S) return; renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); renderChat(); renderWheel(); renderChecks(); renderIngame(); renderStats(); }
+function renderAll() { if (!S) return; renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); renderChat(); renderWheel(); renderChecks(); renderIngame(); renderStats(); renderRequests(); renderDonations(); }
 
 // ------------------------------------------------------------------ settings form
 document.querySelectorAll('[data-key]').forEach(el => {
@@ -1172,12 +1395,14 @@ es.addEventListener('snapshot', e => { S = JSON.parse(e.data); renderAll(); $('c
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { schedulePreview('dpi'); schedulePreview('weapons'); } });
 es.addEventListener('roulette', e => { if (!S) return; S.roulette = JSON.parse(e.data); renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderChecks(); schedulePreview('weapons'); });
 es.addEventListener('gsi', e => { if (!S) return; const prev = S.gsi || {}; S.gsi = JSON.parse(e.data); renderHeader(); renderMisc(); renderChecks(); if (S.gsi.held !== prev.held || S.gsi.connected !== prev.connected) schedulePreview('weapons'); });
-es.addEventListener('settings', e => { if (!S) return; const d = JSON.parse(e.data); S.overlay = d.overlay; S.ingame = d.ingame || S.ingame; S.gsi_token = d.gsi_token; S.port = d.port; if (S.dpi && d.dpi) S.dpi.settings = d.dpi; if (S.chat && d.chat) S.chat.settings = d.chat; if (d.roulette) S.roulette.settings = d.roulette; renderHeader(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); refreshState();  renderIngame(); schedulePreview('dpi'); schedulePreview('weapons'); });
+es.addEventListener('settings', e => { if (!S) return; const d = JSON.parse(e.data); S.overlay = d.overlay; S.ingame = d.ingame || S.ingame; if (S.donations && d.donations) S.donations.settings = d.donations; S.gsi_token = d.gsi_token; S.port = d.port; if (S.dpi && d.dpi) S.dpi.settings = d.dpi; if (S.chat && d.chat) S.chat.settings = d.chat; if (d.roulette) S.roulette.settings = d.roulette; renderHeader(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); refreshState();  renderIngame(); schedulePreview('dpi'); schedulePreview('weapons'); });
 es.addEventListener('dpi', e => { if (!S) return; S.dpi = JSON.parse(e.data); renderDpi(); renderSettings(); renderWheel(); renderChecks(); schedulePreview('dpi'); });
 es.addEventListener('twitch', e => { if (!S) return; S.twitch = JSON.parse(e.data); renderWheel(); renderChecks(); });
 es.addEventListener('clients', e => { if (!S) return; S.clients = JSON.parse(e.data); renderChecks(); });
 es.addEventListener('chat', e => { if (!S) return; S.chat = JSON.parse(e.data); renderChat(); renderSettings(); renderWheel(); renderChecks(); });
 es.addEventListener('stats', e => { if (!S) return; S.stats = JSON.parse(e.data); renderStats(); });
+es.addEventListener('queue', e => { if (!S) return; S.queue = JSON.parse(e.data); renderRequests(); });
+es.addEventListener('donations', e => { if (!S) return; S.donations = JSON.parse(e.data); renderDonations(); renderSettings(); renderChecks(); });
 es.addEventListener('dpi_spin', e => { const sp = JSON.parse(e.data); toast('DPI-рулетка: ' + sp.value + (sp.reason === 'death' ? ' (смерть)' : '')); schedulePreview('dpi'); });
 es.addEventListener('kill', e => { const k = JSON.parse(e.data); if (k.ambiguous) toast('Килл: возможно граната — не засчитан'); else if (k.counted) toast(k.advanced ? 'Килл засчитан → следующее оружие' : 'Килл засчитан'); else if (S && S.roulette.running) toast('Килл не тем оружием', true); });
 es.onerror = () => { $('chip-sse').className='chip bad'; };

@@ -235,6 +235,7 @@ class AppSettings:
     roulette: dict = field(default_factory=dict)      # RouletteSettings as dict
     dpi: dict = field(default_factory=dict)           # DpiSettings as dict (validated by the module)
     chat: dict = field(default_factory=dict)          # ChatSettings as dict (contains the SE JWT secret)
+    donations: dict = field(default_factory=dict)     # DonationSettings as dict (contains DA/DonatePay secrets)
     overlay: OverlaySettings = field(default_factory=OverlaySettings)
     ingame: IngameSettings = field(default_factory=IngameSettings)
     open_browser: bool = True
@@ -259,6 +260,7 @@ class AppSettings:
         s.roulette = dict(d.get("roulette") or {}) if isinstance(d.get("roulette"), dict) else {}
         s.dpi = dict(d.get("dpi") or {}) if isinstance(d.get("dpi"), dict) else {}
         s.chat = dict(d.get("chat") or {}) if isinstance(d.get("chat"), dict) else {}
+        s.donations = dict(d.get("donations") or {}) if isinstance(d.get("donations"), dict) else {}
         s.open_browser = to_bool(d.get("open_browser", True))
         if isinstance(d.get("overlay"), dict):
             s.overlay.apply(d["overlay"])
