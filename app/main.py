@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from . import autostart, config, docs, loadout as L, steam, weapons as W
 from .events import Broker
 from .gsi import GsiTracker, build_cfg
+from . import ingame as ingame_mod
 from .ingame import IngameOverlays
 from .chat import ChatNotifier, ChatSettings
 from .modules import dpi
@@ -169,7 +170,12 @@ class AppState:
                    "kills": [r.current_kills, r.settings.kills_per_weapon],
                    "matched": bool(wid and self.gsi.status.held == wid),
                    "completed": r.completed, "key": [r.current_uid(), r.completed]}
-        return {"dpi": dpi, "weapons": weapons}
+        pend = self.queue.snapshot()["pending"]
+        queue = {"present": bool(pend), "reason": "" if pend else "очередь пуста", "total": len(pend),
+                 "items": [{"weapon": e.get("weapon"), "name": e.get("name"), "user": e.get("user"),
+                            "in_loadout": e.get("in_loadout", True)} for e in pend[:int(self.settings.ingame.queue_max)]],
+                 "key": [[e["id"], e.get("weapon")] for e in pend]}
+        return {"dpi": dpi, "weapons": weapons, "queue": queue}
 
     def ingame_colors(self) -> dict:
         o = self.settings.overlay
@@ -759,8 +765,8 @@ def create_app() -> FastAPI:
 
     @app.get("/api/ingame/render")
     async def ingame_render(kind: str = "dpi") -> Response:
-        if kind not in ("dpi", "weapons"):
-            raise HTTPException(400, "kind: dpi | weapons")
+        if kind not in ingame_mod.KINDS:
+            raise HTTPException(400, "kind: dpi | weapons | queue")
         loop = asyncio.get_running_loop()
         png = await loop.run_in_executor(None, state.ingame.render_png, kind)
         return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-store"})
@@ -769,8 +775,8 @@ def create_app() -> FastAPI:
     async def ingame_preview(request: Request) -> dict:
         body = await _json(request)
         kind = str(body.get("kind") or "dpi")
-        if kind not in ("dpi", "weapons"):
-            raise HTTPException(400, "kind: dpi | weapons")
+        if kind not in ingame_mod.KINDS:
+            raise HTTPException(400, "kind: dpi | weapons | queue")
         if not state.ingame.available:
             return {"ok": False, "error": "Оверлей поверх игры работает только в Windows"}
         state.ingame.preview(kind, 5.0)

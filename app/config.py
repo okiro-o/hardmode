@@ -197,13 +197,23 @@ class IngameSettings:
     weapons_opacity: float = 0.9
     weapons_next: int = 2           # how many upcoming weapons to show (0-3)
     weapons_names: bool = True
+    queue_enabled: bool = True      # viewer queue (0.21.0): drawn only while it has open requests
+    queue_mode: str = "always"      # a to-do list: visible while not empty
+    queue_show_s: float = 8.0
+    queue_corner: str = "tl"
+    queue_x: int = 24
+    queue_y: int = 330
+    queue_scale: float = 1.0
+    queue_opacity: float = 0.9
+    queue_max: int = 3              # rows (1-10), the rest is «+ ещё N»
+    queue_names: bool = True        # who ordered (and «не в лоадауте») under the weapon name
     monitor: int = 0                # 0 = primary
 
-    # option suffix -> validation; the same rules apply to the dpi_* and weapons_* keys
+    # option suffix -> validation; the same rules apply to the dpi_*, weapons_* and queue_* keys
     _BOOLS = ("enabled", "names")
     _CHOICES = {"mode": ("change", "always"), "corner": CORNERS}
     _FLOATS = {"show_s": (1.0, 120.0), "scale": (0.5, 3.0), "opacity": (0.2, 1.0)}
-    _INTS = {"x": (0, 8000), "y": (0, 8000), "next": (0, 3)}
+    _INTS = {"x": (0, 8000), "y": (0, 8000), "next": (0, 3), "max": (1, 10)}
 
     def apply(self, patch: dict | None) -> list[str]:
         require_object(patch, "ingame")
@@ -214,7 +224,7 @@ class IngameSettings:
                     self.monitor = max(0, min(8, int(float(v))))
                     continue
                 kind, _, opt = k.partition("_")
-                if kind not in ("dpi", "weapons") or k not in self.__dataclass_fields__:
+                if kind not in ("dpi", "weapons", "queue") or k not in self.__dataclass_fields__:
                     raise ValueError(k)
                 if opt in self._BOOLS:
                     val = to_bool(v)

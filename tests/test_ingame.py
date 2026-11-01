@@ -107,9 +107,54 @@ def test_weapons_render_falls_back_to_text_when_silhouettes_fail(monkeypatch):
 def test_status_exposes_per_kind_diagnostics():
     ov = ingame.IngameOverlays(IngameSettings(), lambda: {"dpi": {"present": False, "reason": "x"}, "weapons": {"present": False}}, lambda: COLORS)
     st = ov.status()
-    assert set(st["errors"]) == {"dpi", "weapons"} and set(st["present"]) == {"dpi", "weapons"} and "reason" in st
+    assert set(st["errors"]) == set(ingame.KINDS) == {"dpi", "weapons", "queue"} and set(st["present"]) == set(ingame.KINDS) and "reason" in st
 
 
 def test_state_reason_when_race_not_running(client):
     st = client.get("/api/state").json()["ingame"]
     assert "present" in st and "reason" in st
+
+
+# ----------------------------------------------------------------------------- viewer queue block
+def test_render_queue_sample_and_options():
+    s = IngameSettings()
+    q = ingame.SAMPLE_STATE["queue"]
+    img = ingame.render("queue", q, s, COLORS)
+    assert img is not None and img.mode == "RGBA" and img.size[0] > 200 and img.size[1] > 150
+    px = {img.getpixel((x, y))[:3] for x in range(0, img.size[0], 2) for y in range(0, img.size[1], 2)}
+    assert (255, 209, 102) in px                                   # first request in the accent colour
+    s.apply({"queue_max": 1, "queue_names": False})
+    small = ingame.render("queue", q, s, COLORS)
+    assert small.size[1] < img.size[1] - 60                        # one short row + «+ ещё 3»
+    unknown = {**q, "items": [{"weapon": None, "name": None, "user": "X"}], "total": 1}
+    assert ingame.render("queue", unknown, s, COLORS) is not None
+    assert ingame.render("queue", {"present": False, "items": []}, s, COLORS) is None
+    assert ingame.render("queue", {"present": True, "items": []}, s, COLORS) is None
+    long_name = {**q, "items": [{"weapon": "awp", "name": "AWP", "user": "очень_длинный_ник_зрителя" * 3}], "total": 1}
+    s.apply({"queue_names": True})
+    assert ingame.render("queue", long_name, s, COLORS).size[0] < 420     # names are cut with «…»
+
+
+def test_queue_ingame_settings_validation():
+    s = IngameSettings()
+    assert (s.queue_enabled, s.queue_mode, s.queue_max) == (True, "always", 3)
+    rejected = s.apply({"queue_max": 99, "queue_corner": "center", "queue_mode": "change", "queue_names": "0", "queue_next": 1})
+    assert set(rejected) == {"queue_corner", "queue_next"}
+    assert (s.queue_max, s.queue_mode, s.queue_names) == (10, "change", False)
+    assert ingame.place("queue", IngameSettings(queue_corner="bl", queue_x=5, queue_y=6), (100, 50), (0, 0, 1920, 1080)) == (5, 1024)
+
+
+def test_api_ingame_queue_state_and_render(client):
+    st = client.app.state.app
+    assert st.ingame_state()["queue"] == {"present": False, "reason": "очередь пуста", "total": 0, "items": [], "key": []}
+    r = client.get("/api/ingame/render?kind=queue")                  # empty queue: the sample is drawn
+    assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+    for w, u in (("awp", "A"), ("ak47", "B"), (None, "C"), ("nova", "D")):
+        client.post("/api/queue/add", json={"weapon": w, "user": u, "text": "?"})
+    q = st.ingame_state()["queue"]
+    assert q["present"] and q["total"] == 4 and len(q["items"]) == 3
+    assert q["items"][0] == {"weapon": "awp", "name": "AWP", "user": "A", "in_loadout": True}
+    client.post("/api/settings", json={"ingame": {"queue_max": 5}})
+    assert len(st.ingame_state()["queue"]["items"]) == 4
+    assert client.post("/api/ingame/preview", json={"kind": "queue"}).status_code == 200
+    assert "queue" in client.get("/api/state").json()["ingame"]["present"]

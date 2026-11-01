@@ -30,7 +30,7 @@ from . import config
 log = logging.getLogger("hardmode.ingame")
 IS_WINDOWS = sys.platform.startswith("win")
 _RENDER_LOCK = threading.Lock()   # Pillow font objects are shared (lru_cache) between the overlay thread and HTTP previews
-KINDS = ("dpi", "weapons")
+KINDS = ("dpi", "weapons", "queue")
 SS = 3  # supersampling factor for silhouettes
 
 
@@ -234,6 +234,10 @@ SAMPLE_STATE = {
     "weapons": {"present": True, "current": {"id": "ak47", "name": "AK-47"},
                 "next": [{"id": "m4a1", "name": "M4A4"}, {"id": "awp", "name": "AWP"}],
                 "kills": [1, 2], "matched": True, "completed": 3, "key": "sample"},
+    "queue": {"present": True, "total": 4, "key": "sample",
+              "items": [{"weapon": "awp", "name": "AWP", "user": "Alice", "in_loadout": True},
+                        {"weapon": "ak47", "name": "AK-47", "user": "Bob", "in_loadout": True},
+                        {"weapon": "negev", "name": "Negev", "user": "Carl", "in_loadout": False}]},
 }
 
 
@@ -315,8 +319,85 @@ def render_weapons(st: dict, s: config.IngameSettings, colors: dict) -> Image.Im
     return img
 
 
+def _fit(f, text: str, max_w: float) -> str:
+    """Cut ``text`` with «…» so it fits ``max_w`` pixels."""
+    if _text_w(f, text) <= max_w:
+        return text
+    while text and _text_w(f, text + "…") > max_w:
+        text = text[:-1]
+    return text + "…"
+
+
+def render_queue(st: dict, s: config.IngameSettings, colors: dict) -> Image.Image | None:
+    """Viewer queue: title with the count, then «N  silhouette  weapon / от user» rows, first one in the
+    accent colour, requests outside the loadout dimmed, the rest folded into «+ ещё N»."""
+    items = list((st or {}).get("items") or [])[: max(1, int(s.queue_max))]
+    if not st or not st.get("present") or not items:
+        return None
+    k = float(s.queue_scale)
+    total = max(int(st.get("total") or 0), len(items))
+    base, accent = _rgb(colors.get("color", "#ffffff")), _rgb(colors.get("accent", "#ffd166"))
+    pad, gap = int(12 * k), int(6 * k)
+    names_on = bool(s.queue_names)
+    row_h = int(44 * k) if names_on else int(32 * k)
+    icon_w, icon_h, num_w = int(84 * k), int(26 * k), int(22 * k)
+    title_f, num_f, name_f, user_f = font(int(13 * k)), font(int(17 * k)), font(int(16 * k)), font(int(12 * k))
+    text_max = int(190 * k)
+    names = [_fit(name_f, it.get("name") or "оружие уточняется", text_max) for it in items]
+    users = [_fit(user_f, f"от {it.get('user') or '?'}" + ("" if it.get("in_loadout", True) else " · не в лоадауте"), text_max)
+             for it in items] if names_on else []
+    text_w = max([_text_w(name_f, n) for n in names] + [_text_w(user_f, u) for u in users])
+    title, count = "ОЧЕРЕДЬ ЗРИТЕЛЕЙ", f"  {total}"
+    title_h = int(24 * k)
+    more = total - len(items)
+    more_h = int(22 * k) if more > 0 else 0
+    w = max(pad * 2 + num_w + gap + icon_w + gap * 2 + int(text_w),
+            pad * 2 + int(_text_w(title_f, title) + _text_w(title_f, count)))
+    h = pad * 2 + title_h + len(items) * row_h + (len(items) - 1) * gap + more_h
+    img = Image.new("RGBA", (int(w), int(h)), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([0, 0, img.size[0] - 1, img.size[1] - 1], radius=int(14 * k), fill=BG)
+    d.text((pad, pad + title_h / 2 - 2 * k), title, font=title_f, fill=MUTED, anchor="lm")
+    d.text((pad + _text_w(title_f, title), pad + title_h / 2 - 2 * k), count, font=title_f, fill=accent + (255,), anchor="lm")
+    y = pad + title_h
+    for i, it in enumerate(items):
+        first, out = i == 0, not it.get("in_loadout", True)
+        col = accent if first else base
+        cy = y + row_h / 2
+        d.text((pad + num_w / 2, cy), str(i + 1), font=num_f, fill=(accent + (255,)) if first else MUTED, anchor="mm")
+        x_icon = pad + num_w + gap
+        mask = None
+        if it.get("weapon"):
+            try:
+                mask = svg_mask(it["weapon"], icon_h)
+            except Exception:  # noqa: BLE001 - a missing silhouette must not hide the queue
+                log.exception("silhouette rasterization failed: %s", it.get("weapon"))
+            if mask is not None and mask.size[0] > icon_w:
+                mask = mask.resize((icon_w, max(1, int(mask.size[1] * icon_w / mask.size[0]))), Image.LANCZOS)
+        if mask is not None:
+            img.alpha_composite(tinted(mask, col, 0.45 if out else 1.0),
+                                (int(x_icon + (icon_w - mask.size[0]) / 2), int(cy - mask.size[1] / 2)))
+        else:
+            d.text((x_icon + icon_w / 2, cy), "?", font=font(int(24 * k)), fill=accent + (255,), anchor="mm")
+        tx = x_icon + icon_w + gap * 2
+        name_fill = MUTED if out else (255, 255, 255, 255)
+        if names_on:
+            d.text((tx, y + row_h * 0.32), names[i], font=name_f, fill=name_fill, anchor="lm")
+            d.text((tx, y + row_h * 0.74), users[i], font=user_f, fill=MUTED, anchor="lm")
+        else:
+            d.text((tx, cy), names[i], font=name_f, fill=name_fill, anchor="lm")
+        y += row_h + gap
+    if more > 0:
+        d.text((pad, y - gap + more_h / 2), f"+ ещё {more}", font=user_f, fill=MUTED, anchor="lm")
+    return img
+
+
 def render(kind: str, st: dict, s: config.IngameSettings, colors: dict) -> Image.Image | None:
-    return render_dpi(st, s, colors) if kind == "dpi" else render_weapons(st, s, colors)
+    if kind == "dpi":
+        return render_dpi(st, s, colors)
+    if kind == "queue":
+        return render_queue(st, s, colors)
+    return render_weapons(st, s, colors)
 
 
 def place(kind: str, s: config.IngameSettings, size: tuple[int, int], mon: tuple[int, int, int, int]) -> tuple[int, int]:
@@ -496,7 +577,7 @@ if IS_WINDOWS:  # pragma: no cover - exercised only on Windows
 
 # -------------------------------------------------------------------------- manager
 class IngameOverlays:
-    """Owns the overlay thread. ``state_fn`` returns {"dpi": {...}, "weapons": {...}} (see main.py)."""
+    """Owns the overlay thread. ``state_fn`` returns {"dpi": {...}, "weapons": {...}, "queue": {...}} (see main.py)."""
 
     def __init__(self, settings: config.IngameSettings, state_fn: Callable[[], dict], colors_fn: Callable[[], dict]) -> None:
         self.settings = settings

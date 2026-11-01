@@ -624,6 +624,27 @@
           <span class="hint" id="ingame-note-dpi"></span>
         </div>
       </section>
+
+<section>
+        <h2>Поверх игры: зрительская очередь <span class="right"><span class="chip" id="chip-ingame-queue"><span class="dot"></span><b>—</b></span></span></h2>
+        <div class="form" style="margin-top:8px;">
+          <label class="f"><span>Когда показывать</span><select data-key="ingame.queue_mode"><option value="always">всегда, пока есть заявки</option><option value="change">после изменения, на несколько секунд</option></select></label>
+          <label class="f"><span>Держать на экране, с</span><input type="number" min="1" max="120" step="1" data-key="ingame.queue_show_s"></label>
+          <label class="f"><span>Угол экрана</span><select data-key="ingame.queue_corner"><option value="tl">слева сверху</option><option value="tr">справа сверху</option><option value="bl">слева снизу</option><option value="br">справа снизу</option></select></label>
+          <label class="f"><span>Масштаб</span><input type="number" min="0.5" max="3" step="0.1" data-key="ingame.queue_scale"></label>
+          <label class="f"><span>Отступ по горизонтали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.queue_x"></label>
+          <label class="f"><span>Отступ по вертикали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.queue_y"></label>
+          <label class="f"><span>Непрозрачность</span><input type="number" min="0.2" max="1" step="0.05" data-key="ingame.queue_opacity"></label>
+          <label class="f"><span>Заявок в списке</span><input type="number" min="1" max="10" step="1" data-key="ingame.queue_max"></label>
+          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="ingame.queue_names"> Кто заказал</label>
+          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="ingame.queue_enabled"> Включено</label>
+        </div>
+        <div class="row" style="margin-top:10px; align-items:center; gap:14px; flex-wrap:wrap;">
+          <button onclick="ingamePreview('queue')">Показать поверх игры на 5 с</button>
+          <img id="ingame-prev-queue" class="ingame-prev" alt="">
+          <span class="hint" id="ingame-note-queue"></span>
+        </div>
+      </section>
     </div>
   </div>
 
@@ -970,7 +991,7 @@ function schedulePreview(kind) {
 }
 function renderIngame() {
   const g = S.ingame || {};
-  for (const kind of ['dpi', 'weapons']) {
+  for (const kind of ['dpi', 'weapons', 'queue']) {
     const chip = $('chip-ingame-' + kind); if (!chip) continue;
     const b = chip.querySelector('b');
     const err = (g.errors && g.errors[kind]) || g.error;
@@ -981,6 +1002,7 @@ function renderIngame() {
     else if (g.visible && g.visible[kind]) { chip.className = 'chip ok'; b.textContent = 'на экране'; }
     else if (g.present && g.present[kind] === false) { chip.className = 'chip warn'; b.textContent = (g.reason && g.reason[kind]) || 'нет данных'; }
     else { chip.className = 'chip ok'; b.textContent = g[kind + '_mode'] === 'always' ? 'всегда' : 'после смены'; }
+    if (kind === 'queue' && g.present && g.present.queue === false && !err && g.queue_enabled && g.available !== false) { chip.className = 'chip'; b.textContent = 'очередь пуста'; }
     if (note) note.textContent = err ? err : (g.present && g.present[kind] === false && g.reason && g.reason[kind]) ? 'сейчас скрыт: ' + g.reason[kind] + ' (на картинке пример)' : '';
     const img = $('ingame-prev-' + kind); if (img && !img.src) schedulePreview(kind);
   }
@@ -1200,7 +1222,7 @@ async function loadHelp() {
 }
 function showMainTab(name) {
   if (name === 'help') loadHelp();
-  if (name === 'look') setTimeout(() => { schedulePreview('dpi'); schedulePreview('weapons'); }, 0);
+  if (name === 'look') setTimeout(() => { schedulePreview('dpi'); schedulePreview('weapons'); schedulePreview('queue'); }, 0);
   document.querySelectorAll('.tabpage').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
   document.querySelectorAll('.maintabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   try { localStorage.setItem('cs2r.tab', name); } catch (e) {}
@@ -1448,16 +1470,16 @@ fetch('/api/weapons').then(r=>r.json()).then(d => { d.weapons.forEach(w => weapo
 
 const es = new EventSource('/events');
 es.addEventListener('snapshot', e => { S = JSON.parse(e.data); renderAll(); $('chip-sse').className='chip ok'; });
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { schedulePreview('dpi'); schedulePreview('weapons'); } });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { schedulePreview('dpi'); schedulePreview('weapons'); schedulePreview('queue'); } });
 es.addEventListener('roulette', e => { if (!S) return; S.roulette = JSON.parse(e.data); renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderChecks(); schedulePreview('weapons'); });
 es.addEventListener('gsi', e => { if (!S) return; const prev = S.gsi || {}; S.gsi = JSON.parse(e.data); renderHeader(); renderMisc(); renderChecks(); if (S.gsi.held !== prev.held || S.gsi.connected !== prev.connected) schedulePreview('weapons'); });
-es.addEventListener('settings', e => { if (!S) return; const d = JSON.parse(e.data); S.overlay = d.overlay; S.ingame = d.ingame || S.ingame; if (S.donations && d.donations) S.donations.settings = d.donations; S.gsi_token = d.gsi_token; S.port = d.port; if (S.dpi && d.dpi) S.dpi.settings = d.dpi; if (S.chat && d.chat) S.chat.settings = d.chat; if (d.roulette) S.roulette.settings = d.roulette; renderHeader(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); refreshState();  renderIngame(); schedulePreview('dpi'); schedulePreview('weapons'); });
+es.addEventListener('settings', e => { if (!S) return; const d = JSON.parse(e.data); S.overlay = d.overlay; S.ingame = d.ingame || S.ingame; if (S.donations && d.donations) S.donations.settings = d.donations; S.gsi_token = d.gsi_token; S.port = d.port; if (S.dpi && d.dpi) S.dpi.settings = d.dpi; if (S.chat && d.chat) S.chat.settings = d.chat; if (d.roulette) S.roulette.settings = d.roulette; renderHeader(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); refreshState();  renderIngame(); schedulePreview('dpi'); schedulePreview('weapons'); schedulePreview('queue'); });
 es.addEventListener('dpi', e => { if (!S) return; S.dpi = JSON.parse(e.data); renderDpi(); renderSettings(); renderWheel(); renderChecks(); renderWeaponReward(); schedulePreview('dpi'); });
 es.addEventListener('twitch', e => { if (!S) return; S.twitch = JSON.parse(e.data); renderWheel(); renderChecks(); renderWeaponReward(); });
 es.addEventListener('clients', e => { if (!S) return; S.clients = JSON.parse(e.data); renderChecks(); });
 es.addEventListener('chat', e => { if (!S) return; S.chat = JSON.parse(e.data); renderChat(); renderSettings(); renderWheel(); renderChecks(); renderWeaponReward(); });
 es.addEventListener('stats', e => { if (!S) return; S.stats = JSON.parse(e.data); renderStats(); });
-es.addEventListener('queue', e => { if (!S) return; S.queue = JSON.parse(e.data); renderRequests(); });
+es.addEventListener('queue', e => { if (!S) return; S.queue = JSON.parse(e.data); renderRequests(); schedulePreview('queue'); });
 es.addEventListener('donations', e => { if (!S) return; S.donations = JSON.parse(e.data); renderDonations(); renderSettings(); renderChecks(); });
 es.addEventListener('dpi_spin', e => { const sp = JSON.parse(e.data); toast('DPI-рулетка: ' + sp.value + (sp.reason === 'death' ? ' (смерть)' : '')); schedulePreview('dpi'); });
 es.addEventListener('kill', e => { const k = JSON.parse(e.data); if (k.ambiguous) toast('Килл: возможно граната — не засчитан'); else if (k.counted) toast(k.advanced ? 'Килл засчитан → следующее оружие' : 'Килл засчитан'); else if (S && S.roulette.running) toast('Килл не тем оружием', true); });
