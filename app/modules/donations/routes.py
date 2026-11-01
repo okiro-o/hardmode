@@ -179,3 +179,19 @@ async def queue_move(request: Request) -> dict:
 async def queue_clear(request: Request) -> dict:
     _state(request).queue.clear_history()
     return {"ok": True}
+
+
+@router.post("/api/queue/reward/learn")
+async def queue_reward_learn(request: Request) -> dict:
+    """{on: true}: the next channel-points redemption becomes the weapon reward; {on: false, clear: true}: forget it."""
+    body = await _json(request)
+    st = _state(request)
+    svc = st.donations
+    svc.learn_reward = bool(body.get("on", True))
+    if body.get("clear"):
+        svc.update_settings({"reward_id": ""})
+        st.persist_dpi_settings()
+    else:
+        svc._changed()
+    st.sync_twitch()          # learning needs the chat reader even while the reward is still off
+    return {"learn": svc.learn_reward}

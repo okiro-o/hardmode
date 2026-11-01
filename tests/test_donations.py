@@ -111,7 +111,7 @@ class Harness:
         self.svc.add_wheel = lambda v, u: (self.calls.append(("wheel", v, u)) or {"ok": True, "value": v})
         self.svc.force_next = lambda v, u: (self.calls.append(("next", v, u)) or
                                             ({"ok": False, "error": "вне диапазона 400–6400"} if v > 6400 else {"ok": True, "value": v}))
-        self.svc.queue_weapon = lambda w, text, user, amount, cur, by_side=None: (
+        self.svc.queue_weapon = lambda w, text, user, amount, cur, by_side=None, source="donation": (
             self.calls.append(("weapon", w, user, by_side)) or {"name": {"awp": "AWP"}.get(w), "position": 1})
         self.svc.chat_result = lambda u, t: self.chat.append(("ok", u, t))
         self.svc.chat_reject = lambda u, t: self.chat.append(("no", u, t))
@@ -319,3 +319,94 @@ def test_queue_widget_page_and_settings(client):
     body = client.post("/api/settings", json={"overlay": {"queue_max": 99, "queue_amount": "1", "queue_title": False}}).json()
     assert (body["overlay"]["queue_max"], body["overlay"]["queue_amount"], body["overlay"]["queue_title"]) == (10, True, False)
     assert client.get("/api/state").json()["urls"]["overlay_requests"].endswith("/overlay/requests")
+
+
+# ----------------------------------------------------------------------------- weapon for channel points
+def _reward_setup(client, monkeypatch):
+    st = client.app.state.app
+    said, rejected = [], []
+    monkeypatch.setattr(st.chat, "notify_request", lambda user, weapon, pos, result="": said.append((user, weapon, pos)))
+    monkeypatch.setattr(st.chat, "notify_reject", lambda user, reason: rejected.append((user, reason)) or True)
+    return st, said, rejected
+
+
+def test_weapon_reward_learn_and_queue(client, monkeypatch):
+    st, said, rejected = _reward_setup(client, monkeypatch)
+    started = []
+    monkeypatch.setattr(st.twitch, "start", lambda channel: started.append(channel))
+    client.post("/api/settings", json={"chat": {"channel_login": "mychannel"}})
+    assert started == []                                           # nothing needs the reader yet
+    assert client.post("/api/queue/reward/learn", json={"on": True}).json() == {"learn": True}
+    assert started == ["mychannel"]                                # learning reads the chat even while off
+    assert client.get("/api/donations").json()["learn_reward"] is True
+    client.post("/api/twitch/chat", json={"user": "Viewer", "text": "дай авапу", "reward_id": "rw-weapon"})
+    s = client.get("/api/settings").json()["donations"]
+    assert s["reward_id"] == "rw-weapon" and client.get("/api/donations").json()["learn_reward"] is False
+    assert st.queue.pending() == [] and said == []                 # learnt, but the reward itself is still off
+    client.post("/api/settings", json={"donations": {"reward_enabled": True}})
+    client.post("/api/twitch/chat", json={"user": "Viewer", "text": "дай авапу", "reward_id": "rw-weapon"})
+    q = client.get("/api/queue").json()["pending"]
+    assert [(e["weapon"], e["user"], e["source"], e["amount"]) for e in q] == [("awp", "Viewer", "reward", None)]
+    assert said == [("Viewer", "AWP", 1)] and rejected == []
+    # persisted: a restart keeps the reward id
+    from app import config
+    assert json.load(open(config.settings_path(), encoding="utf-8"))["donations"]["reward_id"] == "rw-weapon"
+
+
+def test_weapon_reward_rejects_unknown_weapon(client, monkeypatch):
+    st, said, rejected = _reward_setup(client, monkeypatch)
+    client.post("/api/settings", json={"donations": {"reward_enabled": True, "reward_id": "rw-weapon"}})
+    client.post("/api/twitch/chat", json={"user": "Viewer", "text": "лучшая пушка", "reward_id": "rw-weapon"})
+    assert st.queue.pending() == [] and said == []
+    assert rejected and rejected[0][0] == "Viewer" and "не понял" in rejected[0][1]
+
+
+def test_weapon_reward_and_dpi_reward_do_not_take_each_other(client, monkeypatch):
+    st, said, rejected = _reward_setup(client, monkeypatch)
+    added = []
+    monkeypatch.setattr(st.dpi, "add_viewer_value", lambda v, u, source="reward": added.append((v, u)) or {"ok": True})
+    # DPI reward without an id takes any reward, but not the weapon one
+    client.post("/api/settings", json={"dpi": {"viewer_enabled": True},
+                                       "donations": {"reward_enabled": True, "reward_id": "rw-weapon"}})
+    client.post("/api/twitch/chat", json={"user": "A", "text": "калаш", "reward_id": "rw-weapon"})
+    client.post("/api/twitch/chat", json={"user": "B", "text": "2400", "reward_id": "rw-dpi"})
+    assert [e["weapon"] for e in st.queue.pending()] == ["ak47"] and added == [("2400", "B")]
+    # the weapon reward switched off: its redemptions are ignored, never read as a DPI value
+    client.post("/api/settings", json={"donations": {"reward_enabled": False}})
+    client.post("/api/twitch/chat", json={"user": "C", "text": "1600", "reward_id": "rw-weapon"})
+    assert len(st.queue.pending()) == 1 and added == [("2400", "B")]
+    # a plain chat line is never a weapon request
+    client.post("/api/settings", json={"donations": {"reward_enabled": True}})
+    client.post("/api/twitch/chat", json={"user": "D", "text": "awp"})
+    assert len(st.queue.pending()) == 1
+
+
+def test_weapon_reward_side_alias_and_clear(client, monkeypatch):
+    st, said, rejected = _reward_setup(client, monkeypatch)
+    started, stopped = [], []
+    monkeypatch.setattr(st.twitch, "start", lambda channel: started.append(channel))
+    monkeypatch.setattr(st.twitch, "stop", lambda: stopped.append(1))
+    client.post("/api/settings", json={"chat": {"channel_login": "mychannel"},
+                                       "donations": {"reward_enabled": True, "reward_id": "rw-weapon"}})
+    assert started[-1] == "mychannel"
+    st.roulette.side = "CT"
+    client.post("/api/twitch/chat", json={"user": "A", "text": "плётку", "reward_id": "rw-weapon"})
+    e = st.queue.pending()[0]
+    assert (e["weapon"], e["by_side"]) == ("scar20", "CT")
+    n = len(stopped)
+    client.post("/api/queue/reward/learn", json={"on": False, "clear": True})
+    assert client.get("/api/settings").json()["donations"]["reward_id"] == ""
+    client.post("/api/settings", json={"donations": {"reward_enabled": False}})
+    assert len(stopped) > n                                        # nothing needs the chat reader any more
+
+
+def test_reward_request_chat_message():
+    from app.chat import ChatNotifier, ChatSettings
+    sent = []
+    n = ChatNotifier(ChatSettings(enabled=True, se_jwt="x"), lambda *a: None)
+    n._enqueue = lambda kind, msg: sent.append((kind, msg))
+    n.notify_request("Alice", "AWP", 2)
+    n.notify_request("Alice", "AK-47", 3)
+    assert [m for _, m in sent] == ["🎯 Alice заказал AWP, №2 в очереди", "🎯 Alice заказал AK-47, №3 в очереди"]
+    assert sent[0][0] != sent[1][0]                                # never merged: points were spent
+    assert ChatSettings.from_dict({"on_request": "0"}).on_request is False

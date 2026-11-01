@@ -14,6 +14,10 @@ request is queued even if the weapon is not recognised — the streamer picks it
 
 Replays: the first poll of an account only remembers the newest id. After a restart, donations that came
 in while the app was off are processed if they are at most ``FRESH_S`` old.
+
+Channel points: a Twitch reward «оружие в очередь» (``reward_id``, learnt from the first redemption after
+«Определить») puts the weapon named in the redemption text into the same viewer queue
+(``reward_request``). Points are cheap, so an unrecognised weapon is rejected instead of queued.
 """
 from __future__ import annotations
 
@@ -77,6 +81,8 @@ class DonationSettings:
     aliases_extra: str = ""             # user additions, «алиас = оружие» per line
     queue_autocomplete: bool = True     # a kill with the requested weapon closes the request
     queue_command: str = "!очередь"     # chat command: the bot answers with the viewer's place in the queue
+    reward_enabled: bool = False        # a channel-points reward puts a weapon into the queue
+    reward_id: str = ""                 # Twitch custom-reward-id of that reward (learnt from a redemption)
     da_poll_s: float = 5.0
     dp_poll_s: float = 20.0
 
@@ -84,9 +90,9 @@ class DonationSettings:
     def from_dict(cls, d: dict | None) -> "DonationSettings":
         s = cls()
         config.assign_fields(s, d, "donations")
-        for b in ("enabled", "da_enabled", "dp_enabled", "dp_include_test", "queue_autocomplete"):
+        for b in ("enabled", "da_enabled", "dp_enabled", "dp_include_test", "queue_autocomplete", "reward_enabled"):
             setattr(s, b, config.to_bool(getattr(s, b)))
-        for k in ("da_client_id", "da_client_secret", "dp_api_key"):
+        for k in ("da_client_id", "da_client_secret", "dp_api_key", "reward_id"):
             v = getattr(s, k)
             setattr(s, k, v.strip()[:200] if isinstance(v, str) else "")
         s.aliases_extra = s.aliases_extra[:5000] if isinstance(s.aliases_extra, str) else ""
@@ -125,6 +131,7 @@ class DonationService:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._oauth_state: tuple[str, float] | None = None
+        self.learn_reward = False            # the next channel-points redemption becomes the weapon reward
         self.state: dict = {"da": {}, "dp": {}, "log": []}
         self.status_: dict = {"da": {"error": None, "last_poll": None}, "dp": {"error": None, "last_poll": None}}
         # actions, wired by app.main (all called on the event-loop thread)
@@ -188,6 +195,7 @@ class DonationService:
                 "log": self.state["log"][-20:][::-1],
                 "alias_errors": self.alias_errors,
                 "actions": ACTIONS,
+                "learn_reward": self.learn_reward,
             }
 
     def _changed(self) -> None:
@@ -398,22 +406,37 @@ class DonationService:
 
     def _perform(self, action: str, payload: Any, d: P.Donation) -> dict:
         if action == "weapon":
-            candidates = payload[0] if payload else []
-            side = self.current_side()
-            wid = next((w for w in candidates if side and W.BY_ID[w].usable_by(side)), candidates[0] if candidates else None)
-            try:
-                e = self.queue_weapon(wid, d.message, d.user, d.amount, d.currency,
-                                      by_side=side if len(candidates) > 1 else None)
-            except ValueError as err:
-                return {"ok": False, "action": action, "text": str(err)}
-            what = e.get("name") or "оружие (уточнит стример)"
-            return {"ok": True, "action": action, "text": f"{what} в очереди, №{e.get('position', '?')}"}
+            return {**self._enqueue(payload[0] if payload else [], d.message, d.user, d.amount, d.currency), "action": action}
         res = (self.add_wheel if action == "wheel_value" else self.force_next)(int(payload), d.user)
         if not res.get("ok"):
             return {"ok": False, "action": action, "text": str(res.get("error") or "не принято")}
         if action == "wheel_value":
             return {"ok": True, "action": action, "text": f"{res['value']} DPI на колесе"}
         return {"ok": True, "action": action, "text": f"следующий DPI будет {res['value']}"}
+
+    def _enqueue(self, candidates: list[str], text: str, user: str, amount: float | None, currency: str,
+                 source: str = "donation") -> dict:
+        """Queue a request; several candidates («плётка») — the one of the side being played."""
+        side = self.current_side()
+        wid = next((w for w in candidates if side and W.BY_ID[w].usable_by(side)), candidates[0] if candidates else None)
+        try:
+            e = self.queue_weapon(wid, text, user, amount, currency,
+                                  by_side=side if len(candidates) > 1 else None, source=source)
+        except ValueError as err:
+            return {"ok": False, "text": str(err)}
+        what = e.get("name") or "оружие (уточнит стример)"
+        return {"ok": True, "text": f"{what} в очереди, №{e.get('position', '?')}", "weapon": e.get("name"),
+                "position": e.get("position")}
+
+    def reward_request(self, text: str, user: str) -> dict:
+        """A channel-points redemption of the weapon reward: {ok, text[, weapon, position]}."""
+        found = self.aliases.match(text)
+        if not found:
+            res = {"ok": False, "text": "не понял, какое оружие: напиши название, например AWP или «калаш»"}
+        else:
+            res = self._enqueue(found[0], text, user, None, "", source="reward")
+        log.info("reward %s «%s»: %s", user, text[:40], res["text"])
+        return res
 
     def _record(self, d: P.Donation, result: dict) -> None:
         entry = {"t": time.time(), "provider": d.provider, "user": d.user, "amount": d.amount, "currency": d.currency,

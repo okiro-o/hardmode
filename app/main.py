@@ -97,8 +97,8 @@ class AppState:
                                          publish=self.broker.publish, call_threadsafe=self.broker.call_threadsafe)
         self.donations.add_wheel = lambda v, u: self.dpi.add_viewer_value(v, u, source="donation", per_user_limit=False)
         self.donations.force_next = lambda v, u: self.dpi.force_next(v, u, source="donation")
-        self.donations.queue_weapon = lambda w, text, user, amount, cur, by_side=None: self.queue.add(
-            w, text, user, amount, cur, by_side=by_side)
+        self.donations.queue_weapon = lambda w, text, user, amount, cur, by_side=None, source="donation": self.queue.add(
+            w, text, user, amount, cur, source=source, by_side=by_side)
         self.donations.current_side = lambda: self.gsi.status.team or self.roulette.side
         self.donations.chat_result = lambda user, text: self.chat.notify_donation(user, text, ok=True)
         self.donations.chat_reject = lambda user, text: self.chat.notify_donation(user, text, ok=False)
@@ -170,8 +170,10 @@ class AppState:
         return {**self.settings.ingame.__dict__, **self.ingame.status()}
 
     def persist_dpi_settings(self) -> None:
+        """Save settings changed outside /api/settings (learnt reward ids, channel login from the SE profile)."""
         self.settings.dpi = self.dpi.settings.to_dict()
         self.settings.chat = self.chat.settings.to_dict()
+        self.settings.donations = self.donations.settings.to_dict()
         try:
             self.settings.save()
         except OSError:
@@ -179,12 +181,13 @@ class AppState:
 
     # ------------------------------------------------------------ twitch chat
     def sync_twitch(self) -> None:
-        """Start/stop the anonymous chat reader: needed for viewer DPI values, and for the queue command
-        when the StreamElements bot can answer it."""
+        """Start/stop the anonymous chat reader: needed for viewer DPI values, the weapon reward, and for the
+        queue command when the StreamElements bot can answer it."""
         channel = self.chat.settings.channel_login
-        cs = self.chat.settings
-        queue_cmd = bool(self.donations.settings.queue_command and cs.enabled and cs.se_jwt)
-        if channel and (self.dpi.settings.viewer_enabled or queue_cmd):
+        cs, dn = self.chat.settings, self.donations
+        queue_cmd = bool(dn.settings.queue_command and cs.enabled and cs.se_jwt)
+        weapon_reward = dn.settings.reward_enabled or dn.learn_reward
+        if channel and (self.dpi.settings.viewer_enabled or queue_cmd or weapon_reward):
             self.twitch.start(channel)
         else:
             self.twitch.stop()
@@ -194,6 +197,8 @@ class AppState:
 
     def handle_chat_message(self, msg: IrcMessage) -> None:
         if self._queue_command(msg):
+            return
+        if msg.reward_id and self._weapon_reward(msg):
             return
         s = self.dpi.settings
         if not s.viewer_enabled:
@@ -226,6 +231,29 @@ class AppState:
             return False
         user = msg.display_name or msg.user
         self.chat.notify_queue_reply(user, self.queue.describe_for(user, msg.user))
+        return True
+
+    def _weapon_reward(self, msg: IrcMessage) -> bool:
+        """Channel points «оружие в очередь». Returns True when the redemption is that reward (then the DPI
+        reward never sees it, even when its id is not set and it takes any reward)."""
+        dn = self.donations
+        user = msg.display_name or msg.user
+        if dn.learn_reward:
+            dn.learn_reward = False
+            dn.update_settings({"reward_id": msg.reward_id})
+            self.persist_dpi_settings()
+            log.info("weapon reward learnt from %s: %s", user, msg.reward_id)
+            self.sync_twitch()
+        elif not dn.settings.reward_id or msg.reward_id != dn.settings.reward_id:
+            return False
+        if not dn.settings.reward_enabled:
+            return True
+        text = (msg.trailing or "").strip()
+        res = dn.reward_request(text, user)
+        if res["ok"]:
+            self.chat.notify_request(user, res["weapon"] or "оружие", res.get("position") or "?", res["text"])
+        else:
+            self.chat.notify_reject(user, res["text"])
         return True
 
     def _viewer_rejected(self, user: str, text: str, error: str) -> None:
