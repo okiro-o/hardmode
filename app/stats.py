@@ -69,6 +69,8 @@ class StatsTracker:
                 base["totals"].update(d["totals"])
                 for row in list(base["dpi"].values()) + list(base["weapons"].values()):
                     row.setdefault("damage", 0)        # files written before 0.17.0
+                for row in base["weapons"].values():
+                    row.setdefault("thrown", 0)        # files written before 0.17.1
                 for key in [k for k in base["weapons"] if W.is_non_weapon("weapon_" + k)]:
                     del base["weapons"][key]      # entries booked before the non-weapon filter existed
                 self.data = base
@@ -99,7 +101,7 @@ class StatsTracker:
 
     def _weapon(self, key: str) -> dict:
         return self.data["weapons"].setdefault(key, {"name": weapon_name(key), "bought": 0, "picked": 0,
-                                                     "kills": 0, "hs": 0, "deaths": 0, "damage": 0})
+                                                     "kills": 0, "hs": 0, "deaths": 0, "damage": 0, "thrown": 0})
 
     def _mapstat(self) -> dict | None:
         if not self._map:
@@ -186,6 +188,11 @@ class StatsTracker:
                     if m is not None:
                         m["damage"] += amount
                     changed = True
+                elif kind == "throw":
+                    key = weapon_key(ev.get("raw"), ev.get("weapon"))
+                    if key:
+                        self._weapon(key)["thrown"] += 1
+                        changed = True
                 elif kind == "assist":
                     n = int(ev.get("count") or 1)
                     t["assists"] += n
@@ -232,9 +239,12 @@ class StatsTracker:
         with self._lock:
             dpi = [{"value": int(k), **v} for k, v in self.data["dpi"].items()]
             dpi.sort(key=lambda r: r["value"])
-            weapons = [{"key": k, **v} for k, v in self.data["weapons"].items()]
+            rows = [{"key": k, **v} for k, v in self.data["weapons"].items()]
+            weapons = [r for r in rows if r["key"] not in GRENADE_NAMES]
+            grenades = [r for r in rows if r["key"] in GRENADE_NAMES]
             weapons.sort(key=lambda r: (-r["kills"], -r["bought"], -r["picked"], r["name"]))
+            grenades.sort(key=lambda r: (-r.get("thrown", 0), -r["bought"], r["name"]))
             maps = [{"name": k, "title": map_title(k), **v} for k, v in self.data["maps"].items()]
             maps.sort(key=lambda r: (-r["rounds"], r["name"]))
             return {"started_at": self.data["started_at"], "totals": dict(self.data["totals"]),
-                    "dpi": dpi, "weapons": weapons, "maps": maps, "current_dpi": self.cur_dpi}
+                    "dpi": dpi, "weapons": weapons, "grenades": grenades, "maps": maps, "current_dpi": self.cur_dpi}

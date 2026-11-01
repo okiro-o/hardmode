@@ -302,3 +302,14 @@ def test_damage_and_assist_events():
     p = payload(rk=0, round_=4, rphase="freezetime", active="weapon_glock"); p["player"]["state"]["round_totaldmg"] = 0; p["player"]["match_stats"]["assists"] = 0
     ev = t.handle(p, now=5.0)
     assert not [e for e in ev if e["type"] in ("damage", "assist")]
+
+
+def test_throw_events_for_any_grenade():
+    t = GsiTracker()
+    a = payload(rk=0, grenades={"weapon_flashbang": 2, "weapon_smokegrenade": 1}); t.handle(a, now=1.0)
+    b = payload(rk=0, grenades={"weapon_flashbang": 1, "weapon_smokegrenade": 1})
+    ev = t.handle(b, now=1.5)
+    assert [e["raw"] for e in ev if e["type"] == "throw"] == ["weapon_flashbang"]
+    c = payload(rk=0, grenades={})
+    ev = t.handle(c, now=2.0)
+    assert sorted(e["raw"] for e in ev if e["type"] == "throw") == ["weapon_flashbang", "weapon_smokegrenade"]

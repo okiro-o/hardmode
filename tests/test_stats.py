@@ -32,10 +32,11 @@ def test_stats_counts_kills_deaths_pickups_rounds_and_dpi(tmp_path):
     assert d[800]["rounds"] == 0 and d[800]["rolls"] == 1
     assert d[1200]["seconds"] == pytest.approx(10.0 + 5.0)   # 100->101->105->110 and 120->125 (gaps >= 10 s skipped)
     w = {r["key"]: r for r in snap["weapons"]}
+    g = {r["key"]: r for r in snap["grenades"]}
     assert w["ak47"]["kills"] == 1 and w["ak47"]["hs"] == 1 and w["ak47"]["bought"] == 1 and w["ak47"]["deaths"] == 1
-    assert w["hegrenade"]["kills"] == 1 and w["hegrenade"]["name"] == "HE"
+    assert g["hegrenade"]["kills"] == 1 and g["hegrenade"]["name"] == "HE" and "hegrenade" not in w
     assert w["awp"]["picked"] == 1 and "glock" not in w          # spawn pistol is not counted
-    assert snap["weapons"][0]["key"] in ("ak47", "hegrenade")   # sorted by kills
+    assert snap["weapons"][0]["key"] == "ak47"   # sorted by kills; grenades live in their own list
     # persistence (writes are throttled: flush before reopening) and reset
     s.flush()
     s2 = StatsTracker(str(tmp_path / "stats.json"))
@@ -94,7 +95,8 @@ def test_damage_assists_and_maps(tmp_path):
     t = snap["totals"]
     assert (t["damage"], t["assists"], t["kills"], t["deaths"]) == (83, 1, 1, 1)
     w = {r["key"]: r for r in snap["weapons"]}
-    assert w["ak47"]["damage"] == 73 and w["hegrenade"]["damage"] == 10
+    g = {r["key"]: r for r in snap["grenades"]}
+    assert w["ak47"]["damage"] == 73 and g["hegrenade"]["damage"] == 10
     assert {r["value"]: r["damage"] for r in snap["dpi"]} == {800: 83}
     maps = {r["name"]: r for r in snap["maps"]}
     assert maps["de_mirage"]["title"] == "Mirage" and maps["de_mirage"]["matches"] == 1
@@ -103,3 +105,17 @@ def test_damage_assists_and_maps(tmp_path):
     assert snap["maps"][0]["name"] == "de_mirage"        # sorted by rounds
     s.reset()
     assert s.snapshot()["maps"][0]["matches"] == 1 and s.snapshot()["maps"][0]["name"] == "de_inferno"
+
+
+def test_grenades_are_listed_separately_with_throws(tmp_path):
+    s = StatsTracker(str(tmp_path / "stats.json"))
+    s.handle_events([{"type": "pickup", "raw": "weapon_flashbang", "weapon": None, "bought": True, "spawn": False},
+                     {"type": "throw", "raw": "weapon_flashbang", "weapon": None},
+                     {"type": "throw", "raw": "weapon_flashbang", "weapon": None},
+                     {"type": "pickup", "raw": "weapon_ak47", "weapon": "ak47", "bought": True, "spawn": False},
+                     {"type": "damage", "amount": 40, "weapon": None, "raw": "weapon_hegrenade"}], status(), 800, now=1.0)
+    snap = s.snapshot()
+    assert [r["key"] for r in snap["weapons"]] == ["ak47"]
+    g = {r["key"]: r for r in snap["grenades"]}
+    assert g["flashbang"]["thrown"] == 2 and g["flashbang"]["bought"] == 1 and g["hegrenade"]["damage"] == 40
+    assert snap["grenades"][0]["key"] == "flashbang"      # sorted by throws

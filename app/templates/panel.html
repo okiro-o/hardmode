@@ -573,6 +573,10 @@
       <div class="tblwrap"><table class="tbl" id="stats-weapons"></table></div>
     </section>
     <section>
+      <h2>Гранаты</h2>
+      <div class="tblwrap"><table class="tbl" id="stats-grenades"></table></div>
+    </section>
+    <section>
       <h2>Карты</h2>
       <div class="tblwrap"><table class="tbl" id="stats-maps"></table></div>
     </section>
@@ -829,8 +833,9 @@ function toggleLog(btn) { const log = btn.previousElementSibling; const compact 
 function fmtDur(sec) { sec = Math.round(sec || 0); const m = Math.floor(sec / 60); return m >= 60 ? `${Math.floor(m / 60)} ч ${m % 60} мин` : m ? `${m} мин` : `${sec} с`; }
 const DPI_COLS = [['value', 'DPI'], ['rolls', 'выпал'], ['kpr', 'киллов за выпадение'], ['kills', 'киллов'], ['deaths', 'смертей'], ['damage', 'урон'], ['rounds', 'раундов целиком'], ['seconds', 'время']];
 const W_COLS = [['name', 'Оружие'], ['bought', 'куплено'], ['picked', 'подобрано'], ['kills', 'киллов'], ['hs', 'HS'], ['damage', 'урон'], ['deaths', 'смертей с ним']];
+const G_COLS = [['name', 'Граната'], ['bought', 'куплено'], ['picked', 'подобрано'], ['thrown', 'брошено'], ['kills', 'киллов'], ['damage', 'урон']];
 const M_COLS = [['title', 'Карта'], ['matches', 'матчей'], ['rounds', 'раундов'], ['kills', 'K'], ['deaths', 'D'], ['assists', 'A'], ['kd', 'K/D'], ['damage', 'урон'], ['adr', 'ADR'], ['hsp', 'HS %']];
-let statsSort = { dpi: { key: 'value', dir: 1 }, weapons: { key: 'kills', dir: -1 }, maps: { key: 'rounds', dir: -1 } };
+let statsSort = { dpi: { key: 'value', dir: 1 }, weapons: { key: 'kills', dir: -1 }, grenades: { key: 'thrown', dir: -1 }, maps: { key: 'rounds', dir: -1 } };
 try { statsSort = { ...statsSort, ...JSON.parse(localStorage.getItem('hardmode.statsSort') || '{}') }; } catch (e) {}
 function sortStats(table, key) {
   const s = statsSort[table];
@@ -859,7 +864,7 @@ function renderStats() {
     .map(([l, v]) => `<div class="stat"><div class="v">${v ?? 0}</div><div class="l">${l}</div></div>`).join('');
   $('stats-since').textContent = st.started_at ? 'с ' + new Date(st.started_at * 1000).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
   const home = +((S.dpi && S.dpi.settings && S.dpi.settings.home_dpi) || 0), homeColor = (S.dpi && S.dpi.settings && S.dpi.settings.home_color) || '#ff6b6b';
-  const sd = statsSort.dpi, sw = statsSort.weapons, sm = statsSort.maps;
+  const sd = statsSort.dpi, sw = statsSort.weapons, sg = statsSort.grenades, sm = statsSort.maps;
   const dpiRows = sortRows((st.dpi || []).map(r => ({ ...r, kpr: r.rolls ? r.kills / r.rolls : null })), sd);
   const cell = (k, v, s) => `<td class="${s.key === k ? 'sortedcol' : ''}">${v}</td>`;
   $('stats-dpi').innerHTML = thead(DPI_COLS, sd, 'dpi') + '<tbody>' + (dpiRows.map(r =>
@@ -870,6 +875,10 @@ function renderStats() {
   $('stats-weapons').innerHTML = thead(W_COLS, sw, 'weapons') + '<tbody>' + (wRows.map(r =>
     '<tr>' + cell('name', esc(r.name), sw) + cell('bought', r.bought, sw) + cell('picked', r.picked, sw) + cell('kills', r.kills, sw) + cell('hs', r.hs, sw) + cell('damage', r.damage || 0, sw) + cell('deaths', r.deaths, sw) + '</tr>').join('')
     || '<tr><td class="muted" colspan="7">пока пусто: данные появятся с первой покупки или килла</td></tr>') + '</tbody>';
+  const gRows = sortRows(st.grenades || [], sg);
+  $('stats-grenades').innerHTML = thead(G_COLS, sg, 'grenades') + '<tbody>' + (gRows.map(r =>
+    '<tr>' + cell('name', esc(r.name), sg) + cell('bought', r.bought, sg) + cell('picked', r.picked, sg) + cell('thrown', r.thrown || 0, sg) + cell('kills', r.kills, sg) + cell('damage', r.damage || 0, sg) + '</tr>').join('')
+    || '<tr><td class="muted" colspan="6">пока пусто: данные появятся с первой гранаты</td></tr>') + '</tbody>';
   const mRows = sortRows((st.maps || []).map(r => ({ ...r, kd: r.deaths ? r.kills / r.deaths : (r.kills ? Infinity : null), adr: r.rounds ? r.damage / r.rounds : null, hsp: r.kills ? 100 * r.hs / r.kills : null })), sm);
   const f2 = v => v == null ? '—' : v === Infinity ? '∞' : v.toFixed(2);
   $('stats-maps').innerHTML = thead(M_COLS, sm, 'maps') + '<tbody>' + (mRows.map(r =>
@@ -884,6 +893,8 @@ function downloadStatsCsv() {
   (st.dpi || []).forEach(r => lines.push([r.value, r.rolls, r.rolls ? (r.kills / r.rolls).toFixed(2).replace('.', ',') : '', r.kills, r.deaths, r.damage || 0, r.rounds, Math.round(r.seconds || 0)].join(';')));
   lines.push('', 'Оружие;куплено;подобрано;киллов;HS;урон;смертей с ним');
   (st.weapons || []).forEach(r => lines.push([q(r.name), r.bought, r.picked, r.kills, r.hs, r.damage || 0, r.deaths].join(';')));
+  lines.push('', 'Граната;куплено;подобрано;брошено;киллов;урон');
+  (st.grenades || []).forEach(r => lines.push([q(r.name), r.bought, r.picked, r.thrown || 0, r.kills, r.damage || 0].join(';')));
   lines.push('', 'Карта;матчей;раундов;K;D;A;урон');
   (st.maps || []).forEach(r => lines.push([q(r.title), r.matches, r.rounds, r.kills, r.deaths, r.assists, r.damage].join(';')));
   const t = st.totals || {}; lines.push('', 'Итого;раундов;киллов;смертей;ассистов;урон;HS;лучший раунд;кручений DPI', ['', t.rounds, t.kills, t.deaths, t.assists, t.damage, t.hs, t.best_round_kills, t.rolls].join(';'));

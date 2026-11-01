@@ -282,6 +282,9 @@ class GsiTracker:
         if prev is not None and same_round and alive and prev.alive:
             # a grenade disappearing while alive means it was thrown (death/drop would be noise)
             self._note_throws(prev.grenades, grenades, now)
+            for gname, count in prev.grenades.items():
+                for _ in range(max(0, count - grenades.get(gname, 0))):
+                    events.append({"type": "throw", "raw": gname, "weapon": None})
 
         # "previously" carries the old value even if we missed an intermediate POST, but only
         # when it describes the same player: after switching back from a spectated teammate
