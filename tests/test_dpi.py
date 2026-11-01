@@ -396,3 +396,20 @@ def test_backend_connect_error_message_is_readable(monkeypatch):
     with pytest.raises(HidppError) as e:
         B.HidppBackend()._connect()
     assert "Lightspeed Receiver@1" in str(e.value) and "format" not in str(e.value)
+
+
+def test_spin_after_kill_is_optional_and_shares_the_cooldown(service):
+    async def run():
+        service.start(asyncio.get_running_loop())
+        try:
+            assert service.on_kill() is False                 # off by default
+            service.update_settings({"auto_on_kill": True, "death_cooldown_s": 1.0})
+            assert service.on_kill() is True
+            assert service.last_spin["reason"] == "kill"
+            assert service.on_death() is False               # cooldown shared with deaths
+            service._last_spin_at = 0
+            service.update_settings({"auto_on_death": False})
+            assert service.on_death() is False and service.on_kill() is True
+        finally:
+            service.stop()
+    asyncio.run(run())

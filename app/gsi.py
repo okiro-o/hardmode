@@ -97,6 +97,8 @@ class _OwnSnapshot:
     round_phase: str | None = None
     names: tuple[str, ...] = ()   # gsi names of everything in the inventory
     money: int | None = None
+    dmg: int = 0                  # player.state.round_totaldmg
+    assists: int | None = None    # player.match_stats.assists
 
 
 @dataclass
@@ -236,7 +238,10 @@ class GsiTracker:
 
         round_kills = _int(state.get("round_kills"), 0) or 0
         round_killhs = _int(state.get("round_killhs"), 0) or 0
-        match_kills = _int(_obj(player.get("match_stats")).get("kills"))
+        round_dmg = _int(state.get("round_totaldmg"), 0) or 0
+        match_stats = _obj(player.get("match_stats"))
+        match_kills = _int(match_stats.get("kills"))
+        assists = _int(match_stats.get("assists"))
         st.round_kills = round_kills
         st.match_kills = match_kills
         grenades = self._grenades(entries)
@@ -323,6 +328,17 @@ class GsiTracker:
                     "count": delta,
                 })
 
+        # damage dealt (statistics): round_totaldmg grows within a round; attributed like kills to the
+        # weapon that was in hand in the previous packet. Assists come from match_stats (per match).
+        if prev is not None and same_map and st.map_phase in ACTIVE_PHASES:
+            if same_round and round_dmg > prev.dmg:
+                dmg_raw = prev.active_raw or active_raw
+                dw = W.from_gsi_name(dmg_raw)
+                events.append({"type": "damage", "amount": round_dmg - prev.dmg,
+                               "weapon": dw.id if dw else None, "raw": dmg_raw})
+            if assists is not None and prev.assists is not None and assists > prev.assists:
+                events.append({"type": "assist", "count": assists - prev.assists})
+
         self._prev = _OwnSnapshot(
             map_name=st.map_name,
             round=st.round,
@@ -334,6 +350,8 @@ class GsiTracker:
             round_phase=st.round_phase,
             names=names,
             money=money,
+            dmg=round_dmg,
+            assists=assists,
         )
         events.append({"type": "status"})
         return events

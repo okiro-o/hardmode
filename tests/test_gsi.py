@@ -284,3 +284,21 @@ def test_healthshot_and_c4_are_not_pickups():
     t.handle(_inv("weapon_knife_t", "weapon_glock", money=5000), now=1.0)
     ev = t.handle(_inv("weapon_knife_t", "weapon_glock", "weapon_healthshot", "weapon_c4", money=4000), now=1.5)
     assert not [e for e in ev if e["type"] == "pickup"]
+
+
+def test_damage_and_assist_events():
+    t = GsiTracker()
+    p = payload(rk=0, active="weapon_ak47"); p["player"]["state"]["round_totaldmg"] = 0; p["player"]["match_stats"]["assists"] = 2
+    t.handle(p, now=1.0)
+    p = payload(rk=0, active="weapon_ak47"); p["player"]["state"]["round_totaldmg"] = 27; p["player"]["match_stats"]["assists"] = 2
+    ev = t.handle(p, now=1.1)
+    assert [e for e in ev if e["type"] == "damage"] == [{"type": "damage", "amount": 27, "weapon": "ak47", "raw": "weapon_ak47"}]
+    # quick switch after the hit: the weapon of the previous packet gets the damage
+    p = payload(rk=0, active="weapon_glock"); p["player"]["state"]["round_totaldmg"] = 60; p["player"]["match_stats"]["assists"] = 3
+    ev = t.handle(p, now=1.2)
+    d = [e for e in ev if e["type"] == "damage"]; a = [e for e in ev if e["type"] == "assist"]
+    assert d[0]["amount"] == 33 and d[0]["weapon"] == "ak47" and a == [{"type": "assist", "count": 1}]
+    # new round resets round_totaldmg: no damage event, a match reset never produces a negative assist
+    p = payload(rk=0, round_=4, rphase="freezetime", active="weapon_glock"); p["player"]["state"]["round_totaldmg"] = 0; p["player"]["match_stats"]["assists"] = 0
+    ev = t.handle(p, now=5.0)
+    assert not [e for e in ev if e["type"] in ("damage", "assist")]

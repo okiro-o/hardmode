@@ -77,3 +77,29 @@ def test_non_weapons_are_not_booked(tmp_path):
     s.data["weapons"]["healthshot"] = {"name": "healthshot", "bought": 3, "picked": 0, "kills": 0, "hs": 0, "deaths": 0}
     s.flush()
     assert "healthshot" not in StatsTracker(str(tmp_path / "stats.json")).data["weapons"]
+
+
+def test_damage_assists_and_maps(tmp_path):
+    s = StatsTracker(str(tmp_path / "stats.json"))
+    mir = types.SimpleNamespace(map_phase="live", map_name="de_mirage")
+    s.handle_events([{"type": "round_start", "round": 1}], mir, 800, now=1.0)
+    s.handle_events([{"type": "damage", "amount": 73, "weapon": "ak47", "raw": "weapon_ak47"},
+                     {"type": "kill", "weapon": "ak47", "raw": "weapon_ak47", "headshot": True},
+                     {"type": "assist", "count": 1}], mir, 800, now=2.0)
+    s.handle_events([{"type": "round_end", "round": 1}], mir, 800, now=3.0)
+    inf = types.SimpleNamespace(map_phase="live", map_name="de_inferno")
+    s.handle_events([{"type": "round_start", "round": 1}], inf, 800, now=10.0)
+    s.handle_events([{"type": "death", "weapon": "awp", "raw": "weapon_awp"}, {"type": "damage", "amount": 10, "weapon": None, "raw": "weapon_hegrenade"}], inf, 800, now=11.0)
+    snap = s.snapshot()
+    t = snap["totals"]
+    assert (t["damage"], t["assists"], t["kills"], t["deaths"]) == (83, 1, 1, 1)
+    w = {r["key"]: r for r in snap["weapons"]}
+    assert w["ak47"]["damage"] == 73 and w["hegrenade"]["damage"] == 10
+    assert {r["value"]: r["damage"] for r in snap["dpi"]} == {800: 83}
+    maps = {r["name"]: r for r in snap["maps"]}
+    assert maps["de_mirage"]["title"] == "Mirage" and maps["de_mirage"]["matches"] == 1
+    assert (maps["de_mirage"]["rounds"], maps["de_mirage"]["kills"], maps["de_mirage"]["assists"], maps["de_mirage"]["damage"]) == (1, 1, 1, 73)
+    assert (maps["de_inferno"]["deaths"], maps["de_inferno"]["damage"], maps["de_inferno"]["rounds"]) == (1, 10, 0)
+    assert snap["maps"][0]["name"] == "de_mirage"        # sorted by rounds
+    s.reset()
+    assert s.snapshot()["maps"][0]["matches"] == 1 and s.snapshot()["maps"][0]["name"] == "de_inferno"

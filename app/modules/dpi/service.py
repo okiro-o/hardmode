@@ -35,7 +35,8 @@ class DpiSettings:
     revolutions: int = 5
     apply_at: str = "stop"          # "stop" (when the wheel rests) | "start" (immediately)
     auto_on_death: bool = True
-    death_cooldown_s: float = 8.0   # ignore deaths this soon after the previous spin
+    auto_on_kill: bool = False      # spin after every kill as well (deathmatch-style); both can be on
+    death_cooldown_s: float = 8.0   # ignore deaths/kills this soon after the previous spin
     exclude_current: bool = True    # never land on the value already applied
     guard: bool = True              # re-apply if G HUB reverts the DPI
     use_range: bool = True          # min..max/step values are part of the wheel
@@ -97,7 +98,7 @@ class DpiSettings:
         s.home_color = s.home_color.strip().lower()
         if s.wheel_mode not in ("spin", "always"):
             s.wheel_mode = "spin"
-        for b in ("enabled", "auto_on_death", "exclude_current", "guard", "show_current", "use_range",
+        for b in ("enabled", "auto_on_death", "auto_on_kill", "exclude_current", "guard", "show_current", "use_range",
                   "viewer_enabled", "viewer_announce"):
             v = getattr(s, b)
             if isinstance(v, str):
@@ -390,14 +391,21 @@ class DpiService:
     def on_death(self) -> bool:
         """Called by the GSI pipeline. Returns True if a spin was started."""
         self.deaths += 1
-        if not (self.settings.enabled and self.settings.auto_on_death):
+        return self._auto_spin("death", self.settings.auto_on_death, "Смерть")
+
+    def on_kill(self) -> bool:
+        """Called by the GSI pipeline once per packet with kills. Returns True if a spin was started."""
+        return self._auto_spin("kill", self.settings.auto_on_kill, "Килл")
+
+    def _auto_spin(self, reason: str, enabled: bool, what: str) -> bool:
+        if not (self.settings.enabled and enabled):
             return False
         if time.monotonic() - self._last_spin_at < self.settings.death_cooldown_s:
-            self._log("skip", "Смерть, но рулетка только что крутилась — пропуск")
+            self._log("skip", f"{what}, но рулетка только что крутилась — пропуск")
             self._changed()
             return False
         try:
-            self.spin(reason="death")
+            self.spin(reason=reason)
             return True
         except ValueError:
             return False

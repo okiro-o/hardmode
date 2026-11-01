@@ -268,6 +268,8 @@ class AppState:
         # statistics first: a death must be booked at the DPI that was current before the new spin
         if self.stats.handle_events(events, st, self.dpi.current_dpi):
             self.broker.publish("stats", self.stats.snapshot())
+        if any(ev["type"] == "kill" for ev in events):
+            self.dpi.on_kill()
         for ev in events:
             if ev["type"] == "death":
                 self.dpi.on_death()

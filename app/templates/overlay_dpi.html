@@ -153,7 +153,7 @@
     resultEl.classList.add('show');
   }
   function hideNumber() { resultEl.classList.remove('show'); }
-  function reasonText(spin) { return spin.reason === 'death' ? 'после смерти' : ''; }
+  function reasonText(spin) { return spin.reason === 'death' ? 'после смерти' : spin.reason === 'kill' ? 'после килла' : ''; }
 
   // ---- animation -----------------------------------------------------------------
   let anim = null;            // {from, to, start, duration, spin}

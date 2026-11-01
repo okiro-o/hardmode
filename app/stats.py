@@ -34,9 +34,14 @@ def weapon_name(key: str) -> str:
 
 
 def _fresh() -> dict:
-    return {"started_at": time.time(), "dpi": {}, "weapons": {},
-            "totals": {"kills": 0, "hs": 0, "deaths": 0, "rounds": 0, "rolls": 0, "best_round_kills": 0,
-                       "bought": 0, "picked": 0}}
+    return {"started_at": time.time(), "dpi": {}, "weapons": {}, "maps": {},
+            "totals": {"kills": 0, "hs": 0, "deaths": 0, "assists": 0, "damage": 0, "rounds": 0, "rolls": 0,
+                       "best_round_kills": 0, "bought": 0, "picked": 0}}
+
+
+def map_title(name: str) -> str:
+    base = name.split("_", 1)[1] if "_" in name else name
+    return base[:1].upper() + base[1:]
 
 
 class StatsTracker:
@@ -46,6 +51,7 @@ class StatsTracker:
         self.data = _fresh()
         self.cur_dpi: int | None = None
         self._round: dict | None = None     # {"no", "dpi", "changed", "kills"}
+        self._map: str | None = None        # map the current counters go to
         self._last_t: float | None = None
         self._last_save = 0.0
         self._dirty = False          # countable events not yet written
@@ -59,8 +65,10 @@ class StatsTracker:
                 d = json.load(f)
             if isinstance(d, dict) and isinstance(d.get("totals"), dict):
                 base = _fresh()
-                base.update({k: d[k] for k in ("started_at", "dpi", "weapons") if k in d})
+                base.update({k: d[k] for k in ("started_at", "dpi", "weapons", "maps") if k in d})
                 base["totals"].update(d["totals"])
+                for row in list(base["dpi"].values()) + list(base["weapons"].values()):
+                    row.setdefault("damage", 0)        # files written before 0.17.0
                 for key in [k for k in base["weapons"] if W.is_non_weapon("weapon_" + k)]:
                     del base["weapons"][key]      # entries booked before the non-weapon filter existed
                 self.data = base
@@ -86,11 +94,18 @@ class StatsTracker:
                 self._save(force=True)
 
     def _dpi(self, value: int) -> dict:
-        return self.data["dpi"].setdefault(str(int(value)), {"rolls": 0, "kills": 0, "deaths": 0, "rounds": 0, "seconds": 0.0})
+        return self.data["dpi"].setdefault(str(int(value)), {"rolls": 0, "kills": 0, "deaths": 0, "rounds": 0,
+                                                             "seconds": 0.0, "damage": 0})
 
     def _weapon(self, key: str) -> dict:
         return self.data["weapons"].setdefault(key, {"name": weapon_name(key), "bought": 0, "picked": 0,
-                                                     "kills": 0, "hs": 0, "deaths": 0})
+                                                     "kills": 0, "hs": 0, "deaths": 0, "damage": 0})
+
+    def _mapstat(self) -> dict | None:
+        if not self._map:
+            return None
+        return self.data["maps"].setdefault(self._map, {"matches": 0, "rounds": 0, "kills": 0, "hs": 0,
+                                                        "deaths": 0, "assists": 0, "damage": 0})
 
     # ------------------------------------------------------------------ hooks
     def on_dpi_roll(self, value: int, reason: str = "") -> None:
@@ -120,6 +135,12 @@ class StatsTracker:
                     self._time_dirty = True
             self._last_t = now
             t = self.data["totals"]
+            map_name = getattr(status, "map_name", None)
+            if map_name and map_name != self._map and getattr(status, "map_phase", None) in ("live", "intermission", "warmup"):
+                self._map = map_name
+                self._mapstat()["matches"] += 1      # a new map = a new match for the per-map table
+                changed = True
+            m = self._mapstat()
             for ev in events:
                 kind = ev.get("type")
                 if kind == "kill":
@@ -132,6 +153,10 @@ class StatsTracker:
                         if ev.get("headshot"):
                             w["hs"] += 1
                     t["kills"] += 1
+                    if m is not None:
+                        m["kills"] += 1
+                        if ev.get("headshot"):
+                            m["hs"] += 1
                     if ev.get("headshot"):
                         t["hs"] += 1
                     if self._round:
@@ -145,6 +170,27 @@ class StatsTracker:
                     if key:
                         self._weapon(key)["deaths"] += 1
                     t["deaths"] += 1
+                    if m is not None:
+                        m["deaths"] += 1
+                    changed = True
+                elif kind == "damage":
+                    amount = int(ev.get("amount") or 0)
+                    if amount <= 0:
+                        continue
+                    key = weapon_key(ev.get("raw"), ev.get("weapon"))
+                    if key:
+                        self._weapon(key)["damage"] += amount
+                    if self.cur_dpi is not None:
+                        self._dpi(self.cur_dpi)["damage"] += amount
+                    t["damage"] += amount
+                    if m is not None:
+                        m["damage"] += amount
+                    changed = True
+                elif kind == "assist":
+                    n = int(ev.get("count") or 1)
+                    t["assists"] += n
+                    if m is not None:
+                        m["assists"] += n
                     changed = True
                 elif kind == "pickup":
                     if ev.get("spawn"):
@@ -161,6 +207,8 @@ class StatsTracker:
                 elif kind == "round_end":
                     if self._round is not None:
                         t["rounds"] += 1
+                        if m is not None:
+                            m["rounds"] += 1
                         if not self._round["changed"] and self._round["dpi"] is not None:
                             self._dpi(self._round["dpi"])["rounds"] += 1
                         self._round = None
@@ -176,6 +224,8 @@ class StatsTracker:
         with self._lock:
             self.data = _fresh()
             self._round = None
+            if self._map:                    # the match in progress keeps counting after a reset
+                self._mapstat()["matches"] = 1
             self._save(force=True)
 
     def snapshot(self) -> dict:
@@ -184,5 +234,7 @@ class StatsTracker:
             dpi.sort(key=lambda r: r["value"])
             weapons = [{"key": k, **v} for k, v in self.data["weapons"].items()]
             weapons.sort(key=lambda r: (-r["kills"], -r["bought"], -r["picked"], r["name"]))
+            maps = [{"name": k, "title": map_title(k), **v} for k, v in self.data["maps"].items()]
+            maps.sort(key=lambda r: (-r["rounds"], r["name"]))
             return {"started_at": self.data["started_at"], "totals": dict(self.data["totals"]),
-                    "dpi": dpi, "weapons": weapons, "current_dpi": self.cur_dpi}
+                    "dpi": dpi, "weapons": weapons, "maps": maps, "current_dpi": self.cur_dpi}
