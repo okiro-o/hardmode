@@ -11,6 +11,7 @@
   #stage { position: absolute; transform-origin: 0 0; }
   canvas { display: block; opacity: 1; transform: scale(1); transition: opacity .55s ease, transform .55s cubic-bezier(.2,.8,.2,1); }
   #stage.wheel-hidden canvas { opacity: 0; transform: scale(.85); }
+  body.off #stage { display: none; }   /* DPI roulette switched off in the panel: the widget shows nothing */
   #result {
     position: absolute; left: 0; right: 0; text-align: center; color: var(--color);
     text-shadow: 0 2px 10px rgba(0,0,0,.8); font-weight: 900; letter-spacing: .02em; white-space: nowrap;
@@ -212,8 +213,10 @@
     if (cfg.showCurrent && dpi && dpi.current_dpi) showNumber(dpi.current_dpi, ''); else hideNumber();
   }
 
+  function applyEnabled() { document.body.classList.toggle('off', !!dpi && dpi.enabled === false); }
   function sync(nowMs) {
     if (!dpi) return;
+    applyEnabled();
     readCfg();
     values = dpi.values || []; weights = dpi.weights || [];
     layout();
@@ -248,6 +251,7 @@
   es.addEventListener('dpi', e => {
     dpi = JSON.parse(e.data);
     if (dpi.now) serverOffset = dpi.now * 1000 - Date.now();
+    applyEnabled();
     readCfg();
     if (!anim) {
       // settings may have changed (wheel mode, values); redraw without disturbing a shown result
