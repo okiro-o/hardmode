@@ -38,13 +38,13 @@ DEFAULT_ALIASES: dict[str, list[str]] = {
     "fiveseven": ["fiveseven", "five seven", "five7", "файв*", "файвсевен"],
     "cz75a": ["cz", "cz75", "cz75a", "цз", "цз75", "чешк*", "чех"],
     "deagle": ["deagle", "deag", "desert eagle", "дигл*", "дигал*", "дезерт*"],
-    "revolver": ["r8", "р8", "revolver", "револьвер*", "револик*"],
+    "revolver": ["r8", "р8", "revolver", "револьвер*", "револик*", "ревик*"],
     "mac10": ["mac", "mac10", "мак", "мак10", "макен*"],
     "mp9": ["mp9", "мп9"],
     "mp7": ["mp7", "мп7"],
     "mp5sd": ["mp5", "mp5sd", "мп5", "мп5сд", "морков*"],
     "ump45": ["ump", "ump45", "умп*", "юмп*"],
-    "p90": ["p90", "п90", "р90", "пэ90", "пи90"],
+    "p90": ["p90", "п90", "р90", "пэ90", "пи90", "петух*"],
     "bizon": ["bizon", "pp bizon", "бизон*", "пп бизон"],
     "nova": ["nova", "нова", "нову"],
     "xm1014": ["xm", "xm1014", "хм1014", "икс эм", "крокодил*", "автодроб*"],
@@ -61,9 +61,9 @@ DEFAULT_ALIASES: dict[str, list[str]] = {
     "sg556": ["sg", "sg553", "sg556", "сг", "сг553", "криг*", "krieg"],
     "aug": ["aug", "ауг*"],
     "ssg08": ["ssg", "ssg08", "scout", "ссг", "скаут*", "муха", "муху", "мухой", "мухе"],
-    "awp": ["awp", "avp", "авп*", "слон", "слона", "слоном", "слону", "авик*"],
-    "g3sg1": ["g3sg1", "g3", "г3", "г3сг1"],
-    "scar20": ["scar", "scar20", "скар*"],
+    "awp": ["awp", "avp", "авп*", "авап*", "слон", "слона", "слоном", "слону", "авик*"],
+    "g3sg1": ["g3sg1", "g3", "г3", "г3сг1", "плетк*"],            # «плётка»: both auto-snipers
+    "scar20": ["scar", "scar20", "скар*", "плетк*"],
     "taser": ["zeus", "taser", "x27", "зевс*", "тазер*", "шокер*"],
     "knife": ["knife", "нож*", "финк*", "перо"],
 }
@@ -93,10 +93,13 @@ def _spans(text: str) -> list[tuple[str, int, int]]:
 
 
 class AliasIndex:
-    """exact: normalised alias (tokens joined) -> weapon id; prefix: list of (stem, weapon id)."""
+    """exact: normalised alias (tokens joined) -> weapon ids; prefix: list of (stem, weapon id).
+
+    One alias may name several weapons (the side-specific pair «плётка» = G3SG1 on T / SCAR-20 on CT):
+    ``match`` returns all candidates, ``find`` picks the one the given side can buy."""
 
     def __init__(self, extra: dict[str, str] | None = None) -> None:
-        self.exact: dict[str, str] = {}
+        self.exact: dict[str, list[str]] = {}
         self.prefix: list[tuple[str, str]] = []
         for wid, names in DEFAULT_ALIASES.items():
             for name in names:
@@ -104,7 +107,7 @@ class AliasIndex:
         for w in W.CATALOG:                                        # official names and ids always work
             self._add(w.name, w.id)
             self._add(w.id, w.id)
-        for name, wid in (extra or {}).items():                    # user additions override defaults
+        for name, wid in (extra or {}).items():                    # user additions replace defaults
             self._add(name, wid, override=True)
         self.prefix.sort(key=lambda p: -len(p[0]))                 # longest stem first
 
@@ -115,32 +118,44 @@ class AliasIndex:
         if not key or wid not in W.BY_ID:
             return
         if star:
-            self.prefix = [p for p in self.prefix if p[0] != key] if override else self.prefix
-            if override or all(p[0] != key for p in self.prefix):
+            if override:
+                self.prefix = [p for p in self.prefix if p[0] != key]
+            if (key, wid) not in self.prefix:
                 self.prefix.append((key, wid))
-        elif override or key not in self.exact:
-            self.exact[key] = wid
+        elif override:
+            self.exact[key] = [wid]
+        elif wid not in self.exact.setdefault(key, []):
+            self.exact[key].append(wid)
 
-    def find(self, text: str) -> tuple[str, str] | None:
-        """(weapon id, matched text as written) of the earliest/longest alias in ``text``, or None."""
+    def match(self, text: str) -> tuple[list[str], str] | None:
+        """(candidate weapon ids, matched text as written) of the earliest/longest alias, or None."""
         spans = _spans(text)
         toks = [t for t, _, _ in spans]
         for i in range(len(toks)):
-            best: tuple[int, str, int] | None = None     # (matched length, weapon, last token index)
+            best: tuple[int, list[str], int] | None = None     # (matched length, weapons, last token index)
             joined = ""
             for j in range(i, min(len(toks), i + MAX_SPAN)):
                 joined += toks[j]
-                wid = self.exact.get(joined)
-                if wid and (best is None or len(joined) > best[0]):
-                    best = (len(joined), wid, j)
+                wids = self.exact.get(joined)
+                if wids and (best is None or len(joined) > best[0]):
+                    best = (len(joined), list(wids), j)
             if best is None:
-                for stem, wid in self.prefix:
-                    if toks[i].startswith(stem):
-                        best = (len(stem), wid, i)
-                        break
+                hits = [(stem, wid) for stem, wid in self.prefix if toks[i].startswith(stem)]
+                if hits:
+                    longest = len(hits[0][0])                   # prefix list is sorted longest first
+                    best = (longest, [wid for stem, wid in hits if len(stem) == longest], i)
             if best is not None:
                 return best[1], str(text)[spans[i][1]:spans[best[2]][2]]
         return None
+
+    def find(self, text: str, side: str | None = None) -> tuple[str, str] | None:
+        """(weapon id, matched text) — for an alias with several weapons, the one ``side`` can buy."""
+        m = self.match(text)
+        if m is None:
+            return None
+        wids, matched = m
+        pick = next((w for w in wids if side and W.BY_ID[w].usable_by(side)), wids[0])
+        return pick, matched
 
 
 def parse_extra(text: str) -> tuple[dict[str, str], list[str]]:

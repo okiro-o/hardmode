@@ -1039,10 +1039,10 @@ function renderRequests() {
   chip.className = 'chip' + (n ? ' warn' : ''); chip.querySelector('b').textContent = n ? `заявок: ${n}` : 'пусто';
   $('requests').innerHTML = n ? q.pending.map((e, i) => `<div class="req ${i === 0 ? 'first' : ''}">
       ${e.icon ? `<div class="icon" style="--mask:url('${e.icon}')"></div>` : '<div class="icon unknown">?</div>'}
-      <div class="body"><div><b>${esc(e.name || 'не распознано')}</b> <span class="who">${esc(e.user)}${e.amount != null ? ' · ' + fmtMoney(e.amount, e.currency) : ''} · ${fmtTime(e.t).slice(0, 5)}</span></div>
+      <div class="body"><div><b>${esc(e.name || 'не распознано')}</b>${e.guess ? ' <span class="who">(по стороне, проверь)</span>' : ''} <span class="who">${esc(e.user)}${e.amount != null ? ' · ' + fmtMoney(e.amount, e.currency) : ''} · ${fmtTime(e.t).slice(0, 5)}</span></div>
         ${e.text ? `<div class="txt" title="${esc(e.text)}">«${esc(e.text)}»</div>` : ''}</div>
       <div class="acts">
-        ${e.name ? '' : `<button onclick="openAnyPicker(event, 'Какое оружие?', w => post('/api/queue/resolve', {id: ${e.id}, weapon: w}))">Выбрать</button>`}
+        ${e.name && !e.guess ? '' : `<button onclick="openAnyPicker(event, 'Какое оружие?', w => post('/api/queue/resolve', {id: ${e.id}, weapon: w}))">Выбрать</button>`}
         <button title="Выполнено" onclick="post('/api/queue/done', {id: ${e.id}})">✓</button>
         <button title="Выше" onclick="post('/api/queue/move', {id: ${e.id}, delta: -1})" ${i === 0 ? 'disabled' : ''}>↑</button>
         <button title="Убрать" onclick="post('/api/queue/dismiss', {id: ${e.id}})">×</button>

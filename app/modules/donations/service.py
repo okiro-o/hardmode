@@ -25,7 +25,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable
 
-from ... import config
+from ... import config, weapons as W
 from . import aliases as A
 from . import providers as P
 
@@ -129,6 +129,7 @@ class DonationService:
         self.add_wheel: Callable[[int, str], dict] = lambda v, u: {"ok": False, "error": "колесо недоступно"}
         self.force_next: Callable[[int, str], dict] = lambda v, u: {"ok": False, "error": "колесо недоступно"}
         self.queue_weapon: Callable[..., dict] = lambda *a, **k: {}
+        self.current_side: Callable[[], str | None] = lambda: None   # T/CT: picks «плётка» = G3SG1 or SCAR-20
         self.chat_result: Callable[[str, str], None] = lambda user, text: None
         self.chat_reject: Callable[[str, str], None] = lambda user, reason: None
         self.aliases = A.AliasIndex()
@@ -367,7 +368,7 @@ class DonationService:
                 continue
             body = low.replace(kw, " ", 1) if kw else text
             if rule["action"] == "weapon":
-                found = self.aliases.find(body)
+                found = self.aliases.match(body)
                 if found is None and not kw:
                     continue
                 payload: Any = found
@@ -395,9 +396,11 @@ class DonationService:
 
     def _perform(self, action: str, payload: Any, d: P.Donation) -> dict:
         if action == "weapon":
-            wid = payload[0] if payload else None
+            candidates = payload[0] if payload else []
+            side = self.current_side()
+            wid = next((w for w in candidates if side and W.BY_ID[w].usable_by(side)), candidates[0] if candidates else None)
             try:
-                e = self.queue_weapon(wid, d.message, d.user, d.amount, d.currency)
+                e = self.queue_weapon(wid, d.message, d.user, d.amount, d.currency, guess=len(candidates) > 1)
             except ValueError as err:
                 return {"ok": False, "action": action, "text": str(err)}
             what = e.get("name") or "оружие (уточнит стример)"

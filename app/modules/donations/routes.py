@@ -114,9 +114,11 @@ async def aliases_list(request: Request) -> dict:
 async def aliases_check(request: Request) -> dict:
     body = await _json(request)
     text = str(body.get("text") or "")[:500]
-    found = _state(request).donations.aliases.find(text)
-    return {"weapon": found[0] if found else None, "name": W.BY_ID[found[0]].name if found else None,
-            "matched": found[1] if found else None, "number": A.find_number(text)}
+    found = _state(request).donations.aliases.match(text)
+    names = [W.BY_ID[w].name for w in found[0]] if found else []
+    return {"weapon": found[0][0] if found else None, "name": " / ".join(names) or None,
+            "candidates": found[0] if found else [], "matched": found[1] if found else None,
+            "number": A.find_number(text)}
 
 
 # ----------------------------------------------------------------------------- viewer queue

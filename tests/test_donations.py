@@ -15,7 +15,7 @@ from app.modules.donations.service import DEFAULT_RULES, DonationService, Donati
     ("м4а1-с", "m4a1_silencer"), ("эмку с глушителем", "m4a1_silencer"), ("эмка", "m4a1"), ("p 90", "p90"),
     ("р250 давай", "p250"), ("ump-45", "ump45"), ("морковку", "mp5sd"), ("чешка", "cz75a"), ("aк47", "ak47"),
     ("скаутом", "ssg08"), ("зевс", "taser"), ("ножом", "knife"), ("five-seven", "fiveseven"), ("галю", "galilar"),
-    ("awp и дигл", "awp"), ("Desert Eagle", "deagle"), ("Nova", "nova"),
+    ("awp и дигл", "awp"), ("Desert Eagle", "deagle"), ("Nova", "nova"), ("авапу", "awp"), ("петухом", "p90"), ("ревиком", "revolver"),
 ])
 def test_alias_finds_weapon(text, weapon):
     assert A.AliasIndex().find(text)[0] == weapon
@@ -30,7 +30,15 @@ def test_every_default_alias_points_to_a_catalog_weapon_and_resolves_to_it():
     ix = A.AliasIndex()
     for wid, names in A.DEFAULT_ALIASES.items():
         for name in names:
-            assert ix.find(name.rstrip("*"))[0] == wid, (wid, name)
+            assert wid in ix.match(name.rstrip("*"))[0], (wid, name)
+
+
+def test_side_specific_alias_picks_by_side():
+    ix = A.AliasIndex()
+    assert ix.match("плётку дай")[0] == ["g3sg1", "scar20"]
+    assert ix.find("плётку дай", "T")[0] == "g3sg1" and ix.find("плеткой", "CT")[0] == "scar20"
+    assert ix.find("плетка")[0] == "g3sg1"                               # side unknown: the first one
+    assert A.AliasIndex({"плетка": "scar20"}).match("плетка")[0] == ["scar20"]   # user mapping wins
 
 
 def test_extra_aliases_and_errors():
@@ -103,8 +111,8 @@ class Harness:
         self.svc.add_wheel = lambda v, u: (self.calls.append(("wheel", v, u)) or {"ok": True, "value": v})
         self.svc.force_next = lambda v, u: (self.calls.append(("next", v, u)) or
                                             ({"ok": False, "error": "вне диапазона 400–6400"} if v > 6400 else {"ok": True, "value": v}))
-        self.svc.queue_weapon = lambda w, text, user, amount, cur: (self.calls.append(("weapon", w, user)) or
-                                                                    {"name": {"awp": "AWP"}.get(w), "position": 1})
+        self.svc.queue_weapon = lambda w, text, user, amount, cur, guess=False: (
+            self.calls.append(("weapon", w, user, guess)) or {"name": {"awp": "AWP"}.get(w), "position": 1})
         self.svc.chat_result = lambda u, t: self.chat.append(("ok", u, t))
         self.svc.chat_reject = lambda u, t: self.chat.append(("no", u, t))
 
@@ -136,10 +144,22 @@ def test_keyword_rule_queues_unrecognised_weapon_and_max_bound(tmp_path):
              {"enabled": False, "min": 0, "max": 0, "keyword": "", "action": "next_dpi"}]
     h = Harness(tmp_path, rules=rules)
     assert h.donate(150, "!ствол базука")["text"] == "оружие (уточнит стример) в очереди, №1"
-    assert h.calls[-1] == ("weapon", None, "Alice")
+    assert h.calls[-1] == ("weapon", None, "Alice", False)
     assert h.donate(150, "awp")["text"] == "без действия"                  # no keyword: weapon rule skipped
     assert h.donate(250, "1600")["text"] == "без действия"                 # above max of the wheel rule
     assert h.donate(150, "1600")["action"] == "wheel_value"
+
+
+def test_ambiguous_weapon_uses_the_current_side(tmp_path):
+    h = Harness(tmp_path)
+    h.svc.current_side = lambda: "CT"
+    h.donate(300, "плетку плиз")
+    assert h.calls[-1] == ("weapon", "scar20", "Alice", True)
+    h.svc.current_side = lambda: "T"
+    h.donate(300, "плетку")
+    assert h.calls[-1] == ("weapon", "g3sg1", "Alice", True)
+    h.donate(300, "awp")
+    assert h.calls[-1] == ("weapon", "awp", "Alice", False)
 
 
 def test_rules_validation():
