@@ -153,7 +153,7 @@ def test_api_ingame_queue_state_and_render(client):
         client.post("/api/queue/add", json={"weapon": w, "user": u, "text": "?"})
     q = st.ingame_state()["queue"]
     assert q["present"] and q["total"] == 4 and len(q["items"]) == 3
-    assert q["items"][0] == {"weapon": "awp", "name": "AWP", "user": "A", "in_loadout": True}
+    assert q["items"][0] == {"weapon": "awp", "name": "AWP", "user": "A", "note": None}
     client.post("/api/settings", json={"ingame": {"queue_max": 5}})
     assert len(st.ingame_state()["queue"]["items"]) == 4
     assert client.post("/api/ingame/preview", json={"kind": "queue"}).status_code == 200

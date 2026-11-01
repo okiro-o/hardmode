@@ -413,72 +413,94 @@ def test_reward_request_chat_message():
 
 
 # ----------------------------------------------------------------------------- queue order by loadout
-def _q(avail):
+def _q(ctx):
     import tempfile, os
     published = []
     q = ViewerQueue(os.path.join(tempfile.mkdtemp(), "q.json"), publish=lambda ev, d: published.append(d))
-    q.available = lambda: avail["ids"]
+    q.context = lambda: ctx["v"]
     return q, published
 
 
-def test_queue_puts_weapons_outside_loadout_last():
-    avail = {"ids": {"awp", "ak47", "deagle", "knife"}}
-    q, _ = _q(avail)
+def _ctx(now, later=(), other="T", loadout=True):
+    return {"now": set(now), "later": set(later), "other": other, "loadout": loadout}
+
+
+def test_queue_puts_what_cannot_be_played_now_last():
+    ctx = {"v": _ctx({"awp", "ak47", "deagle", "knife"}, {"tec9", "awp", "galilar"}, other="T")}   # playing CT
+    q, _ = _q(ctx)
     assert q.add("awp", "", "A")["position"] == 1
     out = q.add("negev", "", "B")
-    assert (out["position"], out["in_loadout"]) == (2, False)
+    assert (out["position"], out["playable"], out["note"]) == (2, False, "не в лоадауте")
     q.add(None, "базука", "C")                                      # unrecognised: stays where it came
     assert q.add("ak47", "", "D")["position"] == 3                   # jumps over the Negev
-    q.add("nova", "", "E")
+    q.add("tec9", "", "E")
     snap = q.snapshot()["pending"]
-    assert [(e["weapon"], e["in_loadout"]) for e in snap] == [
-        ("awp", True), (None, True), ("ak47", True), ("negev", False), ("nova", False)]
-    assert q.describe_for("B") == "твои заявки: Negev — №4"
-    # ↑ cannot lift a request outside the loadout over the playable ones; inside its group it moves
-    neg, nova = snap[3]["id"], snap[4]["id"]
-    assert q.move(neg, -1) is False and q.move(snap[2]["id"], 1) is False
-    assert q.move(nova, -1) is True
-    assert [e["weapon"] for e in q.snapshot()["pending"]][3:] == ["nova", "negev"]
+    assert [(e["weapon"], e["note"]) for e in snap] == [                     # the other side before «not at all»
+        ("awp", None), (None, None), ("ak47", None), ("tec9", "в лоадауте T"), ("negev", "не в лоадауте")]
+    assert q.describe_for("B") == "твои заявки: Negev — №5"
+    # ↑ never crosses a tier; inside a tier it moves
+    tec, neg = snap[3]["id"], snap[4]["id"]
+    assert q.move(tec, -1) is False and q.move(neg, -1) is False and q.move(snap[2]["id"], 1) is False
+    q.add("galilar", "", "F")                                       # a second request of the other side
+    assert q.move(q.snapshot()["pending"][4]["id"], -1) is True
+    assert [e["weapon"] for e in q.snapshot()["pending"]][3:] == ["galilar", "tec9", "negev"]
     # a kill with the weapon still closes it
     assert q.on_kill("negev")["user"] == "B"
 
 
-def test_queue_without_loadout_keeps_arrival_order_and_refresh_republishes():
-    avail = {"ids": None}
-    q, published = _q(avail)
-    q.add("negev", "", "A"); q.add("awp", "", "B")
-    assert [e["weapon"] for e in q.snapshot()["pending"]] == ["negev", "awp"]
-    assert all(e["in_loadout"] for e in q.snapshot()["pending"])
+def test_queue_side_switch_moves_requests_and_refresh_republishes():
+    ctx = {"v": None}
+    q, published = _q(ctx)
+    q.add("tec9", "", "A"); q.add("m4a1", "", "B")
+    assert [e["weapon"] for e in q.snapshot()["pending"]] == ["tec9", "m4a1"]   # side unknown: arrival order
+    assert all(e["playable"] for e in q.snapshot()["pending"])
     n = len(published)
-    q.refresh()                                                     # still no loadout: nothing to say
+    q.refresh()                                                     # still nothing known: nothing to say
     assert len(published) == n
-    avail["ids"] = {"awp"}
+    ctx["v"] = _ctx({"tec9", "ak47"}, {"m4a1"}, other="CT")         # T side: Tec-9 is first
     q.refresh()
-    assert len(published) == n + 1 and [e["weapon"] for e in published[-1]["pending"]] == ["awp", "negev"]
-    q.refresh()                                                     # same loadout: no repeat
-    assert len(published) == n + 1
+    assert len(published) == n + 1 and [e["weapon"] for e in published[-1]["pending"]] == ["tec9", "m4a1"]
+    ctx["v"] = _ctx({"m4a1"}, {"tec9", "ak47"}, other="T")          # switched to CT: the Tec-9 waits at the end
+    q.refresh()
+    assert [(e["weapon"], e["note"]) for e in published[-1]["pending"]] == [("m4a1", None), ("tec9", "в лоадауте T")]
+    q.refresh()                                                     # same side and loadout: no repeat
+    assert len(published) == n + 2
+    # no loadout: what the side can buy at all
+    ctx["v"] = _ctx({"m4a1"}, {"tec9"}, other="T", loadout=False)
+    q.refresh()
+    assert published[-1]["pending"][1]["note"] == "оружие T"
 
 
-def test_queue_order_follows_the_app_loadout(client):
+def test_queue_order_follows_the_app_side_and_loadout(client):
     st = client.app.state.app
-    assert st.loadout_weapons() is None                             # no loadout yet: arrival order
-    client.post("/api/settings", json={"roulette": {"include_zeus": True}})   # Zeus may be requested
+    order = lambda: [(e["weapon"], e["note"]) for e in client.get("/api/queue").json()["pending"]]
+    st.roulette.set_side("T", source="manual")
+    client.post("/api/queue/add", json={"weapon": "m4a1", "user": "A"})        # CT-only rifle
+    client.post("/api/queue/add", json={"weapon": "tec9", "user": "B"})        # T-only pistol
+    assert order() == [("tec9", None), ("m4a1", "оружие CT")]                  # no loadout: by side only
+    client.post("/api/settings", json={"roulette": {"include_zeus": True}})    # Zeus may be requested
     lo = {"T": {"starting": "glock", "pistol": ["p250", "elite", "tec9", "cz75a"],
                 "mid": ["mac10", "mp7", "mp5sd", "ump45", "p90"], "rifle": ["galilar", "ak47", "sg556", "ssg08", "awp"]},
           "CT": {"starting": "usp_silencer", "pistol": ["p250", "elite", "fiveseven", "cz75a"],
                  "mid": ["mp9", "mp7", "mp5sd", "ump45", "p90"], "rifle": ["famas", "m4a1", "m4a1_silencer", "aug", "ssg08"]}}
-    client.post("/api/queue/add", json={"weapon": "negev", "user": "A"})
-    client.post("/api/queue/add", json={"weapon": "hkp2000", "user": "B"})   # CT starts with the USP-S
-    client.post("/api/queue/add", json={"weapon": "m4a1", "user": "C"})
-    client.post("/api/queue/add", json={"weapon": "taser", "user": "D"})
-    order = lambda: [e["weapon"] for e in client.get("/api/queue").json()["pending"]]
-    assert order() == ["negev", "hkp2000", "m4a1", "taser"]
     st.roulette.set_loadout(lo)
-    assert {"taser", "glock", "usp_silencer"} <= st.loadout_weapons() and "knife" not in st.loadout_weapons()
-    assert order() == ["m4a1", "taser", "negev", "hkp2000"]
-    # the streamer puts the requested weapon into the loadout: the request moves up at once
+    client.post("/api/queue/add", json={"weapon": "negev", "user": "C"})
+    client.post("/api/queue/add", json={"weapon": "taser", "user": "D"})
+    client.post("/api/queue/add", json={"weapon": "awp", "user": "E"})          # in the T loadout only
+    assert order() == [("tec9", None), ("taser", None), ("awp", None),
+                       ("m4a1", "в лоадауте CT"), ("negev", "не в лоадауте")]
+    ctx = st.queue_context()
+    assert {"knife"} & ctx["now"] == set() and {"taser", "glock"} <= ctx["now"] and ctx["other"] == "CT"
+    # the user's example: Tec-9 was first, the streamer goes CT
+    st.roulette.set_side("CT", source="manual")
+    assert order() == [("m4a1", None), ("taser", None),                       # three tiers: now, the T loadout, none
+                       ("tec9", "в лоадауте T"), ("awp", "в лоадауте T"), ("negev", "не в лоадауте")]
+    # the requested weapon is put into the CT loadout: it moves up at once
     st.roulette.set_loadout({**lo, "CT": {**lo["CT"], "mid": ["mp9", "mp7", "mp5sd", "ump45", "negev"]}})
-    assert order() == ["negev", "m4a1", "taser", "hkp2000"]
+    assert [w for w, _ in order()] == ["m4a1", "negev", "taser", "tec9", "awp"]
+    # ↑ never crosses a tier
+    pend = client.get("/api/queue").json()["pending"]
+    assert client.post("/api/queue/move", json={"id": pend[3]["id"], "delta": -1}).json()["ok"] is False
 
 
 # ----------------------------------------------------------------------------- knife and Zeus follow the race
@@ -517,3 +539,23 @@ def test_viewer_dpi_chat_follows_the_chat_switches_only(client, monkeypatch):
     client.post("/api/twitch/chat", json={"user": "B", "text": "много", "reward_id": "any"})
     assert said == [("A", 1600)] and rejected and rejected[0][0] == "B"
     assert "queue_autocomplete" not in client.get("/api/settings").json()["donations"]
+
+
+def test_game_side_switch_reorders_the_queue(client, monkeypatch):
+    from tests.test_gsi import payload
+    st = client.app.state.app
+    client.post("/api/queue/add", json={"weapon": "tec9", "user": "A"})
+    client.post("/api/queue/add", json={"weapon": "fiveseven", "user": "B"})
+    token = client.get("/api/state").json()["gsi_token"]
+    published = []
+    real = st.queue._publish
+    monkeypatch.setattr(st.queue, "_publish", lambda ev, d: (published.append(d), real(ev, d)))
+    for team in ("T", "CT"):
+        for side_source in ("gsi", "manual"):          # with a manual race side the game team still counts
+            client.post("/api/settings", json={"roulette": {"side_source": side_source}})
+            p = payload(team=team)
+            p["auth"] = {"token": token}
+            client.post("/gsi", json=p)
+            first = client.get("/api/queue").json()["pending"][0]["weapon"]
+            assert first == ("tec9" if team == "T" else "fiveseven"), (team, side_source)
+    assert published and [e["weapon"] for e in published[-1]["pending"]] == ["fiveseven", "tec9"]

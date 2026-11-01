@@ -89,7 +89,7 @@ class AppState:
         self._announced: tuple[bool, int | None] = (self.roulette.running, self.roulette.current_uid())
         self.ingame = IngameOverlays(self.settings.ingame, self.ingame_state, self.ingame_colors)
         self.queue = ViewerQueue(os.path.join(config.data_dir(), "viewer_queue.json"), publish=self.broker.publish)
-        self.queue.available = self.loadout_weapons
+        self.queue.context = self.queue_context
         self.queue.allowed = self.queue_refusal
         try:
             donation_settings = DonationSettings.from_dict(self.settings.donations)
@@ -123,17 +123,25 @@ class AppState:
         self.save_state()
         self._announce_weapon()
         self.broker.publish("roulette", self.roulette.snapshot())
-        self.queue.refresh()          # a new loadout reorders the viewer queue
+        self.queue.refresh()          # a new loadout or side reorders the viewer queue
 
-    def loadout_weapons(self) -> set[str] | None:
-        """Everything the streamer can play with the current loadout (both sides; knife and Zeus when they are
-        in the race); None = no loadout."""
-        lo, rs = self.roulette.loadout, self.roulette.settings
-        if not lo:
+    def queue_context(self) -> dict | None:
+        """What the streamer can play right now, for the viewer queue order: the loadout of the side being played
+        (knife and Zeus when they are in the race); without a loadout, what that side can buy at all."""
+        side = self.donations.current_side()
+        if side not in L.SIDES:
             return None
-        return {w for side in L.SIDES
-                for w in L.side_pool_ids(lo, side, include_starting=True, include_knife=rs.include_knife,
-                                         include_zeus=rs.include_zeus)}
+        other = W.CT if side == W.T else W.T
+        lo, rs = self.roulette.loadout, self.roulette.settings
+        if lo:
+            def ids(s: str) -> set[str]:
+                return set(L.side_pool_ids(lo, s, include_starting=True, include_knife=rs.include_knife,
+                                           include_zeus=rs.include_zeus))
+            now, later = ids(side), ids(other)
+        else:
+            now = {w.id for w in W.CATALOG if w.usable_by(side)}
+            later = {w.id for w in W.CATALOG if w.usable_by(other)}
+        return {"side": side, "other": other, "now": now, "later": later, "loadout": bool(lo)}
 
     def queue_refusal(self, weapon: str) -> str | None:
         """Knife and Zeus go into the viewer queue only while they take part in the race (user's rule)."""
@@ -182,7 +190,7 @@ class AppState:
         pend = self.queue.snapshot()["pending"]
         queue = {"present": bool(pend), "reason": "" if pend else "очередь пуста", "total": len(pend),
                  "items": [{"weapon": e.get("weapon"), "name": e.get("name"), "user": e.get("user"),
-                            "in_loadout": e.get("in_loadout", True)} for e in pend[:int(self.settings.ingame.queue_max)]],
+                            "note": e.get("note")} for e in pend[:int(self.settings.ingame.queue_max)]],
                  "key": [[e["id"], e.get("weapon")] for e in pend]}
         return {"dpi": dpi, "weapons": weapons, "queue": queue}
 
@@ -375,6 +383,7 @@ class AppState:
                 continue
             if self.register_kill(ev["weapon"], ev["headshot"], bool(ev["ambiguous"]), ev["raw"])["advanced"]:
                 batch_advanced = True
+        self.queue.refresh()      # the team from the game may change without the race side (manual side mode)
         self.publish_gsi()
 
     def register_kill(self, weapon: str | None, headshot: bool, ambiguous: bool, raw: str | None = None) -> dict:

@@ -1101,13 +1101,13 @@ function renderRequests() {
   chip.className = 'chip' + (n ? ' warn' : ''); chip.querySelector('b').textContent = n ? `заявок: ${n}` : 'пусто';
   $('requests').innerHTML = n ? q.pending.map((e, i) => `<div class="req ${i === 0 ? 'first' : ''}">
       ${e.icon ? `<div class="icon" style="--mask:url('${e.icon}')"></div>` : '<div class="icon unknown">?</div>'}
-      <div class="body"><div class="l1"><b>${esc(e.name || 'не распознано')}</b>${e.by_side ? `<span class="tag">за ${esc(e.by_side)}</span>` : ''}${e.in_loadout === false ? '<span class="tag out">не в лоадауте</span>' : ''}</div>
+      <div class="body"><div class="l1"><b>${esc(e.name || 'не распознано')}</b>${e.by_side ? `<span class="tag">за ${esc(e.by_side)}</span>` : ''}${e.note ? `<span class="tag out">${esc(e.note)}</span>` : ''}</div>
         <div class="who">${esc(e.user)}${e.amount != null ? ' · ' + fmtMoney(e.amount, e.currency) : ''}${e.source === 'reward' ? ' · баллы' : ''} · ${fmtTime(e.t).slice(0, 5)}</div>
         ${e.text ? `<div class="txt" title="${esc(e.text)}">«${esc(e.text)}»</div>` : ''}</div>
       <div class="acts">
         ${e.name ? '' : `<button onclick="openAnyPicker(event, 'Какое оружие?', w => post('/api/queue/resolve', {id: ${e.id}, weapon: w}))">Выбрать</button>`}
         <button title="Выполнено" onclick="post('/api/queue/done', {id: ${e.id}})">✓</button>
-        <button title="Выше" onclick="post('/api/queue/move', {id: ${e.id}, delta: -1})" ${i === 0 || (q.pending[i - 1].in_loadout !== false) !== (e.in_loadout !== false) ? 'disabled' : ''}>↑</button>
+        <button title="Выше" onclick="post('/api/queue/move', {id: ${e.id}, delta: -1})" ${i === 0 || q.pending[i - 1].tier !== e.tier ? 'disabled' : ''}>↑</button>
         <button title="Убрать" onclick="post('/api/queue/dismiss', {id: ${e.id}})">×</button>
       </div></div>`).join('') : '<div class="muted">Пусто. Сюда попадает оружие из донатов.</div>';
   $('requests-history').innerHTML = q.history.length ? q.history.map(e => `<div class="muted">${e.status === 'done' ? '✓' : '×'} ${esc(e.name || 'не распознано')} — ${esc(e.user)}${e.auto ? ' (киллом)' : ''}</div>`).join('') : '<div class="muted">пока ничего</div>';

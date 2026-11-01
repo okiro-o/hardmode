@@ -235,9 +235,9 @@ SAMPLE_STATE = {
                 "next": [{"id": "m4a1", "name": "M4A4"}, {"id": "awp", "name": "AWP"}],
                 "kills": [1, 2], "matched": True, "completed": 3, "key": "sample"},
     "queue": {"present": True, "total": 4, "key": "sample",
-              "items": [{"weapon": "awp", "name": "AWP", "user": "Alice", "in_loadout": True},
-                        {"weapon": "ak47", "name": "AK-47", "user": "Bob", "in_loadout": True},
-                        {"weapon": "negev", "name": "Negev", "user": "Carl", "in_loadout": False}]},
+              "items": [{"weapon": "awp", "name": "AWP", "user": "Alice", "note": None},
+                        {"weapon": "ak47", "name": "AK-47", "user": "Bob", "note": None},
+                        {"weapon": "tec9", "name": "Tec-9", "user": "Carl", "note": "в лоадауте T"}]},
 }
 
 
@@ -330,7 +330,7 @@ def _fit(f, text: str, max_w: float) -> str:
 
 def render_queue(st: dict, s: config.IngameSettings, colors: dict) -> Image.Image | None:
     """Viewer queue: title with the count, then «N  silhouette  weapon / от user» rows, first one in the
-    accent colour, requests outside the loadout dimmed, the rest folded into «+ ещё N»."""
+    accent colour, requests that cannot be played now dimmed with the reason, the rest folded into «+ ещё N»."""
     items = list((st or {}).get("items") or [])[: max(1, int(s.queue_max))]
     if not st or not st.get("present") or not items:
         return None
@@ -344,7 +344,7 @@ def render_queue(st: dict, s: config.IngameSettings, colors: dict) -> Image.Imag
     title_f, num_f, name_f, user_f = font(int(13 * k)), font(int(17 * k)), font(int(16 * k)), font(int(12 * k))
     text_max = int(190 * k)
     names = [_fit(name_f, it.get("name") or "оружие уточняется", text_max) for it in items]
-    users = [_fit(user_f, f"от {it.get('user') or '?'}" + ("" if it.get("in_loadout", True) else " · не в лоадауте"), text_max)
+    users = [_fit(user_f, f"от {it.get('user') or '?'}" + (f" · {it['note']}" if it.get("note") else ""), text_max)
              for it in items] if names_on else []
     text_w = max([_text_w(name_f, n) for n in names] + [_text_w(user_f, u) for u in users])
     title, count = "ОЧЕРЕДЬ ЗРИТЕЛЕЙ", f"  {total}"
@@ -361,7 +361,7 @@ def render_queue(st: dict, s: config.IngameSettings, colors: dict) -> Image.Imag
     d.text((pad + _text_w(title_f, title), pad + title_h / 2 - 2 * k), count, font=title_f, fill=accent + (255,), anchor="lm")
     y = pad + title_h
     for i, it in enumerate(items):
-        first, out = i == 0, not it.get("in_loadout", True)
+        first, out = i == 0, bool(it.get("note"))
         col = accent if first else base
         cy = y + row_h / 2
         d.text((pad + num_w / 2, cy), str(i + 1), font=num_f, fill=(accent + (255,)) if first else MUTED, anchor="mm")
