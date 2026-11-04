@@ -8,10 +8,15 @@
   :root { --bg:#0f1115; --panel:#171a21; --panel2:#1f2430; --panel3:#262c3a; --line:#2a3040; --line2:#3b4356; --text:#e6e8ee; --muted:#8b93a7; --accent:#ffd166; --ok:#4cd964; --bad:#ff5e5e; --t:#e8a44a; --ct:#6fa8ff; }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--text); font: 14px/1.45 "Segoe UI", Roboto, Arial, sans-serif; }
-  header { padding:12px 20px 0; background:var(--panel); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
-  .hrow { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
-  header h1 { font-size:18px; margin:0 0 8px; letter-spacing:.04em; }
-  header h1 small { color:var(--muted); font-weight:400; margin-left:8px; }
+  /* layout: section list on the left (0.21.4, user's request), status chips on top of the content */
+  .app { display:grid; grid-template-columns: 196px minmax(0, 1fr); min-height:100vh; }
+  .sidebar { position:sticky; top:0; height:100vh; overflow-y:auto; background:var(--panel); border-right:1px solid var(--line);
+             padding:16px 10px; display:flex; flex-direction:column; gap:14px; z-index:6; }
+  .brand { font-size:18px; font-weight:700; letter-spacing:.06em; padding:0 10px; }
+  .brand small { display:block; color:var(--muted); font-weight:400; font-size:12px; letter-spacing:.02em; margin-top:2px; }
+  .content { min-width:0; }
+  header { padding:10px 20px; background:var(--panel); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
+  .hrow { display:flex; align-items:center; gap:10px 14px; flex-wrap:wrap; }
   .chip { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:var(--panel2); border:1px solid var(--line); font-size:12px; color:var(--muted); }
   .chip .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); flex:0 0 auto; }
   .chip.ok .dot { background:var(--ok); box-shadow:0 0 8px var(--ok); }
@@ -19,10 +24,22 @@
   .chip.warn .dot { background:var(--accent); }
   .chip b { color:var(--text); font-weight:600; }
   /* main tabs */
-  .maintabs { display:flex; gap:4px; margin-top:10px; }
-  .maintabs button { background:transparent; border:0; border-bottom:2px solid transparent; border-radius:8px 8px 0 0; color:var(--muted); padding:10px 18px; font:inherit; font-weight:600; cursor:pointer; letter-spacing:.03em; }
-  .maintabs button:hover { color:var(--text); background:rgba(255,255,255,.03); }
-  .maintabs button.active { color:var(--accent); border-bottom-color:var(--accent); background:rgba(255,209,102,.06); }
+  .maintabs { display:flex; flex-direction:column; gap:2px; }
+  .maintabs button { display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:transparent; border:0;
+                     border-left:3px solid transparent; border-radius:8px; color:var(--muted); padding:10px 12px; font:inherit;
+                     font-weight:600; cursor:pointer; letter-spacing:.02em; white-space:nowrap; }
+  .maintabs button .i { width:20px; text-align:center; flex:0 0 auto; }
+  .maintabs button:hover { color:var(--text); background:rgba(255,255,255,.04); }
+  .maintabs button.active { color:var(--accent); border-left-color:var(--accent); background:rgba(255,209,102,.08); }
+  @media (max-width: 900px) {   /* narrow window: the list turns into a scrolling row above the content */
+    .app { display:block; }
+    .sidebar { position:sticky; height:auto; flex-direction:row; align-items:center; padding:8px 10px; border-right:0; border-bottom:1px solid var(--line); overflow-x:auto; }
+    .brand { display:none; }
+    .maintabs { flex-direction:row; }
+    .maintabs button { border-left:0; border-bottom:2px solid transparent; border-radius:8px 8px 0 0; padding:8px 12px; }
+    .maintabs button.active { border-bottom-color:var(--accent); }
+    header { position:static; }
+  }
   main { padding:16px 20px 60px; max-width:1500px; margin:0 auto; }
   .tabpage { display:none; }
   .tabpage.active { display:grid; grid-template-columns: 1.1fr .9fr; gap:16px; }
@@ -142,14 +159,14 @@
   .log .don.no span:last-child { color:var(--bad); }
   /* help */
   .help { display:grid; grid-template-columns: 220px 1fr; gap:16px; }
-  .toc { position:sticky; top:120px; align-self:start; display:flex; flex-direction:column; gap:2px; }
+  .toc { position:sticky; top:72px; align-self:start; display:flex; flex-direction:column; gap:2px; }
   @media (max-width: 900px) { .help { grid-template-columns: 1fr; } .toc { position:static; flex-direction:row; flex-wrap:wrap; } }
   .toc a { color:var(--muted); text-decoration:none; padding:6px 10px; border-radius:8px; font-size:13px; }
   .toc a:hover { color:var(--text); background:var(--panel2); }
   .toc a.active { color:var(--accent); background:rgba(255,209,102,.08); }
   .doc { line-height:1.6; font-size:14px; min-width:0; }
   .doc h1 { display:none; }
-  .doc h2 { font-size:18px; text-transform:none; margin:26px 0 10px; padding-top:14px; border-top:1px solid var(--line); letter-spacing:.02em; scroll-margin-top:110px; }
+  .doc h2 { font-size:18px; text-transform:none; margin:26px 0 10px; padding-top:14px; border-top:1px solid var(--line); letter-spacing:.02em; scroll-margin-top:70px; }
   .doc h2:first-child { border-top:0; margin-top:0; padding-top:0; }
   .doc h3 { font-size:15px; margin:18px 0 6px; }
   .doc p { margin:8px 0; }
@@ -227,11 +244,11 @@
   .wcard .hint { position:absolute; right:6px; top:4px; font-size:10px; color:var(--muted); }
   /* session */
   .queue { display:flex; align-items:center; gap:14px; min-height:150px; padding:10px; border-radius:10px; border:1px solid var(--line); background:#0b0d12; background-image: linear-gradient(45deg,#14171f 25%,transparent 25%),linear-gradient(-45deg,#14171f 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#14171f 75%),linear-gradient(-45deg,transparent 75%,#14171f 75%); background-size:20px 20px; background-position:0 0,0 10px,10px -10px,-10px 0; }
-  .q { text-align:center; }
+  .q { text-align:center; min-width:0; flex:0 1 auto; }      /* items shrink instead of running out of the block */
   .q .icon { background:#fff; -webkit-mask: var(--mask) no-repeat center / contain; mask: var(--mask) no-repeat center / contain; margin:0 auto; }
-  .q.cur .icon { width:260px; height:100px; }
-  .q.nxt .icon { width:140px; height:54px; opacity:.6; }
-  .q .name { font-weight:700; margin-top:6px; }
+  .q.cur .icon { width:260px; max-width:100%; height:100px; }
+  .q.nxt .icon { width:140px; max-width:100%; height:54px; opacity:.6; }
+  .q .name { font-weight:700; margin-top:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .q.nxt .name { font-size:12px; color:var(--muted); font-weight:500; }
   .q .tag { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.1em; }
   .q.cur .tag { color:var(--accent); }
@@ -270,26 +287,30 @@
 </style>
 </head>
 <body>
+<div class="app">
+<aside class="sidebar">
+  <div class="brand">HARDMODE <small id="version"></small></div>
+  <nav class="maintabs">
+    <button data-tab="startup" onclick="showMainTab('startup')"><span class="i">⚡</span>Startup</button>
+    <button data-tab="weapons" onclick="showMainTab('weapons')"><span class="i">🔫</span>Оружие</button>
+    <button data-tab="loadout" onclick="showMainTab('loadout')"><span class="i">🎒</span>Лоадаут</button>
+    <button data-tab="dpi" onclick="showMainTab('dpi')"><span class="i">🎡</span>DPI</button>
+    <button data-tab="look" onclick="showMainTab('look')"><span class="i">🎨</span>Вид</button>
+    <button data-tab="donations" onclick="showMainTab('donations')"><span class="i">💸</span>Донаты</button>
+    <button data-tab="stats" onclick="showMainTab('stats')"><span class="i">📊</span>Статистика</button>
+    <button data-tab="general" onclick="showMainTab('general')"><span class="i">⚙</span>Общее</button>
+    <button data-tab="help" onclick="showMainTab('help')"><span class="i">📖</span>Справка</button>
+  </nav>
+</aside>
+<div class="content">
 <header>
   <div class="hrow">
-    <h1>HARDMODE <small id="version"></small></h1>
     <span class="chip" id="chip-gsi"><span class="dot"></span>GSI: <b>нет данных</b></span>
     <span class="chip" id="chip-side"><span class="dot"></span>Сторона: <b>—</b></span>
     <span class="chip" id="chip-held"><span class="dot"></span>В руках: <b>—</b></span>
     <span class="chip" id="chip-mouse"><span class="dot"></span><b>мышь: ?</b></span>
     <span class="chip" id="chip-sse"><span class="dot"></span>Связь с сервером</span>
   </div>
-  <nav class="maintabs">
-    <button data-tab="startup" onclick="showMainTab('startup')">⚡ Startup</button>
-    <button data-tab="weapons" onclick="showMainTab('weapons')">🔫 Оружие</button>
-    <button data-tab="loadout" onclick="showMainTab('loadout')">🎒 Лоадаут</button>
-    <button data-tab="dpi" onclick="showMainTab('dpi')">🎡 DPI</button>
-    <button data-tab="look" onclick="showMainTab('look')">🎨 Вид</button>
-    <button data-tab="donations" onclick="showMainTab('donations')">💸 Донаты</button>
-    <button data-tab="stats" onclick="showMainTab('stats')">📊 Статистика</button>
-    <button data-tab="general" onclick="showMainTab('general')">⚙ Общее</button>
-    <button data-tab="help" onclick="showMainTab('help')">📖 Справка</button>
-  </nav>
 </header>
 
 <main>
@@ -851,6 +872,8 @@
     </div>
   </div>
 </main>
+</div>
+</div>
 <div class="picker" id="picker"><div class="ptitle"><span id="picker-title"></span><button onclick="closePicker()" title="Закрыть">×</button></div><div class="pgrid" id="picker-grid"></div></div>
 <div class="toast" id="toast"></div>
 
@@ -1024,8 +1047,8 @@ function toggleLog(btn) { const log = btn.previousElementSibling; const compact 
 // ---- statistics tab
 function fmtDur(sec) { sec = Math.round(sec || 0); const m = Math.floor(sec / 60); return m >= 60 ? `${Math.floor(m / 60)} ч ${m % 60} мин` : m ? `${m} мин` : `${sec} с`; }
 const DPI_COLS = [['value', 'DPI'], ['rolls', 'выпал'], ['kpr', 'киллов за выпадение'], ['kills', 'киллов'], ['deaths', 'смертей'], ['damage', 'урон'], ['rounds', 'раундов целиком'], ['seconds', 'время']];
-const W_COLS = [['name', 'Оружие'], ['bought', 'куплено'], ['picked', 'подобрано'], ['kills', 'киллов'], ['hs', 'HS'], ['damage', 'урон'], ['deaths', 'смертей с ним']];
-const G_COLS = [['name', 'Граната'], ['bought', 'куплено'], ['picked', 'подобрано'], ['thrown', 'брошено'], ['kills', 'киллов'], ['damage', 'урон']];
+const W_COLS = [['name', 'Оружие'], ['bought', 'куплено'], ['picked', 'подобрано'], ['kills', 'киллов'], ['hs', 'HS'], ['deaths', 'смертей с ним']];
+const G_COLS = [['name', 'Граната'], ['bought', 'куплено'], ['picked', 'подобрано'], ['thrown', 'брошено'], ['kills', 'киллов']];
 const M_COLS = [['title', 'Карта'], ['matches', 'матчей'], ['rounds', 'раундов'], ['kills', 'K'], ['deaths', 'D'], ['assists', 'A'], ['kd', 'K/D'], ['damage', 'урон'], ['adr', 'ADR'], ['hsp', 'HS %']];
 let statsSort = { dpi: { key: 'value', dir: 1 }, weapons: { key: 'kills', dir: -1 }, grenades: { key: 'thrown', dir: -1 }, maps: { key: 'rounds', dir: -1 } };
 try { statsSort = { ...statsSort, ...JSON.parse(localStorage.getItem('hardmode.statsSort') || '{}') }; } catch (e) {}
@@ -1065,11 +1088,11 @@ function renderStats() {
     || '<tr><td class="muted" colspan="8">пока пусто: данные появятся с первого раунда</td></tr>') + '</tbody>';
   const wRows = sortRows(st.weapons || [], sw);
   $('stats-weapons').innerHTML = thead(W_COLS, sw, 'weapons') + '<tbody>' + (wRows.map(r =>
-    '<tr>' + cell('name', esc(r.name), sw) + cell('bought', r.bought, sw) + cell('picked', r.picked, sw) + cell('kills', r.kills, sw) + cell('hs', r.hs, sw) + cell('damage', r.damage || 0, sw) + cell('deaths', r.deaths, sw) + '</tr>').join('')
+    '<tr>' + cell('name', esc(r.name), sw) + cell('bought', r.bought, sw) + cell('picked', r.picked, sw) + cell('kills', r.kills, sw) + cell('hs', r.hs, sw) + cell('deaths', r.deaths, sw) + '</tr>').join('')
     || '<tr><td class="muted" colspan="7">пока пусто: данные появятся с первой покупки или килла</td></tr>') + '</tbody>';
   const gRows = sortRows(st.grenades || [], sg);
   $('stats-grenades').innerHTML = thead(G_COLS, sg, 'grenades') + '<tbody>' + (gRows.map(r =>
-    '<tr>' + cell('name', esc(r.name), sg) + cell('bought', r.bought, sg) + cell('picked', r.picked, sg) + cell('thrown', r.thrown || 0, sg) + cell('kills', r.kills, sg) + cell('damage', r.damage || 0, sg) + '</tr>').join('')
+    '<tr>' + cell('name', esc(r.name), sg) + cell('bought', r.bought, sg) + cell('picked', r.picked, sg) + cell('thrown', r.thrown || 0, sg) + cell('kills', r.kills, sg) + '</tr>').join('')
     || '<tr><td class="muted" colspan="6">пока пусто: данные появятся с первой гранаты</td></tr>') + '</tbody>';
   const mRows = sortRows((st.maps || []).map(r => ({ ...r, kd: r.deaths ? r.kills / r.deaths : (r.kills ? Infinity : null), adr: r.rounds ? r.damage / r.rounds : null, hsp: r.kills ? 100 * r.hs / r.kills : null })), sm);
   const f2 = v => v == null ? '—' : v === Infinity ? '∞' : v.toFixed(2);
@@ -1083,10 +1106,10 @@ function downloadStatsCsv() {
   const st = S.stats || {}; const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
   const lines = ['DPI;выпал;киллов за выпадение;киллов;смертей;урон;раундов целиком;секунд'];
   (st.dpi || []).forEach(r => lines.push([r.value, r.rolls, r.rolls ? (r.kills / r.rolls).toFixed(2).replace('.', ',') : '', r.kills, r.deaths, r.damage || 0, r.rounds, Math.round(r.seconds || 0)].join(';')));
-  lines.push('', 'Оружие;куплено;подобрано;киллов;HS;урон;смертей с ним');
-  (st.weapons || []).forEach(r => lines.push([q(r.name), r.bought, r.picked, r.kills, r.hs, r.damage || 0, r.deaths].join(';')));
-  lines.push('', 'Граната;куплено;подобрано;брошено;киллов;урон');
-  (st.grenades || []).forEach(r => lines.push([q(r.name), r.bought, r.picked, r.thrown || 0, r.kills, r.damage || 0].join(';')));
+  lines.push('', 'Оружие;куплено;подобрано;киллов;HS;смертей с ним');
+  (st.weapons || []).forEach(r => lines.push([q(r.name), r.bought, r.picked, r.kills, r.hs, r.deaths].join(';')));
+  lines.push('', 'Граната;куплено;подобрано;брошено;киллов');
+  (st.grenades || []).forEach(r => lines.push([q(r.name), r.bought, r.picked, r.thrown || 0, r.kills].join(';')));
   lines.push('', 'Карта;матчей;раундов;K;D;A;урон');
   (st.maps || []).forEach(r => lines.push([q(r.title), r.matches, r.rounds, r.kills, r.deaths, r.assists, r.damage].join(';')));
   const t = st.totals || {}; lines.push('', 'Итого;раундов;киллов;смертей;ассистов;урон;HS;лучший раунд;кручений DPI', ['', t.rounds, t.kills, t.deaths, t.assists, t.damage, t.hs, t.best_round_kills, t.rolls].join(';'));
@@ -1211,12 +1234,12 @@ async function loadHelp() {
     const mark = () => {
       let cur = pinned;
       if (!cur) {
-        // Reference line sits 140px from the top; within the last screen of the page it slides down to the
+        // Reference line sits 100px from the top; within the last screen of the page it slides down to the
         // bottom edge, so the final sections (which can never reach the top) still get their turn in order.
         const vh = window.innerHeight;
         const max = Math.max(1, document.documentElement.scrollHeight - vh);
         const rem = Math.max(0, max - window.scrollY);
-        const line = rem >= vh ? 140 : 140 + (1 - rem / vh) * (vh - 160);
+        const line = rem >= vh ? 100 : 100 + (1 - rem / vh) * (vh - 120);
         cur = heads[0] && heads[0].id;
         for (const h of heads) { if (h.getBoundingClientRect().top <= line) cur = h.id; else break; }
       }
@@ -1266,7 +1289,7 @@ function renderHeader() {
 
 function renderQueue() {
   const r = S.roulette; const q = $('queue');
-  if (!r.loadout) { q.innerHTML = '<span class="muted">Сгенерируйте лоадаут (ниже) и нажмите «Старт»</span>'; }
+  if (!r.loadout) { q.innerHTML = '<span class="muted">Сгенерируйте лоадаут на вкладке «Лоадаут» и нажмите «Старт»</span>'; }
   else if (!r.running && r.paused) { q.innerHTML = '<span class="muted">Пауза. Нажмите «Продолжить» — очередь и статистика сохранены.</span>'; }
   else if (!r.running) { q.innerHTML = '<span class="muted">Сессия не запущена. Нажмите «Старт».</span>'; }
   else {

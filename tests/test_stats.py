@@ -96,7 +96,7 @@ def test_damage_assists_and_maps(tmp_path):
     assert (t["damage"], t["assists"], t["kills"], t["deaths"]) == (83, 1, 1, 1)
     w = {r["key"]: r for r in snap["weapons"]}
     g = {r["key"]: r for r in snap["grenades"]}
-    assert w["ak47"]["damage"] == 73 and g["hegrenade"]["damage"] == 10
+    assert "damage" not in w["ak47"] and "damage" not in g.get("hegrenade", {})   # not per weapon since 0.21.4
     assert {r["value"]: r["damage"] for r in snap["dpi"]} == {800: 83}
     maps = {r["name"]: r for r in snap["maps"]}
     assert maps["de_mirage"]["title"] == "Mirage" and maps["de_mirage"]["matches"] == 1
@@ -117,5 +117,17 @@ def test_grenades_are_listed_separately_with_throws(tmp_path):
     snap = s.snapshot()
     assert [r["key"] for r in snap["weapons"]] == ["ak47"]
     g = {r["key"]: r for r in snap["grenades"]}
-    assert g["flashbang"]["thrown"] == 2 and g["flashbang"]["bought"] == 1 and g["hegrenade"]["damage"] == 40
+    assert g["flashbang"]["thrown"] == 2 and g["flashbang"]["bought"] == 1 and "damage" not in g.get("hegrenade", {})
     assert snap["grenades"][0]["key"] == "flashbang"      # sorted by throws
+
+
+def test_old_stats_file_loses_per_weapon_damage(tmp_path):
+    import json
+    p = tmp_path / "stats.json"
+    row = {"name": "AK-47", "bought": 1, "picked": 0, "kills": 3, "hs": 1, "deaths": 0, "damage": 250}   # 0.17.0 file
+    p.write_text(json.dumps({"totals": {"kills": 3, "damage": 250},
+                             "dpi": {"800": {"rolls": 1, "kills": 3, "deaths": 0, "rounds": 0, "seconds": 0}},
+                             "weapons": {"ak47": row}}), encoding="utf-8")
+    snap = StatsTracker(str(p)).snapshot()
+    assert snap["totals"]["damage"] == 250 and snap["dpi"][0]["damage"] == 0
+    assert "damage" not in snap["weapons"][0] and snap["weapons"][0]["kills"] == 3

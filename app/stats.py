@@ -67,10 +67,11 @@ class StatsTracker:
                 base = _fresh()
                 base.update({k: d[k] for k in ("started_at", "dpi", "weapons", "maps") if k in d})
                 base["totals"].update(d["totals"])
-                for row in list(base["dpi"].values()) + list(base["weapons"].values()):
+                for row in base["dpi"].values():
                     row.setdefault("damage", 0)        # files written before 0.17.0
                 for row in base["weapons"].values():
                     row.setdefault("thrown", 0)        # files written before 0.17.1
+                    row.pop("damage", None)            # per-weapon damage dropped in 0.21.4
                 for key in [k for k in base["weapons"] if W.is_non_weapon("weapon_" + k)]:
                     del base["weapons"][key]      # entries booked before the non-weapon filter existed
                 self.data = base
@@ -101,7 +102,7 @@ class StatsTracker:
 
     def _weapon(self, key: str) -> dict:
         return self.data["weapons"].setdefault(key, {"name": weapon_name(key), "bought": 0, "picked": 0,
-                                                     "kills": 0, "hs": 0, "deaths": 0, "damage": 0, "thrown": 0})
+                                                     "kills": 0, "hs": 0, "deaths": 0, "thrown": 0})
 
     def _mapstat(self) -> dict | None:
         if not self._map:
@@ -179,9 +180,8 @@ class StatsTracker:
                     amount = int(ev.get("amount") or 0)
                     if amount <= 0:
                         continue
-                    key = weapon_key(ev.get("raw"), ev.get("weapon"))
-                    if key:
-                        self._weapon(key)["damage"] += amount
+                    # not per weapon (0.21.4): GSI gives only the round total, not who dealt it, so a grenade's
+                    # damage landed on the gun in hand and the weapon tables showed nonsense (user's report)
                     if self.cur_dpi is not None:
                         self._dpi(self.cur_dpi)["damage"] += amount
                     t["damage"] += amount
