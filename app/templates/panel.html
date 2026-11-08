@@ -25,6 +25,7 @@
   .chip b { color:var(--text); font-weight:600; }
   /* main tabs */
   .maintabs { display:flex; flex-direction:column; gap:2px; }
+  .navsep { height:1px; background:var(--line); margin:6px 10px; flex:0 0 auto; }   /* groups of sections */
   .quitbtn { margin-top:auto; width:100%; padding:8px 6px; font-size:12.5px; white-space:nowrap; background:transparent;
              border:1px solid var(--bad); color:var(--bad); font-weight:600; }
   .quitbtn:hover { background:rgba(255,94,94,.12); border-color:var(--bad); }
@@ -39,6 +40,7 @@
     .sidebar { position:sticky; height:auto; flex-direction:row; align-items:center; padding:8px 10px; border-right:0; border-bottom:1px solid var(--line); overflow-x:auto; }
     .brand { display:none; }
     .maintabs { flex-direction:row; }
+    .navsep { width:1px; height:22px; margin:0 6px; align-self:center; }
     .quitbtn { margin-top:0; width:auto; flex:0 0 auto; white-space:nowrap; }
     .maintabs button { border-left:0; border-bottom:2px solid transparent; border-radius:8px 8px 0 0; padding:8px 12px; }
     .maintabs button.active { border-bottom-color:var(--accent); }
@@ -334,13 +336,18 @@
   <div class="brand">HARDMODE <small id="version"></small></div>
   <nav class="maintabs">
     <button data-tab="startup" onclick="showMainTab('startup')"><span class="i">⚡</span>Startup</button>
+    <div class="navsep"></div>
     <button data-tab="weapons" onclick="showMainTab('weapons')"><span class="i">🔫</span>Оружие</button>
     <button data-tab="loadout" onclick="showMainTab('loadout')"><span class="i">🎒</span>Лоадаут</button>
     <button data-tab="dpi" onclick="showMainTab('dpi')"><span class="i">🎡</span>DPI</button>
+    <div class="navsep"></div>
     <button data-tab="look" onclick="showMainTab('look')"><span class="i">🎨</span>Вид</button>
-    <button data-tab="donations" onclick="showMainTab('donations')"><span class="i">💸</span>Донаты</button>
+    <button data-tab="obs" onclick="showMainTab('obs')"><span class="i">🎥</span>OBS</button>
+    <div class="navsep"></div>
     <button data-tab="stats" onclick="showMainTab('stats')"><span class="i">📊</span>Статистика</button>
+    <button data-tab="donations" onclick="showMainTab('donations')"><span class="i">💸</span>Донаты</button>
     <button data-tab="general" onclick="showMainTab('general')"><span class="i">⚙</span>Общее</button>
+    <div class="navsep"></div>
     <button data-tab="help" onclick="showMainTab('help')"><span class="i">📖</span>Справка</button>
   </nav>
   <button class="quitbtn" onclick="quitApp()">Завершить приложение</button>
@@ -573,6 +580,84 @@
   <!-- ================= TAB: LOOK (widgets, in-game overlay, colours) ================= -->
   <div class="tabpage" id="tab-look">
     <div class="col">
+<section>
+        <h2>Цвета</h2>
+        <div class="colors">
+          <div class="swatch"><input type="color" data-key="overlay.color"><div><div class="t">Силуэты оружия</div><div class="d">основной цвет виджета оружия и лоадаута</div></div></div>
+          <div class="swatch"><input type="color" data-key="overlay.accent"><div><div class="t">Акцент</div><div class="d">счётчики, бейджи, сегменты колеса DPI</div></div></div>
+          <div class="swatch"><input type="color" data-key="overlay.match_color"><div><div class="t">Оружие в руках</div><div class="d">подсветка, когда держишь назначенное оружие</div></div></div>
+          <div class="swatch"><input type="color" data-key="dpi.home_color"><div><div class="t">Сегмент «мой DPI»</div><div class="d">на колесе и число при выпадении на него</div></div></div>
+        </div>
+      </section>
+
+<section>
+        <h2>Поверх игры: оружие <span class="right"><span class="chip" id="chip-ingame-weapons"><span class="dot"></span><b>—</b></span></span></h2>
+        <div class="form" style="margin-top:8px;">
+          <label class="f"><span>Когда показывать</span><select data-key="ingame.weapons_mode"><option value="change">после смены, на несколько секунд</option><option value="always">всегда</option></select></label>
+          <label class="f"><span>Держать на экране, с</span><input type="number" min="1" max="120" step="1" data-key="ingame.weapons_show_s"></label>
+          <label class="f"><span>Угол экрана</span><select data-key="ingame.weapons_corner"><option value="tl">слева сверху</option><option value="tr">справа сверху</option><option value="bl">слева снизу</option><option value="br">справа снизу</option></select></label>
+          <label class="f"><span>Масштаб</span><input type="number" min="0.5" max="3" step="0.1" data-key="ingame.weapons_scale"></label>
+          <label class="f"><span>Отступ по горизонтали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.weapons_x"></label>
+          <label class="f"><span>Отступ по вертикали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.weapons_y"></label>
+          <label class="f"><span>Непрозрачность</span><input type="number" min="0.2" max="1" step="0.05" data-key="ingame.weapons_opacity"></label>
+          <label class="f"><span>Следующих оружий рядом</span><input type="number" min="0" max="3" step="1" data-key="ingame.weapons_next"></label>
+          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="ingame.weapons_names"> Название под силуэтом</label>
+          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="ingame.weapons_enabled"> Включено</label>
+        </div>
+        <div class="row" style="margin-top:10px; align-items:center; gap:14px; flex-wrap:wrap;">
+          <button onclick="ingamePreview('weapons')">Показать поверх игры на 5 с</button>
+          <img id="ingame-prev-weapons" class="ingame-prev" alt="">
+          <span class="hint" id="ingame-note-weapons"></span>
+        </div>
+      </section>
+    </div>
+    <div class="col">
+<section>
+        <h2>Поверх игры: DPI <span class="right"><span class="chip" id="chip-ingame-dpi"><span class="dot"></span><b>—</b></span></span></h2>
+        <div class="form" style="margin-top:8px;">
+          <label class="f"><span>Когда показывать</span><select data-key="ingame.dpi_mode"><option value="change">после смены, на несколько секунд</option><option value="always">всегда</option></select></label>
+          <label class="f"><span>Держать на экране, с</span><input type="number" min="1" max="120" step="1" data-key="ingame.dpi_show_s"></label>
+          <label class="f"><span>Угол экрана</span><select data-key="ingame.dpi_corner"><option value="tl">слева сверху</option><option value="tr">справа сверху</option><option value="bl">слева снизу</option><option value="br">справа снизу</option></select></label>
+          <label class="f"><span>Масштаб</span><input type="number" min="0.5" max="3" step="0.1" data-key="ingame.dpi_scale"></label>
+          <label class="f"><span>Отступ по горизонтали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.dpi_x"></label>
+          <label class="f"><span>Отступ по вертикали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.dpi_y"></label>
+          <label class="f"><span>Непрозрачность</span><input type="number" min="0.2" max="1" step="0.05" data-key="ingame.dpi_opacity"></label>
+          <div></div>
+          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="ingame.dpi_enabled"> Включено</label>
+        </div>
+        <div class="row" style="margin-top:10px; align-items:center; gap:14px; flex-wrap:wrap;">
+          <button onclick="ingamePreview('dpi')">Показать поверх игры на 5 с</button>
+          <img id="ingame-prev-dpi" class="ingame-prev" alt="">
+          <span class="hint" id="ingame-note-dpi"></span>
+        </div>
+      </section>
+
+<section>
+        <h2>Поверх игры: зрительская очередь <span class="right"><span class="chip" id="chip-ingame-queue"><span class="dot"></span><b>—</b></span></span></h2>
+        <div class="form" style="margin-top:8px;">
+          <label class="f"><span>Когда показывать</span><select data-key="ingame.queue_mode"><option value="always">всегда, пока есть заявки</option><option value="change">после изменения, на несколько секунд</option></select></label>
+          <label class="f"><span>Держать на экране, с</span><input type="number" min="1" max="120" step="1" data-key="ingame.queue_show_s"></label>
+          <label class="f"><span>Угол экрана</span><select data-key="ingame.queue_corner"><option value="tl">слева сверху</option><option value="tr">справа сверху</option><option value="bl">слева снизу</option><option value="br">справа снизу</option></select></label>
+          <label class="f"><span>Масштаб</span><input type="number" min="0.5" max="3" step="0.1" data-key="ingame.queue_scale"></label>
+          <label class="f"><span>Отступ по горизонтали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.queue_x"></label>
+          <label class="f"><span>Отступ по вертикали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.queue_y"></label>
+          <label class="f"><span>Непрозрачность</span><input type="number" min="0.2" max="1" step="0.05" data-key="ingame.queue_opacity"></label>
+          <label class="f"><span>Заявок в списке</span><input type="number" min="1" max="10" step="1" data-key="ingame.queue_max"></label>
+          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="ingame.queue_names"> Кто заказал</label>
+          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="ingame.queue_enabled"> Включено</label>
+        </div>
+        <div class="row" style="margin-top:10px; align-items:center; gap:14px; flex-wrap:wrap;">
+          <button onclick="ingamePreview('queue')">Показать поверх игры на 5 с</button>
+          <img id="ingame-prev-queue" class="ingame-prev" alt="">
+          <span class="hint" id="ingame-note-queue"></span>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ================= TAB: OBS (widgets for OBS browser sources) ================= -->
+  <div class="tabpage" id="tab-obs">
+    <div class="col">
 <section id="sec-obs">
         <h2>OBS: перезагрузка виджетов <span class="right"><span class="chip" id="chip-obs"><span class="dot"></span><b>выкл</b></span></span></h2>
         <div class="form">
@@ -617,7 +702,8 @@
         </div>
         <div class="hint" style="margin-top:8px;">Размер источника: <b id="size-loadout">—</b>, обе стороны <b id="size-loadout-both">—</b></div>
       </section>
-
+    </div>
+    <div class="col">
       <section>
         <h2>Виджет зрительской очереди</h2>
         <div class="url"><span class="name">Ссылка для OBS</span><code id="url-requests"></code><button onclick="copyText('url-requests')">Копировать</button><a id="open-requests" target="_blank"><button>Открыть</button></a></div>
@@ -646,82 +732,8 @@
         <div class="hint" style="margin-top:8px;">Размер источника: <b id="size-dpi">600×750</b></div>
       </section>
     </div>
-    <div class="col">
-<section>
-        <h2>Цвета</h2>
-        <div class="colors">
-          <div class="swatch"><input type="color" data-key="overlay.color"><div><div class="t">Силуэты оружия</div><div class="d">основной цвет виджета оружия и лоадаута</div></div></div>
-          <div class="swatch"><input type="color" data-key="overlay.accent"><div><div class="t">Акцент</div><div class="d">счётчики, бейджи, сегменты колеса DPI</div></div></div>
-          <div class="swatch"><input type="color" data-key="overlay.match_color"><div><div class="t">Оружие в руках</div><div class="d">подсветка, когда держишь назначенное оружие</div></div></div>
-          <div class="swatch"><input type="color" data-key="dpi.home_color"><div><div class="t">Сегмент «мой DPI»</div><div class="d">на колесе и число при выпадении на него</div></div></div>
-        </div>
-      </section>
-
-<section>
-        <h2>Поверх игры: оружие <span class="right"><span class="chip" id="chip-ingame-weapons"><span class="dot"></span><b>—</b></span></span></h2>
-        <div class="form" style="margin-top:8px;">
-          <label class="f"><span>Когда показывать</span><select data-key="ingame.weapons_mode"><option value="change">после смены, на несколько секунд</option><option value="always">всегда</option></select></label>
-          <label class="f"><span>Держать на экране, с</span><input type="number" min="1" max="120" step="1" data-key="ingame.weapons_show_s"></label>
-          <label class="f"><span>Угол экрана</span><select data-key="ingame.weapons_corner"><option value="tl">слева сверху</option><option value="tr">справа сверху</option><option value="bl">слева снизу</option><option value="br">справа снизу</option></select></label>
-          <label class="f"><span>Масштаб</span><input type="number" min="0.5" max="3" step="0.1" data-key="ingame.weapons_scale"></label>
-          <label class="f"><span>Отступ по горизонтали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.weapons_x"></label>
-          <label class="f"><span>Отступ по вертикали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.weapons_y"></label>
-          <label class="f"><span>Непрозрачность</span><input type="number" min="0.2" max="1" step="0.05" data-key="ingame.weapons_opacity"></label>
-          <label class="f"><span>Следующих оружий рядом</span><input type="number" min="0" max="3" step="1" data-key="ingame.weapons_next"></label>
-          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="ingame.weapons_names"> Название под силуэтом</label>
-          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="ingame.weapons_enabled"> Включено</label>
-        </div>
-        <div class="row" style="margin-top:10px; align-items:center; gap:14px; flex-wrap:wrap;">
-          <button onclick="ingamePreview('weapons')">Показать поверх игры на 5 с</button>
-          <img id="ingame-prev-weapons" class="ingame-prev" alt="">
-          <span class="hint" id="ingame-note-weapons"></span>
-        </div>
-      </section>
-
-<section>
-        <h2>Поверх игры: DPI <span class="right"><span class="chip" id="chip-ingame-dpi"><span class="dot"></span><b>—</b></span></span></h2>
-        <div class="form" style="margin-top:8px;">
-          <label class="f"><span>Когда показывать</span><select data-key="ingame.dpi_mode"><option value="change">после смены, на несколько секунд</option><option value="always">всегда</option></select></label>
-          <label class="f"><span>Держать на экране, с</span><input type="number" min="1" max="120" step="1" data-key="ingame.dpi_show_s"></label>
-          <label class="f"><span>Угол экрана</span><select data-key="ingame.dpi_corner"><option value="tl">слева сверху</option><option value="tr">справа сверху</option><option value="bl">слева снизу</option><option value="br">справа снизу</option></select></label>
-          <label class="f"><span>Масштаб</span><input type="number" min="0.5" max="3" step="0.1" data-key="ingame.dpi_scale"></label>
-          <label class="f"><span>Отступ по горизонтали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.dpi_x"></label>
-          <label class="f"><span>Отступ по вертикали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.dpi_y"></label>
-          <label class="f"><span>Непрозрачность</span><input type="number" min="0.2" max="1" step="0.05" data-key="ingame.dpi_opacity"></label>
-          <div></div>
-          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="ingame.dpi_enabled"> Включено</label>
-        </div>
-        <div class="row" style="margin-top:10px; align-items:center; gap:14px; flex-wrap:wrap;">
-          <button onclick="ingamePreview('dpi')">Показать поверх игры на 5 с</button>
-          <img id="ingame-prev-dpi" class="ingame-prev" alt="">
-          <span class="hint" id="ingame-note-dpi"></span>
-        </div>
-      </section>
-
-<section>
-        <h2>Поверх игры: зрительская очередь <span class="right"><span class="chip" id="chip-ingame-queue"><span class="dot"></span><b>—</b></span></span></h2>
-        <div class="form" style="margin-top:8px;">
-          <label class="f"><span>Когда показывать</span><select data-key="ingame.queue_mode"><option value="always">всегда, пока есть заявки</option><option value="change">после изменения, на несколько секунд</option></select></label>
-          <label class="f"><span>Держать на экране, с</span><input type="number" min="1" max="120" step="1" data-key="ingame.queue_show_s"></label>
-          <label class="f"><span>Угол экрана</span><select data-key="ingame.queue_corner"><option value="tl">слева сверху</option><option value="tr">справа сверху</option><option value="bl">слева снизу</option><option value="br">справа снизу</option></select></label>
-          <label class="f"><span>Масштаб</span><input type="number" min="0.5" max="3" step="0.1" data-key="ingame.queue_scale"></label>
-          <label class="f"><span>Отступ по горизонтали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.queue_x"></label>
-          <label class="f"><span>Отступ по вертикали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.queue_y"></label>
-          <label class="f"><span>Непрозрачность</span><input type="number" min="0.2" max="1" step="0.05" data-key="ingame.queue_opacity"></label>
-          <label class="f"><span>Заявок в списке</span><input type="number" min="1" max="10" step="1" data-key="ingame.queue_max"></label>
-          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="ingame.queue_names"> Кто заказал</label>
-          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="ingame.queue_enabled"> Включено</label>
-        </div>
-        <div class="row" style="margin-top:10px; align-items:center; gap:14px; flex-wrap:wrap;">
-          <button onclick="ingamePreview('queue')">Показать поверх игры на 5 с</button>
-          <img id="ingame-prev-queue" class="ingame-prev" alt="">
-          <span class="hint" id="ingame-note-queue"></span>
-        </div>
-      </section>
-    </div>
   </div>
 
-  <!-- ================= TAB: DONATIONS ================= -->
   <div class="tabpage" id="tab-donations">
     <div class="col">
       <section id="sec-donations">
@@ -1323,7 +1335,7 @@ function showMainTab(name) {
 }
 (function initTab() {
   let name = (location.hash || '').replace('#', '');
-  const TABS = ['startup', 'weapons', 'loadout', 'dpi', 'look', 'donations', 'stats', 'general', 'help'];
+  const TABS = ['startup', 'weapons', 'loadout', 'dpi', 'look', 'obs', 'stats', 'donations', 'general', 'help'];
   if (!TABS.includes(name)) { try { name = localStorage.getItem('cs2r.tab') || ''; } catch (e) { name = ''; } }
   if (!TABS.includes(name)) name = '';
   showMainTab(name || 'weapons');
@@ -1517,7 +1529,7 @@ function renderChecks() {
   opt.push(item(qObs ? 'ok' : 'off', 'OBS: виджет зрительской очереди', qObs ? `подключён из OBS (${qObs})` : 'заявки зрителей на стриме: ' + (S.urls ? S.urls.overlay_requests || '' : ''), `<button onclick="copyText('url-requests')">Скопировать ссылку</button>`));
   opt.push(item(lObs ? 'ok' : 'off', 'OBS: виджет лоадаута', lObs ? `подключён из OBS (${lObs})` : 'для предматчевой паузы: ' + (S.urls ? S.urls.overlay_loadout : ''), `<button onclick="copyText('url-loadout')">Скопировать ссылку</button>`));
   const ob = (S.obs && S.obs.settings) || {}, obLast = (S.obs && S.obs.last) || {};
-  const openObs = `<button onclick="showMainTab('look'); $('sec-obs').scrollIntoView({block: 'start'})">Настроить</button>`;
+  const openObs = `<button onclick="showMainTab('obs'); $('sec-obs').scrollIntoView({block: 'start'})">Настроить</button>`;
   if (ob.refresh_on_start) opt.push(item(obLast.t && !obLast.ok ? 'warn' : 'ok', 'OBS: перезагрузка виджетов при запуске', obLast.t ? obLast.text : 'включена', `<button onclick="obsRefresh()">Обновить сейчас</button>` + openObs));
   else opt.push(item('off', 'OBS: перезагрузка виджетов при запуске', 'если OBS открыт раньше приложения, виджеты в нём остаются пустыми', openObs));
   const cs = c.settings || {};
