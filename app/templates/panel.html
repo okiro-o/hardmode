@@ -402,13 +402,6 @@
           </div></div>
         </div>
         <div class="statline"><span>пройдено <b id="st-completed">0</b></span><span>киллов <b id="st-kills">0</b></span><span>не тем оружием <b id="st-wrong">0</b></span><span>спорных <b id="st-amb">0</b></span></div>
-        <details><summary>Тест без игры: симулировать килл</summary>
-          <div class="row">
-            <button onclick="post('/api/roulette/kill',{})">Килл текущим оружием</button>
-            <button onclick="post('/api/roulette/kill',{weapon:'knife'})">Килл ножом</button>
-            <button onclick="post('/api/roulette/kill',{ambiguous:true})">Спорный (граната)</button>
-          </div>
-        </details>
         <div class="log compact" id="log"></div><button class="logtoggle" onclick="toggleLog(this)">развернуть</button>
       </section>
     </div>
@@ -544,12 +537,7 @@
             <label class="f"><span>Макс. зрительских значений на колесе</span><input type="number" min="1" max="60" data-key="dpi.viewer_max_values"></label>
             <label class="f"><span>Значений от одного зрителя</span><input type="number" min="1" max="10" data-key="dpi.viewer_per_user"></label>
             <label class="f"><span>Чат-команда (пусто — выключена)</span><input type="text" data-key="dpi.viewer_command" placeholder="!dpi"></label>
-            <label class="f"><span>Тест: добавить как зритель</span>
-              <div class="inrow">
-                <input type="number" id="viewer-test-dpi" min="100" max="44000" step="100" placeholder="DPI" value="1600">
-                <button onclick="post('/api/dpi/viewer/add',{value:$('viewer-test-dpi').value,user:'тест'})">Добавить</button>
-                <button onclick="post('/api/dpi/viewer/clear')" title="Убрать все зрительские значения">Очистить</button>
-              </div></label>
+            <div class="row" style="align-self:end;"><button onclick="post('/api/dpi/viewer/clear')">Убрать все зрительские значения</button></div>
           </div>
         </details>
         <div class="chips" id="viewer-chips" style="margin-top:8px;"></div>
@@ -762,19 +750,6 @@
           <div class="row full">
             <button onclick="dpVerify()">Проверить ключ</button>
           </div>
-        </div>
-      </section>
-
-      <section>
-        <h2>Тестовый донат</h2>
-        <div class="form">
-          <label class="f"><span>Имя</span><input type="text" id="test-user" value="тест"></label>
-          <label class="f"><span>Сумма, ₽</span><input type="number" id="test-amount" min="0" step="10" value="300"></label>
-          <label class="f full"><span>Сообщение</span>
-            <div class="inrow">
-              <input type="text" id="test-message" placeholder="например, закинь крокодила" onkeydown="if(event.key==='Enter') testDonation()">
-              <button class="primary" onclick="testDonation()">Отправить</button>
-            </div></label>
         </div>
       </section>
 
@@ -1268,10 +1243,6 @@ function renderObs() {
 }
 async function daConnect() { const r = await post('/api/donations/da/connect', {}); if (r && r.url) { window.open(r.url, '_blank'); toast('Разрешите доступ в открывшейся вкладке DonationAlerts'); } }
 async function dpVerify() { toast('Проверяю…'); const r = await post('/api/donations/dp/verify', {}); if (r) toast(r.ok ? 'DonatePay: ' + (r.user || 'ключ принят') : (r.error || 'Ошибка'), !r.ok); }
-async function testDonation() {
-  const r = await post('/api/donations/test', {user: $('test-user').value, amount: $('test-amount').value, message: $('test-message').value});
-  if (r) toast((r.ok ? '' : '✗ ') + r.text, !r.ok);
-}
 let aliasTimer = null;
 function checkAlias() {
   clearTimeout(aliasTimer);
