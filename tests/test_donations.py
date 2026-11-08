@@ -353,7 +353,7 @@ def test_weapon_reward_queues_known_weapons_and_refunds_the_rest(client, monkeyp
     assert [(e["weapon"], e["user"], e["source"], e["redemption"]["id"]) for e in q] == [("awp", "Viewer", "reward", "r2")]
     assert said == [("Viewer", "AWP", 1)]
     assert _redeem(st, "weapon", "Viewer", "лучшая пушка", "r3") == "cancel"
-    assert "не понял" in rejected[-1][1] and "Баллы вернул" in rejected[-1][1]
+    assert "не понял" in rejected[-1][1] and "Баллы возвращены" in rejected[-1][1]
     assert len(st.queue.pending()) == 1
 
 
@@ -373,7 +373,7 @@ def test_dpi_reward_fulfils_or_refunds(client, monkeypatch):
     assert _redeem(st, "dpi", "A", "1600", "r2") == "fulfill"
     assert _redeem(st, "dpi", "B", "99999", "r3") == "cancel"
     assert [v["value"] for v in client.get("/api/state").json()["dpi"]["wheel"]["viewer"]] == [1600]
-    assert rejected[-1][0] == "B" and "Баллы вернул" in rejected[-1][1]
+    assert rejected[-1][0] == "B" and "Баллы возвращены" in rejected[-1][1]
 
 
 def test_reward_request_chat_message():
@@ -490,7 +490,7 @@ def test_knife_and_zeus_only_when_in_the_race(client, monkeypatch):
     # channel points and donations are refused with the reason in chat
     client.post("/api/settings", json={"donations": {"reward_enabled": True, "enabled": True}})
     assert _redeem(st, "weapon", "B", "зевс") == "cancel"
-    assert rejected == [("B", "Zeus x27 сейчас не принимается. Баллы вернул")]
+    assert rejected == [("B", "Zeus x27 сейчас не принимается. Баллы возвращены")]
     res = client.post("/api/donations/test", json={"user": "C", "amount": 500, "message": "ножом!"}).json()
     assert res["ok"] is False and res["text"] == "Нож сейчас не принимается"
     assert st.queue.pending() == []

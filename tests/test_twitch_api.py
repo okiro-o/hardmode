@@ -242,7 +242,7 @@ def test_app_rewards_refund_rejected_and_dismissed_requests(client, app_twitch, 
     pend = client.get("/api/queue").json()["pending"]
     assert [(e["weapon"], e["user"], e["redemption"]["id"]) for e in pend] == [("awp", "Alice", "a1")]
     assert said == [("Alice", "AWP")]
-    assert [u for u, _ in rejected] == ["Bob", "Dan"] and all("Баллы вернул" in t for _, t in rejected)
+    assert [u for u, _ in rejected] == ["Bob", "Dan"] and all("Баллы возвращены" in t for _, t in rejected)
     assert any(v["value"] == 1600 and v["user"] == "Carl" for v in client.get("/api/state").json()["dpi"]["wheel"]["viewer"])
     # the streamer dismisses the request: the points go back
     client.post("/api/queue/dismiss", json={"id": pend[0]["id"]})

@@ -845,7 +845,6 @@
         <h2>Чат Twitch <span class="right"><span class="chip" id="chip-chat"><span class="dot"></span><b>выкл</b></span></span></h2>
         <div class="form">
           <label class="inline full"><input type="checkbox" data-key="chat.enabled"> Уведомления в чат включены</label>
-          <div class="row full"><button onclick="testChat()">Отправить тест в чат</button></div>
           <div class="hint full" id="chat-status"></div>
           <h3 class="full">Когда писать</h3>
           <label class="inline"><input type="checkbox" data-key="chat.on_start"> Старт гонки вооружений</label>
@@ -959,13 +958,6 @@ function refreshDropdowns() { document.querySelectorAll('select[data-key]').forE
 enhanceSelects();
 
 async function toggleAutostart(el) { const r = await post('/api/autostart', {enabled: el.checked}); if (!r) { el.checked = !el.checked; return; } toast(r.enabled ? 'Автозапуск включён' : 'Автозапуск выключен'); }
-async function testChat() {
-  const r = await post('/api/chat/test', {}); if (!r) return;
-  if (!r.ok) { toast(r.error || 'Ошибка', true); refreshState(); return; }
-  if (r.bot_problem) toast('StreamElements принял сообщение, но ' + r.bot_problem, true);
-  else toast('StreamElements принял сообщение. Нет в чате? Напишите пару сообщений в чат сами: Twitch прячет бота после долгого простоя');
-  refreshState();
-}
 async function quitApp() { if (!confirm('Завершить Hardmode? Виджеты в OBS перестанут обновляться.')) return; const r = await post('/api/quit', {}); if (r && r.ok) toast('Завершаю…'); }
 async function addCustomDpi() { const v = parseInt($('custom-dpi').value, 10); if (!Number.isFinite(v)) return toast('Введите DPI', true); const r = await post('/api/dpi/values/add', {value: v}); if (r) { $('custom-dpi').value = ''; toast('Добавлено: ' + r.value); } }
 function renderWheel() {
@@ -1543,7 +1535,7 @@ function renderChecks() {
   if (twa.logged_in) opt.push(item(twa.error ? 'warn' : 'ok', 'Twitch-аккаунт', twa.error || `@${(twa.user || {}).login}: свои награды возвращают баллы сами` + (Object.keys(twa.rewards || {}).length ? '' : ' (наград Hardmode пока нет)'), openTw));
   else opt.push(item('off', 'Twitch-аккаунт', 'награды с автовозвратом баллов, чат от твоего имени', openTw));
   const chatSet = `<button onclick="showMainTab('general'); $('sec-chat').scrollIntoView({block: 'start'})">Настроить</button>`;
-  if (cs.enabled) opt.push(item(twa.can_chat && !c.last_error ? 'ok' : 'warn', 'Чат Twitch', !twa.can_chat ? 'войдите через Twitch: кнопка справа сверху' : c.last_error ? 'ошибка: ' + c.last_error : `пишет @${(twa.user || {}).login}`, (twa.can_chat ? `<button onclick="testChat()">Отправить тест</button>` : openTw) + chatSet));
+  if (cs.enabled) opt.push(item(twa.can_chat && !c.last_error ? 'ok' : 'warn', 'Чат Twitch', !twa.can_chat ? 'войдите через Twitch: кнопка справа сверху' : c.last_error ? 'ошибка: ' + c.last_error : `пишет @${(twa.user || {}).login}`, (twa.can_chat ? '' : openTw) + chatSet));
   else opt.push(item('off', 'Чат Twitch', 'сообщения о старте, оружии и DPI в чат', chatSet));
   const own = twa.rewards || {};
   const rewardItem = (on, kind, title, idle, open) => on

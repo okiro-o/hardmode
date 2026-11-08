@@ -277,7 +277,7 @@ class AppState:
         self.dpi._changed()
         s = self.dpi.settings
         reason = {"не число": f"нужно число от {s.viewer_min} до {s.viewer_max}"}.get(error, error)
-        self.chat.notify_reject(user, reason + (". Баллы вернул" if refunded else ""))
+        self.chat.notify_reject(user, reason + (". Баллы возвращены" if refunded else ""))
 
     # ------------------------------------------------------------ twitch account (own rewards)
     def _on_twitch_redemption(self, kind: str, r: dict) -> str:
@@ -286,17 +286,17 @@ class AppState:
         if kind == "weapon":
             dn = self.donations
             if not dn.settings.reward_enabled:
-                self.chat.notify_reject(user, "оружие за баллы сейчас выключено. Баллы вернул")
+                self.chat.notify_reject(user, "оружие за баллы сейчас выключено. Баллы возвращены")
                 return "cancel"
             res = dn.reward_request(text, user, redemption={"reward_id": r["reward_id"], "id": r["id"]})
             if res["ok"]:
                 self.chat.notify_request(user, res.get("weapon") or "оружие", res.get("position") or "?", res["text"])
                 return "keep"
-            self.chat.notify_reject(user, res["text"] + ". Баллы вернул")
+            self.chat.notify_reject(user, res["text"] + ". Баллы возвращены")
             return "cancel"
         if kind == "dpi":
             if not self.dpi.settings.viewer_enabled:
-                self.chat.notify_reject(user, "DPI за баллы сейчас выключены. Баллы вернул")
+                self.chat.notify_reject(user, "DPI за баллы сейчас выключены. Баллы возвращены")
                 return "cancel"
             res = self.dpi.add_viewer_value(text, user, source="reward")
             if res["ok"]:
