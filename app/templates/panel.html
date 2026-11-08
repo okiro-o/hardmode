@@ -1038,7 +1038,12 @@ function renderIngame() {
 }
 async function ingamePreview(kind) { const r = await post('/api/ingame/preview', {kind}); if (!r) return; if (r.ok) toast('Показываю поверх игры 5 секунд'); else toast(r.error || 'Недоступно', true); }
 function renderLog(id, entries, cls = e => e.kind) {
-  $(id).innerHTML = (entries || []).slice().reverse().map(e => `<div class="${esc(cls(e))}"><span class="t">${fmtTime(e.t)}</span><span>${esc(e.text)}</span></div>`).join('');
+  const box = $(id), list = entries || [];
+  box.innerHTML = list.slice().reverse().map(e => `<div class="${esc(cls(e))}"><span class="t">${fmtTime(e.t)}</span><span>${esc(e.text)}</span></div>`).join('');
+  // an empty log is not drawn at all, nor its «развернуть» button
+  box.style.display = list.length ? '' : 'none';
+  const toggle = box.nextElementSibling;
+  if (toggle && toggle.classList.contains('logtoggle')) toggle.style.display = list.length ? '' : 'none';
 }
 function toggleLog(btn) { const log = btn.previousElementSibling; const compact = log.classList.toggle('compact'); btn.textContent = compact ? 'развернуть' : 'свернуть'; }
 // ---- statistics tab
