@@ -18,6 +18,7 @@ class FakeTwitch:
         self.redemptions: dict[str, list[dict]] = {}
         self.statuses: dict[str, str] = {}
         self.chat: list[str] = []
+        self.patches: list[dict] = []
         self.calls: list[tuple[str, str]] = []
         self.access_ok = {"tok-1"}
         self.refresh_ok = {"ref-1": ("tok-2", "ref-2")}
@@ -64,15 +65,22 @@ class FakeTwitch:
                 assert body["is_user_input_required"] is True and body["should_redemptions_skip_request_queue"] is False
                 self.seq += 1
                 rid = f"rw-{self.seq}"
-                self.rewards[rid] = {"id": rid, "title": body["title"], "cost": body["cost"]}
-                return {"data": [self.rewards[rid]]}
+                self.rewards[rid] = {"id": rid, "title": body["title"], "cost": body["cost"], "prompt": body["prompt"],
+                                     "is_enabled": True, "is_paused": False,
+                                     "is_user_input_required": body["is_user_input_required"],
+                                     "should_redemptions_skip_request_queue": body["should_redemptions_skip_request_queue"]}
+                return {"data": [dict(self.rewards[rid])]}
+            if method == "PATCH":
+                self.patches.append(dict(body))
+                self.rewards[q["id"]].update(body)
+                return {"data": [dict(self.rewards[q["id"]])]}
             if method == "DELETE":
                 if q["id"] not in self.rewards:
                     raise T.TwitchError("Not Found", 404)
                 del self.rewards[q["id"]]
                 return {}
             assert q.get("only_manageable_rewards") == "true"
-            return {"data": list(self.rewards.values())}
+            return {"data": [dict(r) for r in self.rewards.values()]}
         if path == "/helix/channel_points/custom_rewards/redemptions":
             if method == "GET":
                 assert q["status"] == "UNFULFILLED"
@@ -295,3 +303,41 @@ def test_app_login_with_the_builtin_client_id(client):
     assert client.post("/api/settings", json={"twitch": {"client_id": "x"}}).status_code == 200
     assert "twitch" not in client.get("/api/settings").json()
     svc._stop.set()
+
+
+def test_reward_description_pause_and_guarded_settings(tmp_path):
+    fake = FakeTwitch()
+    svc, published = _service(tmp_path, fake)
+    _signed_in(svc)
+    r = svc.create_reward("weapon", cost=400, prompt="  Пиши оружие  ")
+    assert r["prompt"] == "Пиши оружие" and fake.rewards[r["id"]]["prompt"] == "Пиши оружие"
+    assert fake.rewards[r["id"]]["is_user_input_required"] is True
+    assert fake.rewards[r["id"]]["should_redemptions_skip_request_queue"] is False
+    svc.update_prompt("weapon", "AWP, калаш, плётка")
+    assert fake.rewards[r["id"]]["prompt"] == "AWP, калаш, плётка" and svc.state["rewards"]["weapon"]["prompt"] == "AWP, калаш, плётка"
+    with pytest.raises(T.TwitchError):
+        svc.update_prompt("dpi", "x")                                   # not created yet
+    # end of stream: the streamer pauses it in Twitch and (by mistake) lets it skip the queue without text
+    fake.rewards[r["id"]].update({"is_paused": True, "is_enabled": False, "is_user_input_required": False,
+                                  "should_redemptions_skip_request_queue": True, "cost": 600})
+    fake.patches.clear()
+    svc._sync_rewards()
+    own = svc.state["rewards"]["weapon"]
+    assert (own["paused"], own["enabled"], own["cost"]) == (True, False, 600)      # taken over, not undone
+    assert fake.patches == [{"is_user_input_required": True, "should_redemptions_skip_request_queue": False}]
+    assert fake.rewards[r["id"]]["is_paused"] is True and fake.rewards[r["id"]]["is_enabled"] is False
+    fake.patches.clear()
+    n = len(published)
+    svc._sync_rewards()                                                  # nothing changed: no writes, no events
+    assert fake.patches == [] and len(published) == n
+
+
+def test_app_reward_routes_with_description(client, app_twitch):
+    st, svc, fake = app_twitch
+    r = client.post("/api/twitch/reward", json={"kind": "dpi", "cost": 200}).json()
+    assert r["ok"] and r["reward"]["prompt"].startswith("Число DPI от ")          # range from the DPI settings
+    r = client.post("/api/twitch/reward", json={"kind": "weapon", "prompt": "Какую пушку?"}).json()
+    assert r["reward"]["prompt"] == "Какую пушку?"
+    r = client.post("/api/twitch/reward/prompt", json={"kind": "weapon", "prompt": "Пиши ствол"}).json()
+    assert r["ok"] and client.get("/api/twitch/account").json()["rewards"]["weapon"]["prompt"] == "Пиши ствол"
+    assert client.post("/api/twitch/reward/prompt", json={"kind": "nope", "prompt": "x"}).json()["ok"] is False

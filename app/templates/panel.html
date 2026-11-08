@@ -311,6 +311,8 @@
   .twpop .logout { width:100%; background:transparent; border:1px solid var(--bad); color:var(--bad); font-weight:600; }
   .twpop .logout:hover { background:rgba(255,94,94,.12); border-color:var(--bad); }
   .form .pair.solo { grid-template-columns: 1fr; }
+  .twr-new { display:grid; grid-template-columns: 130px 1fr; gap:8px 12px; align-items:end; }
+  .twr-new button { grid-column: 1 / -1; justify-self:start; }
   .twr .own { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
   .twr .own .t { flex:1 1 220px; }
   .inrow { display:flex; gap:8px; align-items:stretch; }
@@ -1002,8 +1004,10 @@ function renderWheel() {
   $('viewer-chips').innerHTML = (w.viewer||[]).length ? w.viewer.map((e,i) => `<span class="chip2 viewer">${e.value} <span class="u">${esc(e.user)}</span><button title="Убрать" onclick="post('/api/dpi/viewer/remove',{index:${i}})">×</button></span>`).join('') : '<span class="hint">зрители пока ничего не добавили</span>';
   const own = ((S.twitch_account || {}).rewards || {}).dpi, chip = $('chip-viewers');
   const tw = S.twitch_account || {}, on = d.settings && d.settings.viewer_enabled;
-  chip.className = 'chip ' + (!on ? '' : own && tw.logged_in ? 'ok' : 'warn');
-  chip.querySelector('b').textContent = !on ? 'выкл' : !tw.logged_in ? 'нет входа в Twitch' : own ? 'награда работает' : 'награда не создана';
+  const off = own && (own.enabled === false || own.paused);
+  chip.className = 'chip ' + (!on ? '' : own && tw.logged_in && !off ? 'ok' : 'warn');
+  chip.querySelector('b').textContent = !on ? 'выкл' : !tw.logged_in ? 'нет входа в Twitch' : !own ? 'награда не создана'
+    : own.enabled === false ? 'награда выключена в Twitch' : own.paused ? 'награда на паузе' : 'награда работает';
 }
 function renderChat() {
   const c = S.chat; if (!c) return;
@@ -1180,8 +1184,12 @@ async function twitchLogin() {
 }
 async function twitchLogout() { if (!confirm('Выйти из Twitch? Награды Hardmode останутся в канале, но баллы перестанут возвращаться сами.')) return; await post('/api/twitch/logout', {}); }
 async function twitchCreateReward(kind) {
-  const r = await post('/api/twitch/reward', {kind, cost: $('twr-' + kind + '-cost').value});
+  const r = await post('/api/twitch/reward', {kind, cost: $('twr-' + kind + '-cost').value, prompt: $('twr-' + kind + '-prompt').value});
   if (r) toast(r.ok ? 'Награда создана в Twitch' : r.error, !r.ok);
+}
+async function twitchSavePrompt(kind) {
+  const r = await post('/api/twitch/reward/prompt', {kind, prompt: $('twr-' + kind + '-prompt').value});
+  if (r) toast(r.ok ? 'Описание сохранено в Twitch' : r.error, !r.ok);
 }
 async function twitchDeleteReward(kind) { if (!confirm('Удалить эту награду из канала Twitch?')) return; const r = await post('/api/twitch/reward/delete', {kind}); if (r) toast(r.ok ? 'Награда удалена' : r.error, !r.ok); }
 let twWasIn = null;
@@ -1216,23 +1224,29 @@ function renderTwitch() {
 }
 function renderTwitchRewards() {
   const a = S.twitch_account || {}, own = a.rewards || {}, defs = a.defaults || {};
+  const ds = (S.dpi && S.dpi.settings) || {};
   for (const kind of ['weapon', 'dpi']) {
     const box = $('twr-' + kind); if (!box) continue;
-    const r = own[kind];
-    const d = defs[kind] || {};
+    const r = own[kind], d = defs[kind] || {};
     if (!a.logged_in && !r) {
       box.innerHTML = `<div class="hint">Чтобы зрители могли выкупать «${esc(d.title || '')}», войдите через Twitch кнопкой справа сверху.</div>`;
       continue;
     }
+    if (box.contains(document.activeElement)) continue;          // the streamer is typing a description
+    const defPrompt = kind === 'dpi' ? `Число DPI от ${ds.viewer_min || 400} до ${ds.viewer_max || 6400}` : (d.prompt || '');
     if (r) {
-      box.innerHTML = `<div class="own"><span class="t">Награда Hardmode <b>«${esc(r.title)}»</b>, ${r.cost} баллов: за отказ и × баллы возвращаются сами</span>`
-        + (a.logged_in ? `<button onclick="twitchDeleteReward('${kind}')">Удалить из Twitch</button>` : '<span class="muted">нет входа в Twitch: возврат не работает</span>') + '</div>';
+      const state = r.enabled === false ? ' · выключена в Twitch' : r.paused ? ' · на паузе в Twitch' : '';
+      box.innerHTML = `<div class="own"><span class="t">Награда <b>«${esc(r.title)}»</b>, ${r.cost} баллов${state}. За отказ и × баллы возвращаются сами</span>`
+        + (a.logged_in ? `<button onclick="twitchDeleteReward('${kind}')">Удалить из Twitch</button>` : '<span class="muted">нет входа в Twitch: возврат не работает</span>') + '</div>'
+        + (a.logged_in ? `<label class="f" style="margin-top:8px;"><span>Описание награды</span><div class="inrow">
+            <input type="text" id="twr-${kind}-prompt" maxlength="200" value="${esc(r.prompt || defPrompt)}">
+            <button onclick="twitchSavePrompt('${kind}')">Сохранить</button></div></label>` : '');
       continue;
     }
-    if (box.contains(document.activeElement)) continue;
-    box.innerHTML = `<label class="f"><span>Награда «${esc(d.title || '')}», стоимость в баллах</span><div class="inrow">
-      <input type="number" id="twr-${kind}-cost" min="1" step="50" value="${d.cost || 300}">
-      <button class="primary" onclick="twitchCreateReward('${kind}')">Создать в Twitch</button></div></label>`;
+    box.innerHTML = `<div class="twr-new">
+      <label class="f"><span>Стоимость, баллов</span><input type="number" id="twr-${kind}-cost" min="1" step="50" value="${d.cost || 300}"></label>
+      <label class="f"><span>Описание награды</span><input type="text" id="twr-${kind}-prompt" maxlength="200" value="${esc(defPrompt)}"></label>
+      <button class="primary" onclick="twitchCreateReward('${kind}')">Создать в Twitch «${esc(d.title || '')}»</button></div>`;
   }
 }
 async function obsRefresh() { toast('Подключаюсь к OBS…'); const r = await post('/api/obs/refresh', {}); if (r) toast(r.text, !r.ok); }

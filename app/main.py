@@ -827,11 +827,11 @@ def create_app() -> FastAPI:
 
     @app.post("/api/twitch/reward")
     async def twitch_reward_create(request: Request) -> dict:
-        """{kind: weapon|dpi, cost?}: create Hardmode's reward in the channel (refunds work only for it)."""
+        """{kind: weapon|dpi, cost?, prompt?}: create Hardmode's reward in the channel (refunds work only for it)."""
         body = await _json(request)
         kind = str(body.get("kind") or "")
-        prompt = None
-        if kind == "dpi":
+        prompt = str(body.get("prompt") or "").strip() or None
+        if kind == "dpi" and not prompt:
             prompt = f"Число DPI от {state.dpi.settings.viewer_min} до {state.dpi.settings.viewer_max}"
         try:
             r = await asyncio.get_running_loop().run_in_executor(
@@ -839,6 +839,17 @@ def create_app() -> FastAPI:
         except TwitchError as e:
             return {"ok": False, "error": str(e)}
         state.on_reward_created(kind)
+        return {"ok": True, "reward": r}
+
+    @app.post("/api/twitch/reward/prompt")
+    async def twitch_reward_prompt(request: Request) -> dict:
+        """{kind, prompt}: the description viewers see under Hardmode's reward."""
+        body = await _json(request)
+        try:
+            r = await asyncio.get_running_loop().run_in_executor(
+                None, state.twitch_api.update_prompt, str(body.get("kind") or ""), str(body.get("prompt") or ""))
+        except (TwitchError, KeyError) as e:
+            return {"ok": False, "error": str(e)}
         return {"ok": True, "reward": r}
 
     @app.post("/api/twitch/reward/delete")

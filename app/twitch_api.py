@@ -49,6 +49,7 @@ SCOPES = ("channel:manage:redemptions", "user:write:chat")
 DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
 POLL_S = 3.0
 VALIDATE_S = 3600.0
+SYNC_S = 60.0            # how often our rewards are re-read from Twitch (deleted? guarded settings changed?)
 FRESH_S = 600.0
 MAX_HANDLED = 1000
 USER_AGENT = "hardmode/1.0"
@@ -60,6 +61,9 @@ REWARDS = {
     "weapon": {"title": "Добавить оружие в очередь", "cost": 500, "prompt": "Какое оружие? Например: AWP, калаш, плётка"},
     "dpi": {"title": "Добавить DPI в рулетку", "cost": 300, "prompt": "Число DPI, например 1600"},
 }
+# without these the app cannot see a redemption or give the points back: restored when changed in Twitch.
+# Pause / enable are the streamer's business (they pause the rewards at the end of a stream) and never touched.
+GUARDED = {"is_user_input_required": True, "should_redemptions_skip_request_queue": False}
 
 
 class TwitchError(RuntimeError):
@@ -353,8 +357,8 @@ class TwitchService:
             cost = max(1, int(float(cost if cost not in (None, "") else d["cost"])))
         except (TypeError, ValueError):
             raise TwitchError("стоимость: нужно число") from None
-        body = {"title": title, "cost": cost, "prompt": (prompt or d["prompt"])[:200], "is_enabled": True,
-                "is_user_input_required": True, "should_redemptions_skip_request_queue": False}
+        prompt = (str(prompt or "").strip() or d["prompt"])[:200]
+        body = {"title": title, "cost": cost, "prompt": prompt, "is_enabled": True, **GUARDED}
         try:
             data = self.helix("POST", "channel_points/custom_rewards", {"broadcaster_id": self.state["user"]["id"]},
                               body).get("data") or []
@@ -370,7 +374,8 @@ class TwitchService:
             raise TwitchError("Twitch не вернул созданную награду")
         r = data[0]
         with self._lock:
-            self.state["rewards"][kind] = {"id": r.get("id"), "title": r.get("title", title), "cost": r.get("cost", cost)}
+            self.state["rewards"][kind] = {"id": r.get("id"), "title": r.get("title", title), "cost": r.get("cost", cost),
+                                           "prompt": r.get("prompt", prompt), "enabled": True, "paused": False}
         self._changed()
         log.info("twitch: reward %s created: %s", kind, r.get("id"))
         return dict(self.state["rewards"][kind])
@@ -392,23 +397,52 @@ class TwitchService:
             self.state["rewards"].pop(kind, None)
         self._changed()
 
+    def update_prompt(self, kind: str, prompt: str) -> dict:
+        """Blocking. Change the description viewers see under our reward."""
+        with self._lock:
+            r = self.state["rewards"].get(kind)
+        if not r:
+            raise TwitchError("награда ещё не создана")
+        prompt = (str(prompt or "").strip() or REWARDS[kind]["prompt"])[:200]
+        self.helix("PATCH", "channel_points/custom_rewards", {"broadcaster_id": self.state["user"]["id"], "id": r["id"]},
+                   {"prompt": prompt})
+        with self._lock:
+            r["prompt"] = prompt
+        self._changed()
+        return dict(r)
+
     def _sync_rewards(self) -> None:
-        """Forget our rewards that were deleted in the Twitch dashboard."""
+        """Re-read our rewards: forget the ones deleted in Twitch, take over title/cost/description/pause edited
+        there, and put back the two settings the app relies on (text required, no auto-fulfil)."""
         if not self.state["rewards"]:
             return
         data = self.helix("GET", "channel_points/custom_rewards",
                           {"broadcaster_id": self.state["user"]["id"], "only_manageable_rewards": "true"}).get("data") or []
         alive = {r.get("id"): r for r in data}
+        changed, fix = False, []
         with self._lock:
             gone = [k for k, r in self.state["rewards"].items() if r.get("id") not in alive]
             for k in gone:
                 self.state["rewards"].pop(k)
-            for k, r in self.state["rewards"].items():          # title/cost edited in Twitch
+                changed = True
+            for k, r in self.state["rewards"].items():
                 a = alive.get(r["id"]) or {}
-                r["title"], r["cost"] = a.get("title", r.get("title")), a.get("cost", r.get("cost"))
+                seen = {"title": a.get("title", r.get("title")), "cost": a.get("cost", r.get("cost")),
+                        "prompt": a.get("prompt", r.get("prompt")), "enabled": a.get("is_enabled", r.get("enabled", True)),
+                        "paused": a.get("is_paused", r.get("paused", False))}
+                if any(r.get(x) != v for x, v in seen.items()):
+                    r.update(seen)
+                    changed = True
+                if any(x in a and a[x] != v for x, v in GUARDED.items()):
+                    fix.append((k, r["id"]))
+        for k, rid in fix:
+            self.helix("PATCH", "channel_points/custom_rewards", {"broadcaster_id": self.state["user"]["id"], "id": rid},
+                       dict(GUARDED))
+            log.info("twitch: reward %s: «text required» / «no auto-fulfil» restored", k)
         if gone:
             log.info("twitch: rewards deleted in Twitch: %s", gone)
-        self._changed()
+        if changed:
+            self._changed()
 
     # ------------------------------------------------------------------ redemptions
     def set_status(self, redemption: dict | None, status: str) -> None:
@@ -492,7 +526,7 @@ class TwitchService:
         self._stop.set()
 
     def _run(self) -> None:
-        next_poll = 0.0
+        next_poll = next_sync = 0.0
         fails = 0
         while not self._stop.wait(0.5):
             if not self.logged_in:
@@ -501,6 +535,9 @@ class TwitchService:
                 if time.monotonic() >= self._next_validate:
                     self._next_validate = time.monotonic() + VALIDATE_S
                     self.helix("GET", "users")         # cheap call that also refreshes an expired token
+                    next_sync = 0.0
+                if time.monotonic() >= next_sync:
+                    next_sync = time.monotonic() + SYNC_S
                     self._sync_rewards()
                 self.flush_actions()
                 if time.monotonic() >= next_poll:
