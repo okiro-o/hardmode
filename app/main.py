@@ -112,6 +112,7 @@ class AppState:
                                         publish_threadsafe=self.broker.publish_threadsafe,
                                         call_threadsafe=self.broker.call_threadsafe)
         self.twitch_api.on_redemption = self._on_twitch_redemption
+        self.twitch_api.on_login = lambda user: self.broker.call_threadsafe(self._on_twitch_login, user)
         self.queue.on_close = self._on_request_closed
         self.chat.twitch_send = self.twitch_api.send_chat
         self.chat.twitch_ready = lambda: self.twitch_api.can_chat
@@ -231,13 +232,13 @@ class AppState:
 
     # ------------------------------------------------------------ twitch chat
     def sync_twitch(self) -> None:
-        """Start/stop the anonymous chat reader: needed for viewer DPI values, the weapon reward, and for the
-        queue command when the StreamElements bot can answer it."""
-        channel = self.chat.settings.channel_login
-        dn = self.donations
-        queue_cmd = bool(dn.settings.queue_command and self.chat.can_send())
-        weapon_reward = dn.settings.reward_enabled or dn.learn_reward
-        if channel and (self.dpi.settings.viewer_enabled or queue_cmd or weapon_reward):
+        """Start/stop the anonymous chat reader. Only chat commands need it now: the DPI command (``!dpi``) and
+        the queue command when somebody can answer it. Channel points come from the Twitch API (0.24.0)."""
+        channel = (self.twitch_api.state["user"].get("login") or "") if self.twitch_api.logged_in else ""
+        s = self.dpi.settings
+        dpi_cmd = bool(s.viewer_enabled and s.viewer_command)
+        queue_cmd = bool(self.donations.settings.queue_command and self.chat.can_send())
+        if channel and (dpi_cmd or queue_cmd):
             self.twitch.start(channel)
         else:
             self.twitch.stop()
@@ -246,29 +247,15 @@ class AppState:
         self.broker.call_threadsafe(self.handle_chat_message, msg)
 
     def handle_chat_message(self, msg: IrcMessage) -> None:
+        if msg.reward_id:
+            return       # channel points are read from the Twitch API (Hardmode's own rewards), never from chat
         if self._queue_command(msg):
-            return
-        if msg.reward_id and self.twitch_api.managed_kind(msg.reward_id):
-            return                # Hardmode's own reward: read from the Twitch API with its redemption id
-        if msg.reward_id and self._weapon_reward(msg):
             return
         s = self.dpi.settings
         if not s.viewer_enabled:
             return
         text = (msg.trailing or "").strip()
         user = msg.display_name or msg.user
-        if msg.reward_id:
-            if self.dpi.learn_reward:
-                self.dpi.learn_reward = False
-                self.dpi.update_settings({"viewer_reward_id": msg.reward_id})
-                self.persist_dpi_settings()
-                self.dpi._log("viewer", f"Награда определена по сообщению {user}: {msg.reward_id[:8]}…")
-            elif s.viewer_reward_id and msg.reward_id != s.viewer_reward_id:
-                return
-            res = self.dpi.add_viewer_value(text, user, source="reward")
-            if not res["ok"]:
-                self._viewer_rejected(user, text, res["error"])
-            return
         cmd = s.viewer_command.lower()
         if cmd and text.lower().startswith(cmd) and (len(text) == len(cmd) or text[len(cmd)] == " "):
             res = self.dpi.add_viewer_value(text[len(cmd):].strip(), user, source="command")
@@ -283,29 +270,6 @@ class AppState:
             return False
         user = msg.display_name or msg.user
         self.chat.notify_queue_reply(user, self.queue.describe_for(user, msg.user))
-        return True
-
-    def _weapon_reward(self, msg: IrcMessage) -> bool:
-        """Channel points «оружие в очередь». Returns True when the redemption is that reward (then the DPI
-        reward never sees it, even when its id is not set and it takes any reward)."""
-        dn = self.donations
-        user = msg.display_name or msg.user
-        if dn.learn_reward:
-            dn.learn_reward = False
-            dn.update_settings({"reward_id": msg.reward_id})
-            self.persist_dpi_settings()
-            log.info("weapon reward learnt from %s: %s", user, msg.reward_id)
-            self.sync_twitch()
-        elif not dn.settings.reward_id or msg.reward_id != dn.settings.reward_id:
-            return False
-        if not dn.settings.reward_enabled:
-            return True
-        text = (msg.trailing or "").strip()
-        res = dn.reward_request(text, user)
-        if res["ok"]:
-            self.chat.notify_request(user, res["weapon"] or "оружие", res.get("position") or "?", res["text"])
-        else:
-            self.chat.notify_reject(user, res["text"])
         return True
 
     def _viewer_rejected(self, user: str, text: str, error: str, refunded: bool = False) -> None:
@@ -347,16 +311,19 @@ class AppState:
         if red:
             self.twitch_api.set_status(red, "FULFILLED" if e.get("status") == "done" else "CANCELED")
 
-    def set_managed_reward_ids(self) -> None:
-        """Our rewards are also «the» weapon / DPI reward of the existing settings (panel shows the same id)."""
-        rewards = self.twitch_api.state["rewards"]
-        w, d = rewards.get("weapon"), rewards.get("dpi")
-        if w and self.donations.settings.reward_id != w["id"]:
-            self.donations.update_settings({"reward_id": w["id"], "reward_enabled": True})
-        if d and self.dpi.settings.viewer_reward_id != d["id"]:
-            self.dpi.update_settings({"viewer_reward_id": d["id"], "viewer_enabled": True})
+    def on_reward_created(self, kind: str) -> None:
+        """A reward was just created in Twitch: switch its feature on (the streamer clearly wants it)."""
+        if kind == "weapon" and not self.donations.settings.reward_enabled:
+            self.donations.update_settings({"reward_enabled": True})
+        if kind == "dpi" and not self.dpi.settings.viewer_enabled:
+            self.dpi.update_settings({"viewer_enabled": True})
         self.persist_dpi_settings()
         self.sync_twitch()
+
+    def _on_twitch_login(self, user: dict) -> None:
+        """Signed in: the chat commands can be read from the streamer's channel now."""
+        self.sync_twitch()
+        self.broker.publish("chat", self.chat.status())
 
     def urls(self) -> dict:
         base = f"http://127.0.0.1:{self.settings.port}"
@@ -405,7 +372,7 @@ class AppState:
         return {"overlay": self.settings.overlay.__dict__,
                 "ingame": self.ingame_info(),
                 "roulette": self.roulette.settings.to_dict(), "dpi": self.dpi.settings.to_dict(),
-                "chat": self.chat.settings.public_dict(), "donations": self.donations.settings.public_dict(),
+                "chat": self.chat.settings.to_dict(), "donations": self.donations.settings.public_dict(),
                 "obs": self.obs.settings.public_dict(),
                 "gsi_token": self.settings.gsi_token, "port": self.settings.port}
 
@@ -700,7 +667,7 @@ def create_app() -> FastAPI:
         d = state.settings.to_dict()
         d["roulette"] = state.roulette.settings.to_dict()
         d["dpi"] = state.dpi.settings.to_dict()
-        d["chat"] = state.chat.settings.public_dict()   # never expose the JWT
+        d["chat"] = state.chat.settings.to_dict()
         d["donations"] = state.donations.settings.public_dict()   # nor the DA secret / DonatePay key
         d["obs"] = state.obs.settings.public_dict()               # nor the obs-websocket password
         return d
@@ -799,19 +766,9 @@ def create_app() -> FastAPI:
         return {"enabled": enabled, "command": autostart.launch_command()}
 
     # ------------------------------------------------------------------- chat
-    @app.post("/api/chat/verify")
-    async def chat_verify() -> dict:
-        loop = asyncio.get_running_loop()
-        res = await loop.run_in_executor(None, state.chat.verify)
-        if res.get("ok"):
-            state.persist_dpi_settings()   # channel_login may have been filled from the SE profile
-            state.sync_twitch()
-            state.broker.publish("settings", state.settings_event())
-        return res
-
     @app.post("/api/twitch/chat")
     async def twitch_fake_chat(request: Request) -> dict:
-        """Simulate a chat line (testing without Twitch): {user, text, reward_id?}."""
+        """Simulate a chat line (testing without Twitch): {user, text, reward_id?} (reward lines are ignored)."""
         body = await _json(request)
         tags = {"display-name": str(body.get("user") or "viewer")}
         if body.get("reward_id"):
@@ -864,11 +821,13 @@ def create_app() -> FastAPI:
     @app.post("/api/twitch/logout")
     async def twitch_logout() -> dict:
         await asyncio.get_running_loop().run_in_executor(None, state.twitch_api.logout)
+        state.sync_twitch()                      # no channel to read the commands from any more
+        state.broker.publish("chat", state.chat.status())
         return {"ok": True}
 
     @app.post("/api/twitch/reward")
     async def twitch_reward_create(request: Request) -> dict:
-        """{kind: weapon|dpi, title?, cost?}: create Hardmode's reward in the channel (refunds work only for it)."""
+        """{kind: weapon|dpi, cost?}: create Hardmode's reward in the channel (refunds work only for it)."""
         body = await _json(request)
         kind = str(body.get("kind") or "")
         prompt = None
@@ -876,26 +835,20 @@ def create_app() -> FastAPI:
             prompt = f"Число DPI от {state.dpi.settings.viewer_min} до {state.dpi.settings.viewer_max}"
         try:
             r = await asyncio.get_running_loop().run_in_executor(
-                None, state.twitch_api.create_reward, kind, body.get("title"), body.get("cost"), prompt)
+                None, state.twitch_api.create_reward, kind, body.get("cost"), prompt)
         except TwitchError as e:
             return {"ok": False, "error": str(e)}
-        state.set_managed_reward_ids()
+        state.on_reward_created(kind)
         return {"ok": True, "reward": r}
 
     @app.post("/api/twitch/reward/delete")
     async def twitch_reward_delete(request: Request) -> dict:
         body = await _json(request)
         kind = str(body.get("kind") or "")
-        old = (state.twitch_api.state["rewards"].get(kind) or {}).get("id")
         try:
             await asyncio.get_running_loop().run_in_executor(None, state.twitch_api.delete_reward, kind)
         except TwitchError as e:
             return {"ok": False, "error": str(e)}
-        if old and kind == "weapon" and state.donations.settings.reward_id == old:
-            state.donations.update_settings({"reward_id": ""})
-        if old and kind == "dpi" and state.dpi.settings.viewer_reward_id == old:
-            state.dpi.update_settings({"viewer_reward_id": ""})
-        state.persist_dpi_settings()
         return {"ok": True}
 
     @app.get("/api/obs")
@@ -926,11 +879,6 @@ def create_app() -> FastAPI:
         state.ingame.preview(kind, 5.0)
         return {"ok": True}
 
-    @app.post("/api/chat/join")
-    async def chat_join() -> dict:
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, state.chat.join_bot)
-
     @app.post("/api/chat/test")
     async def chat_test(request: Request) -> dict:
         body = await _json(request)
@@ -939,7 +887,6 @@ def create_app() -> FastAPI:
         res = await loop.run_in_executor(None, state.chat.send_now, text)
         if res.get("ok"):
             res["response"] = state.chat.last_response
-            res["bot_problem"] = state.chat.bot_problem()
         return res
 
     return app

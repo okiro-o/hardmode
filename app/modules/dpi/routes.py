@@ -114,18 +114,6 @@ async def dpi_viewer_clear(request: Request) -> dict:
     return {"ok": True}
 
 
-@router.post("/api/dpi/reward/learn")
-async def dpi_reward_learn(request: Request) -> dict:
-    body = await _json(request)
-    svc = _svc(request)
-    svc.learn_reward = bool(body.get("on", True))
-    if body.get("clear"):
-        svc.update_settings({"viewer_reward_id": ""})
-        request.app.state.app.persist_dpi_settings()
-    svc._changed()
-    return {"learn": svc.learn_reward}
-
-
 @router.post("/api/dpi/death")
 async def dpi_fake_death(request: Request) -> dict:
     """Simulate a death (testing without CS2)."""

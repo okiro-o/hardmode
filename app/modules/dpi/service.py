@@ -47,7 +47,6 @@ class DpiSettings:
     viewer_max: int = 6400
     viewer_max_values: int = 20     # how many viewer values may wait on the wheel
     viewer_per_user: int = 1        # pending values per viewer
-    viewer_reward_id: str = ""      # Twitch custom reward id (learned from the first redemption)
     viewer_command: str = ""        # optional chat command, e.g. "!dpi" (empty = rewards only)
     home_dpi: int = 3200            # the streamer's normal DPI ("вернуть мой DPI"), highlighted on the wheel
     home_color: str = "#ff6b6b"     # overlay: colour of the home-DPI segment
@@ -88,7 +87,6 @@ class DpiSettings:
             s.viewer_min, s.viewer_max = s.viewer_max, s.viewer_min
         s.viewer_max_values = max(1, min(60, config.to_int(s.viewer_max_values, "viewer_max_values")))
         s.viewer_per_user = max(1, min(10, config.to_int(s.viewer_per_user, "viewer_per_user")))
-        s.viewer_reward_id = s.viewer_reward_id.strip()[:64] if isinstance(s.viewer_reward_id, str) else ""
         s.viewer_command = s.viewer_command.strip()[:20] if isinstance(s.viewer_command, str) else ""
         s.idle_hide_s = max(0.0, min(3600.0, config.to_float(s.idle_hide_s, "idle_hide_s")))
         s.wheel_linger_s = max(0.0, min(60.0, config.to_float(s.wheel_linger_s, "wheel_linger_s")))
@@ -135,7 +133,6 @@ class DpiService:
         self.busy = False
         self.consumed: list[int] = []           # bag mode: values already rolled in this cycle
         self.viewer_values: list[dict] = []     # [{value, user, t}] one-shot values added by viewers
-        self.learn_reward = False               # next reward redemption seen in chat becomes the reward id
         self.on_applied: Callable[[int, str], None] | None = None   # external hook (chat notifications)
         self.on_spin: Callable[[int, str], None] | None = None      # external hook (statistics)
         self.on_viewer_added: Callable[[dict], None] | None = None  # external hook (chat confirmation)
@@ -329,7 +326,6 @@ class DpiService:
             "values": vals,
             "weights": weights,
             "wheel": self.wheel_info(segs),
-            "learn_reward": self.learn_reward,
             "last_spin": self.last_spin,
             "log": self.log[-20:],
             "spins": self.spins,

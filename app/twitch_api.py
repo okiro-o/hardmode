@@ -55,9 +55,10 @@ USER_AGENT = "hardmode/1.0"
 BUILTIN_CLIENT_ID = "z18ygf73k0iud6iym5zzx1h9u2h9fq"     # Hardmode's public Twitch application
 
 # the rewards Hardmode can create: kind -> defaults (title ≤ 45 chars, prompt ≤ 200)
+# fixed titles chosen by the user (0.24.0); channel points work only through these rewards
 REWARDS = {
-    "weapon": {"title": "Оружие в очередь", "cost": 500, "prompt": "Какое оружие? Например: AWP, калаш, плётка"},
-    "dpi": {"title": "DPI на колесо", "cost": 300, "prompt": "Число DPI, например 1600"},
+    "weapon": {"title": "Добавить оружие в очередь", "cost": 500, "prompt": "Какое оружие? Например: AWP, калаш, плётка"},
+    "dpi": {"title": "Добавить DPI в рулетку", "cost": 300, "prompt": "Число DPI, например 1600"},
 }
 
 
@@ -127,6 +128,7 @@ class TwitchService:
         self._next_validate = 0.0
         # wired by app.main, called on the event-loop thread: (kind, redemption) -> "fulfill" | "cancel" | "keep"
         self.on_redemption: Callable[[str, dict], str] = lambda kind, r: "cancel"
+        self.on_login: Callable[[dict], None] = lambda user: None     # called from the sign-in thread
         self._http = _http                       # tests replace it
         self._load()
 
@@ -227,6 +229,10 @@ class TwitchService:
                 if gen == self._login_gen:
                     self.login_flow = None
             self._changed()
+            try:
+                self.on_login(dict(self.state["user"]))
+            except Exception:  # noqa: BLE001
+                log.exception("twitch: on_login failed")
             return
 
     def _login_failed(self, gen: int, text: str) -> None:
@@ -335,14 +341,14 @@ class TwitchService:
         return d
 
     # ------------------------------------------------------------------ rewards
-    def create_reward(self, kind: str, title: str | None = None, cost: Any = None, prompt: str | None = None) -> dict:
+    def create_reward(self, kind: str, cost: Any = None, prompt: str | None = None) -> dict:
         """Blocking. Creates the reward in the channel (owned by our client id) and remembers it."""
         if kind not in REWARDS:
             raise TwitchError("неизвестная награда")
         if not self.logged_in:
             raise TwitchError("сначала войдите через Twitch")
         d = REWARDS[kind]
-        title = (str(title or "").strip() or d["title"])[:45]
+        title = d["title"]
         try:
             cost = max(1, int(float(cost if cost not in (None, "") else d["cost"])))
         except (TypeError, ValueError):
@@ -354,8 +360,8 @@ class TwitchService:
                               body).get("data") or []
         except TwitchError as e:
             if "DUPLICATE" in str(e).upper():
-                raise TwitchError(f"в канале уже есть награда «{title}»: удалите её в Twitch или назовите иначе",
-                                  e.status) from None
+                raise TwitchError(f"в канале уже есть награда «{title}»: удалите или переименуйте её в Twitch "
+                                  "и нажмите ещё раз", e.status) from None
             if e.status == 403:
                 raise TwitchError("Twitch не дал создать награду: баллы канала есть только у компаньонов и "
                                   f"партнёров ({e})", e.status) from None

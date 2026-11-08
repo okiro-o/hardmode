@@ -197,16 +197,18 @@ def test_kill_event_has_finished_uid_and_collateral_not_wrong(client):
     assert client.app.state.app.roulette.history[-1]["uid"] == uid
 
 
-def test_chat_settings_masked_and_notifications_wired(client, monkeypatch):
-    from tests.test_chat import fake_jwt
+def _chat_as_streamer(app_state, sent):
+    """Chat goes from the streamer's Twitch account (0.24.0): stand in for the signed-in account."""
+    app_state.chat.twitch_send = lambda msg: sent.append(msg) or {"is_sent": True}
+    app_state.chat.twitch_ready = lambda: True
+
+
+def test_chat_settings_and_notifications_wired(client, monkeypatch):
     sent = []
     app_state = client.app.state.app
-    app_state.chat._sender = lambda jwt, cid, msg: sent.append(msg)
-    r = client.post("/api/settings", json={"chat": {"enabled": True, "se_jwt": fake_jwt(), "min_interval_s": 0.5}})
-    assert r.status_code == 200
-    assert "se_jwt" not in r.json()["chat"] and r.json()["chat"]["se_jwt_set"] is True
-    dumped = json.dumps(client.get("/api/state").json())
-    assert fake_jwt() not in dumped and '"se_jwt":' not in dumped   # the secret never leaves settings.json
+    _chat_as_streamer(app_state, sent)
+    r = client.post("/api/settings", json={"chat": {"enabled": True, "min_interval_s": 0.5}})
+    assert r.status_code == 200 and r.json()["chat"]["enabled"] is True
     # start -> start message; next -> weapon message; dpi apply -> dpi message
     client.post("/api/loadout/generate", json={})
     client.post("/api/session/start")
@@ -224,20 +226,15 @@ def test_chat_settings_masked_and_notifications_wired(client, monkeypatch):
 
 
 def test_viewer_values_via_chat_messages(client):
-    client.post("/api/settings", json={"dpi": {"backend": "fake", "viewer_enabled": True, "viewer_command": "!dpi"},
-                                       "chat": {"channel_login": ""}})
-    # learn the reward from the first redemption, then only that reward counts
-    client.post("/api/dpi/reward/learn", json={"on": True})
+    client.post("/api/settings", json={"dpi": {"backend": "fake", "viewer_enabled": True, "viewer_command": "!dpi"}})
+    # channel points come only from Hardmode's own rewards (Twitch API): a reward line in chat is ignored
     client.post("/api/twitch/chat", json={"user": "Alice", "text": "1600", "reward_id": "rw-1"})
-    d = client.get("/api/dpi/status").json()
-    assert d["settings"]["viewer_reward_id"] == "rw-1" and d["wheel"]["viewer"][0]["value"] == 1600
-    client.post("/api/twitch/chat", json={"user": "Bob", "text": "2000", "reward_id": "rw-other"})
-    assert len(client.get("/api/dpi/status").json()["wheel"]["viewer"]) == 1
+    assert client.get("/api/dpi/status").json()["wheel"]["viewer"] == []
     client.post("/api/twitch/chat", json={"user": "Carl", "text": "!dpi 2400"})
     client.post("/api/twitch/chat", json={"user": "Dan", "text": "hello 3000"})
     d = client.get("/api/dpi/status").json()
-    assert [e["value"] for e in d["wheel"]["viewer"]] == [1600, 2400]
-    assert 1600 in d["values"] and 2400 in d["values"]
+    assert [e["value"] for e in d["wheel"]["viewer"]] == [2400]
+    assert 2400 in d["values"] and "viewer_reward_id" not in d["settings"]
     assert client.post("/api/dpi/viewer/remove", json={"index": 0}).json()["ok"]
     client.post("/api/dpi/viewer/clear")
     assert client.get("/api/dpi/status").json()["wheel"]["viewer"] == []
@@ -250,7 +247,6 @@ def test_viewer_values_via_chat_messages(client):
 
 
 def test_slot_api_and_reject_notification(client):
-    from tests.test_chat import fake_jwt
     client.post("/api/loadout/generate", json={})
     lo = client.get("/api/state").json()["roulette"]["loadout"]
     old = lo["T"]["mid"][0]
@@ -261,8 +257,8 @@ def test_slot_api_and_reject_notification(client):
     assert client.post("/api/loadout/slot", json={"side": "T", "category": "mid", "old": new, "new": "mp9"}).status_code == 400
     sent = []
     st = client.app.state.app
-    st.chat._sender = lambda jwt, cid, msg: sent.append(msg)
-    client.post("/api/settings", json={"chat": {"enabled": True, "se_jwt": fake_jwt(), "min_interval_s": 0.5},
+    _chat_as_streamer(st, sent)
+    client.post("/api/settings", json={"chat": {"enabled": True, "min_interval_s": 0.5},
                                        "dpi": {"backend": "fake", "viewer_enabled": True, "viewer_command": "!dpi"}})
     client.post("/api/twitch/chat", json={"user": "Eve", "text": "!dpi 99999"})
     import time as _t

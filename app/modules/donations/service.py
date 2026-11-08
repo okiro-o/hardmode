@@ -16,9 +16,9 @@ request is queued even if the weapon is not recognised — the streamer picks it
 Replays: the first poll of an account only remembers the newest id. After a restart, donations that came
 in while the app was off are processed if they are at most ``FRESH_S`` old.
 
-Channel points: a Twitch reward «оружие в очередь» (``reward_id``, learnt from the first redemption after
-«Определить») puts the weapon named in the redemption text into the same viewer queue
-(``reward_request``). Points are cheap, so an unrecognised weapon is rejected instead of queued.
+Channel points: Hardmode's own Twitch reward «Добавить оружие в очередь» (app.twitch_api) puts the weapon
+named in the redemption text into the same viewer queue (``reward_request``). Points are cheap, so an
+unrecognised weapon is rejected (and the points refunded) instead of queued.
 """
 from __future__ import annotations
 
@@ -80,7 +80,6 @@ class DonationSettings:
     aliases_extra: str = ""             # user additions, «алиас = оружие» per line
     queue_command: str = "!очередь"     # chat command: the bot answers with the viewer's place in the queue
     reward_enabled: bool = False        # a channel-points reward puts a weapon into the queue
-    reward_id: str = ""                 # Twitch custom-reward-id of that reward (learnt from a redemption)
     da_poll_s: float = 5.0
     dp_poll_s: float = 20.0
 
@@ -90,7 +89,7 @@ class DonationSettings:
         config.assign_fields(s, d, "donations")
         for b in ("enabled", "reward_enabled"):
             setattr(s, b, config.to_bool(getattr(s, b)))
-        for k in ("da_client_id", "da_client_secret", "dp_api_key", "reward_id"):
+        for k in ("da_client_id", "da_client_secret", "dp_api_key"):
             v = getattr(s, k)
             setattr(s, k, v.strip()[:200] if isinstance(v, str) else "")
         s.aliases_extra = s.aliases_extra[:5000] if isinstance(s.aliases_extra, str) else ""
@@ -129,7 +128,6 @@ class DonationService:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._oauth_state: tuple[str, float] | None = None
-        self.learn_reward = False            # the next channel-points redemption becomes the weapon reward
         self.state: dict = {"da": {}, "dp": {}, "log": []}
         self.status_: dict = {"da": {"error": None, "last_poll": None}, "dp": {"error": None, "last_poll": None}}
         # actions, wired by app.main (all called on the event-loop thread)
@@ -192,7 +190,6 @@ class DonationService:
                 "log": self.state["log"][-20:][::-1],
                 "alias_errors": self.alias_errors,
                 "actions": ACTIONS,
-                "learn_reward": self.learn_reward,
             }
 
     def _changed(self) -> None:

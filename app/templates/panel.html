@@ -418,15 +418,7 @@
           <div class="form" style="margin-top:8px;">
             <label class="inline full"><input type="checkbox" data-key="donations.reward_enabled"> Оружие за баллы канала</label>
             <div class="full twr" id="twr-weapon"></div>
-            <label class="f"><span>Канал Twitch (логин)</span><input type="text" data-key="chat.channel_login" placeholder="например, mychannel"></label>
             <label class="f"><span>Команда в чате (пусто — выключена)</span><input type="text" data-key="donations.queue_command" placeholder="!очередь"></label>
-            <label class="f full learn-weapon"><span>Награда «оружие в очередь»</span>
-              <div class="inrow">
-                <input type="text" id="wreward-id" readonly placeholder="не задана">
-                <button id="btn-wlearn" onclick="learnWeaponReward()" title="Следующее выкупленное сообщение-награда станет этой наградой">Определить</button>
-                <button onclick="post('/api/queue/reward/learn',{on:false,clear:true})" title="Сбросить привязку">×</button>
-              </div></label>
-            <div class="hint full" id="wreward-hint"></div>
           </div>
         </details>
       </section>
@@ -534,19 +526,10 @@
       </section>
 
       <section id="sec-viewers">
-        <h2>DPI от зрителей <span class="right"><span class="chip" id="chip-twitch"><span class="dot"></span><b>чат: выкл</b></span></span></h2>
+        <h2>DPI от зрителей <span class="right"><span class="chip" id="chip-viewers"><span class="dot"></span><b>выкл</b></span></span></h2>
         <div class="form">
           <label class="inline full"><input type="checkbox" data-key="dpi.viewer_enabled"> Включено</label>
           <div class="full twr" id="twr-dpi"></div>
-          <div class="pair" id="pair-dpi">
-            <label class="f"><span>Канал Twitch (логин)</span><input type="text" data-key="chat.channel_login" placeholder="например, mychannel"></label>
-            <label class="f learn-dpi"><span>Награда за баллы канала</span>
-              <div class="inrow">
-                <input type="text" id="reward-id" readonly placeholder="не задана">
-                <button id="btn-learn" onclick="learnReward()" title="Следующее выкупленное сообщение-награда станет этой наградой">Определить</button>
-                <button onclick="post('/api/dpi/reward/learn',{on:false,clear:true})" title="Сбросить привязку">×</button>
-              </div></label>
-          </div>
           <label class="f"><span>Мин. DPI от зрителей</span><input type="number" min="100" max="44000" step="100" data-key="dpi.viewer_min"></label>
           <label class="f"><span>Макс. DPI от зрителей</span><input type="number" min="100" max="44000" step="100" data-key="dpi.viewer_max"></label>
         </div>
@@ -554,7 +537,7 @@
           <div class="form" style="margin-top:8px;">
             <label class="f"><span>Макс. зрительских значений на колесе</span><input type="number" min="1" max="60" data-key="dpi.viewer_max_values"></label>
             <label class="f"><span>Значений от одного зрителя</span><input type="number" min="1" max="10" data-key="dpi.viewer_per_user"></label>
-            <label class="f"><span>Чат-команда (пусто — только награда)</span><input type="text" data-key="dpi.viewer_command" placeholder="!dpi"></label>
+            <label class="f"><span>Чат-команда (пусто — выключена)</span><input type="text" data-key="dpi.viewer_command" placeholder="!dpi"></label>
             <label class="f"><span>Тест: добавить как зритель</span>
               <div class="inrow">
                 <input type="number" id="viewer-test-dpi" min="100" max="44000" step="100" placeholder="DPI" value="1600">
@@ -881,22 +864,7 @@
         <h2>Чат Twitch <span class="right"><span class="chip" id="chip-chat"><span class="dot"></span><b>выкл</b></span></span></h2>
         <div class="form">
           <label class="inline full"><input type="checkbox" data-key="chat.enabled"> Уведомления в чат включены</label>
-          <label class="f full"><span>Кто пишет в чат</span><select data-key="chat.provider"><option value="se">бот StreamElements</option><option value="twitch">мой аккаунт Twitch (вход — кнопка справа сверху)</option></select></label>
-          <div class="full se-only">
-            <div class="hint">Токен: streamelements.com → аккаунт → канал → Show secrets → JWT Token. Не показывайте его на стриме.</div>
-            <label class="f" style="margin-top:8px;"><span>JWT-токен StreamElements <span id="chat-jwt-state" class="muted"></span></span>
-              <div class="tokenbox">
-                <input type="password" id="chat-jwt" placeholder="вставьте токен сюда" autocomplete="off" spellcheck="false">
-                <button type="button" class="eye" onclick="toggleJwtVisible()" title="Показать/скрыть">👁</button>
-                <button type="button" class="primary" onclick="saveJwt()">Сохранить</button>
-                <button type="button" onclick="clearJwt()" title="Удалить сохранённый токен">Удалить</button>
-              </div></label>
-          </div>
-          <div class="row full">
-            <button class="se-only" onclick="verifyChat()">Проверить токен</button>
-            <button onclick="testChat()">Отправить тест в чат</button>
-            <button id="chat-join" onclick="joinChat()" style="display:none;">Подключить бота к каналу</button>
-          </div>
+          <div class="row full"><button onclick="testChat()">Отправить тест в чат</button></div>
           <div class="hint full" id="chat-status"></div>
           <h3 class="full">Когда писать</h3>
           <label class="inline"><input type="checkbox" data-key="chat.on_start"> Старт гонки вооружений</label>
@@ -980,7 +948,6 @@ async function installCfg() { const r = await post('/api/gsi/install', {}); if (
 async function applyManualDpi() { const v = parseInt($('dpi-manual').value, 10); if (!Number.isFinite(v)) return toast('Введите DPI', true); const r = await post('/api/dpi/apply', {value: v}); if (r && !r.ok) toast(r.error || 'Ошибка', true); }
 async function probeMouse() { toast('Ищу мышь…'); const r = await post('/api/dpi/probe', {}); if (r && !r.found) toast('Мышь не найдена: ' + (r.error||''), true); else if (r) toast('Мышь найдена: ' + (r.name || r.product)); }
 function fmtTime(t) { const d = new Date(t*1000); return d.toTimeString().slice(0,8); }
-function toggleJwtVisible() { const i = $('chat-jwt'); i.type = i.type === 'password' ? 'text' : 'password'; }
 // ------------------------------------------------------------------ custom dropdowns
 function closeAllDd() { document.querySelectorAll('.dd.open').forEach(d => d.classList.remove('open')); }
 function enhanceSelects() {
@@ -1011,9 +978,6 @@ function refreshDropdowns() { document.querySelectorAll('select[data-key]').forE
 enhanceSelects();
 
 async function toggleAutostart(el) { const r = await post('/api/autostart', {enabled: el.checked}); if (!r) { el.checked = !el.checked; return; } toast(r.enabled ? 'Автозапуск включён' : 'Автозапуск выключен'); }
-async function saveJwt() { const v = $('chat-jwt').value.trim(); if (!v) return toast('Вставьте токен', true); const r = await post('/api/settings', {chat: {se_jwt: v}}); if (r) { $('chat-jwt').value = ''; toast('Токен сохранён, нажмите «Проверить токен»'); refreshState(); } }
-async function clearJwt() { if (!confirm('Удалить токен StreamElements из настроек?')) return; const r = await post('/api/settings', {chat: {se_jwt: ''}}); if (r) { toast('Токен удалён'); refreshState(); } }
-async function verifyChat() { toast('Проверяю…'); const r = await post('/api/chat/verify', {}); if (!r) return; if (r.ok) toast('Канал: ' + (r.channel.username || r.channel.id)); else toast(r.error || 'Ошибка', true); refreshState(); }
 async function testChat() {
   const r = await post('/api/chat/test', {}); if (!r) return;
   if (!r.ok) { toast(r.error || 'Ошибка', true); refreshState(); return; }
@@ -1022,10 +986,7 @@ async function testChat() {
   refreshState();
 }
 async function quitApp() { if (!confirm('Завершить Hardmode? Виджеты в OBS перестанут обновляться.')) return; const r = await post('/api/quit', {}); if (r && r.ok) toast('Завершаю…'); }
-async function joinChat() { toast('Подключаю бота…'); const r = await post('/api/chat/join', {}); if (!r) return; if (r.ok) toast('Бот подключён к каналу'); else toast(r.error || 'Не удалось подключить бота', true); refreshState(); }
 async function addCustomDpi() { const v = parseInt($('custom-dpi').value, 10); if (!Number.isFinite(v)) return toast('Введите DPI', true); const r = await post('/api/dpi/values/add', {value: v}); if (r) { $('custom-dpi').value = ''; toast('Добавлено: ' + r.value); } }
-async function learnWeaponReward() { const r = await post('/api/queue/reward/learn', {on: true}); if (r) toast('Жду выкуп награды «оружие» в чате…'); }
-async function learnReward() { const r = await post('/api/dpi/reward/learn', {on: true}); if (r) toast('Жду выкуп награды в чате…'); }
 function renderWheel() {
   const d = S.dpi; if (!d) return;
   const w = d.wheel || {base_total: 0, consumed: [], viewer: []};
@@ -1039,32 +1000,21 @@ function renderWheel() {
   const home = +((d.settings && d.settings.home_dpi) || 0), homeColor = (d.settings && d.settings.home_color) || '#ff6b6b';
   $('wheel-chips').innerHTML = all.map(v => `<span class="chip2 ${consumed.has(v) && !viewerVals.has(v) ? 'consumed' : ''} ${viewerVals.has(v) ? 'viewer' : ''}" style="${v === home ? 'border-color:' + homeColor + ';box-shadow:inset 0 0 0 1px ' + homeColor : ''}" title="${consumed.has(v) ? 'уже выпало в этом круге' : viewerVals.has(v) ? 'от зрителя' : ''}">${v}${wts[String(v)] > 1 ? ' ×' + wts[String(v)] : ''}</span>`).join('') || '<span class="hint">—</span>';
   $('viewer-chips').innerHTML = (w.viewer||[]).length ? w.viewer.map((e,i) => `<span class="chip2 viewer">${e.value} <span class="u">${esc(e.user)}</span><button title="Убрать" onclick="post('/api/dpi/viewer/remove',{index:${i}})">×</button></span>`).join('') : '<span class="hint">зрители пока ничего не добавили</span>';
-  $('reward-id').value = (d.settings && d.settings.viewer_reward_id) || '';
-  $('btn-learn').textContent = d.learn_reward ? '⏳ жду награду…' : 'Определить';
-  const t = S.twitch || {}; const chip = $('chip-twitch');
-  if (!(d.settings && d.settings.viewer_enabled)) { chip.className = 'chip'; chip.querySelector('b').textContent = 'чат: выкл'; }
-  else if (!t.channel) { chip.className = 'chip warn'; chip.querySelector('b').textContent = 'чат: укажи канал'; }
-  else if (t.connected) { chip.className = 'chip ok'; chip.querySelector('b').textContent = `чат: #${t.channel} · ${t.messages} сообщ.`; }
-  else { chip.className = 'chip ' + (t.last_error ? 'bad' : 'warn'); chip.querySelector('b').textContent = t.last_error ? 'чат: ' + t.last_error : 'чат: подключаюсь…'; }
+  const own = ((S.twitch_account || {}).rewards || {}).dpi, chip = $('chip-viewers');
+  const tw = S.twitch_account || {}, on = d.settings && d.settings.viewer_enabled;
+  chip.className = 'chip ' + (!on ? '' : own && tw.logged_in ? 'ok' : 'warn');
+  chip.querySelector('b').textContent = !on ? 'выкл' : !tw.logged_in ? 'нет входа в Twitch' : own ? 'награда работает' : 'награда не создана';
 }
 function renderChat() {
   const c = S.chat; if (!c) return;
-  const st = c.settings || {};
-  const chip = $('chip-chat');
-  const viaTwitch = st.provider === 'twitch', tw = S.twitch_account || {};
-  document.querySelectorAll('#sec-chat .se-only').forEach(el => el.style.display = viaTwitch ? 'none' : '');
-  if (!st.enabled) { chip.className = 'chip'; chip.querySelector('b').textContent = 'выкл'; }
-  else if (viaTwitch && !tw.can_chat) { chip.className = 'chip warn'; chip.querySelector('b').textContent = 'нет входа в Twitch'; }
-  else if (viaTwitch) { chip.className = c.last_error ? 'chip bad' : 'chip ok'; chip.querySelector('b').textContent = c.last_error ? 'ошибка' : 'от @' + ((tw.user && tw.user.login) || ''); }
-  else if (!st.se_jwt_set) { chip.className = 'chip warn'; chip.querySelector('b').textContent = 'нет токена'; }
-  else if (c.last_error) { chip.className = 'chip bad'; chip.querySelector('b').textContent = 'ошибка'; }
-  else { chip.className = 'chip ok'; chip.querySelector('b').textContent = (c.channel && c.channel.username) ? '#' + c.channel.username : 'готов'; }
-  $('chat-jwt-state').textContent = st.se_jwt_set ? '— сохранён' : '— не задан';
-  const parts = []; if (c.channel && c.channel.username) parts.push(`канал ${c.channel.username}`);
-  const b = c.bot || {};
-  if (b.joined !== undefined) parts.push('бот ' + (b.joined ? 'в канале' : 'НЕ в канале') + (b.mod ? ', модератор' : ', не модератор') + (b.muted ? ', ЗАГЛУШЕН' : '') + (b.enabled === false ? ', выключен' : ''));
+  const st = c.settings || {}, tw = S.twitch_account || {};
+  const chip = $('chip-chat'), b = chip.querySelector('b');
+  if (!st.enabled) { chip.className = 'chip'; b.textContent = 'выкл'; }
+  else if (!tw.can_chat) { chip.className = 'chip warn'; b.textContent = 'нет входа в Twitch'; }
+  else if (c.last_error) { chip.className = 'chip bad'; b.textContent = 'ошибка'; }
+  else { chip.className = 'chip ok'; b.textContent = 'от @' + ((tw.user && tw.user.login) || ''); }
+  const parts = [];
   if (c.sent_count) parts.push(`отправлено ${c.sent_count}`); if (c.last_error) parts.push(`ошибка: ${c.last_error}`);
-  $('chat-join').style.display = b.joined === false && !viaTwitch ? '' : 'none';
   $('chat-status').textContent = parts.join(' · '); $('chat-status').style.display = parts.length ? '' : 'none';
   renderLog('chat-log', c.log);
 }
@@ -1197,17 +1147,9 @@ function renderRequests() {
   $('requests-history').innerHTML = q.history.length ? q.history.map(e => `<div class="muted">${e.status === 'done' ? '✓' : '×'} ${esc(e.name || 'не распознано')} — ${esc(e.user)}${e.auto ? ' (киллом)' : ''}</div>`).join('') : '<div class="muted">пока ничего</div>';
 }
 function renderWeaponReward() {
-  const d = S.donations; if (!d || !$('wreward-id')) return;
-  const st = d.settings || {}, t = S.twitch || {}, login = (S.chat && S.chat.settings || {}).channel_login;
-  const dpiId = (S.dpi && S.dpi.settings || {}).viewer_reward_id;
-  $('wreward-id').value = st.reward_id || '';
-  $('btn-wlearn').textContent = d.learn_reward ? '⏳ жду награду…' : 'Определить';
-  $('wreward-sum').textContent = st.reward_enabled ? (st.reward_id ? '— включено' : '— награда не задана') : '';
-  const own = ((S.twitch_account || {}).rewards || {}).weapon;
-  $('wreward-hint').textContent = own ? '' : !login ? 'Укажите логин канала: приложение читает чат анонимно.'
-    : st.reward_id && st.reward_id === dpiId ? 'Эта же награда задана для DPI: выкупы пойдут в очередь оружия. Для DPI определите другую награду.'
-    : !st.reward_id ? 'Создайте на Twitch награду с полем «Требовать ввод текста», нажмите «Определить» и выкупите её сами, написав название оружия.'
-    : t.connected ? `Чат #${t.channel} читается. Зритель пишет оружие в тексте награды: «AWP», «калаш», «плётку».` : (t.last_error ? 'Чат: ' + t.last_error : 'Подключаюсь к чату…');
+  const d = S.donations; if (!d || !$('wreward-sum')) return;
+  const st = d.settings || {}, own = ((S.twitch_account || {}).rewards || {}).weapon;
+  $('wreward-sum').textContent = st.reward_enabled ? (own ? '— включено' : '— награда не создана') : '';
 }
 function openAnyPicker(ev, title, onPick) {
   ev.stopPropagation();
@@ -1238,7 +1180,7 @@ async function twitchLogin() {
 }
 async function twitchLogout() { if (!confirm('Выйти из Twitch? Награды Hardmode останутся в канале, но баллы перестанут возвращаться сами.')) return; await post('/api/twitch/logout', {}); }
 async function twitchCreateReward(kind) {
-  const r = await post('/api/twitch/reward', {kind, title: $('twr-' + kind + '-title').value, cost: $('twr-' + kind + '-cost').value});
+  const r = await post('/api/twitch/reward', {kind, cost: $('twr-' + kind + '-cost').value});
   if (r) toast(r.ok ? 'Награда создана в Twitch' : r.error, !r.ok);
 }
 async function twitchDeleteReward(kind) { if (!confirm('Удалить эту награду из канала Twitch?')) return; const r = await post('/api/twitch/reward/delete', {kind}); if (r) toast(r.ok ? 'Награда удалена' : r.error, !r.ok); }
@@ -1277,20 +1219,19 @@ function renderTwitchRewards() {
   for (const kind of ['weapon', 'dpi']) {
     const box = $('twr-' + kind); if (!box) continue;
     const r = own[kind];
-    document.querySelectorAll('.learn-' + kind).forEach(el => el.style.display = r ? 'none' : '');
-    if (kind === 'dpi' && $('pair-dpi')) $('pair-dpi').classList.toggle('solo', !!r);
-    box.style.display = (!a.logged_in && !r) ? 'none' : '';
-    if (!a.logged_in && !r) { box.innerHTML = ''; continue; }
+    const d = defs[kind] || {};
+    if (!a.logged_in && !r) {
+      box.innerHTML = `<div class="hint">Чтобы зрители могли выкупать «${esc(d.title || '')}», войдите через Twitch кнопкой справа сверху.</div>`;
+      continue;
+    }
     if (r) {
       box.innerHTML = `<div class="own"><span class="t">Награда Hardmode <b>«${esc(r.title)}»</b>, ${r.cost} баллов: за отказ и × баллы возвращаются сами</span>`
         + (a.logged_in ? `<button onclick="twitchDeleteReward('${kind}')">Удалить из Twitch</button>` : '<span class="muted">нет входа в Twitch: возврат не работает</span>') + '</div>';
       continue;
     }
     if (box.contains(document.activeElement)) continue;
-    const d = defs[kind] || {};
-    box.innerHTML = `<label class="f"><span>Своя награда Hardmode: баллы за отказ возвращаются сами</span><div class="inrow">
-      <input type="text" id="twr-${kind}-title" maxlength="45" value="${esc(d.title || '')}">
-      <input type="number" id="twr-${kind}-cost" min="1" step="50" value="${d.cost || 300}" style="flex:0 0 96px;" title="стоимость в баллах">
+    box.innerHTML = `<label class="f"><span>Награда «${esc(d.title || '')}», стоимость в баллах</span><div class="inrow">
+      <input type="number" id="twr-${kind}-cost" min="1" step="50" value="${d.cost || 300}">
       <button class="primary" onclick="twitchCreateReward('${kind}')">Создать в Twitch</button></div></label>`;
   }
 }
@@ -1611,14 +1552,16 @@ function renderChecks() {
   const openTw = twa.logged_in ? '' : `<button onclick="twitchButton(event)">Войти через Twitch</button>`;
   if (twa.logged_in) opt.push(item(twa.error ? 'warn' : 'ok', 'Twitch-аккаунт', twa.error || `@${(twa.user || {}).login}: свои награды возвращают баллы сами` + (Object.keys(twa.rewards || {}).length ? '' : ' (наград Hardmode пока нет)'), openTw));
   else opt.push(item('off', 'Twitch-аккаунт', 'награды с автовозвратом баллов, чат от твоего имени', openTw));
-  if (cs.enabled && cs.provider === 'twitch') opt.push(item(twa.can_chat && !c.last_error ? 'ok' : 'warn', 'Чат от аккаунта Twitch', !twa.can_chat ? 'войдите через Twitch: кнопка справа сверху' : c.last_error ? 'ошибка: ' + c.last_error : `пишет @${(twa.user || {}).login}`, `<button onclick="testChat()">Отправить тест</button>` + openTw));
-  else if (cs.enabled) opt.push(item(cs.se_jwt_set && !c.last_error ? 'ok' : 'warn', 'Чат через StreamElements', !cs.se_jwt_set ? 'нет токена' : c.last_error ? 'ошибка: ' + c.last_error : (c.channel && c.channel.username ? `канал ${c.channel.username}` : 'токен сохранён, нажмите «Проверить»'), `<button onclick="verifyChat()">Проверить</button><button onclick="showMainTab('general')">Настроить</button>`));
-  else opt.push(item('off', 'Чат через StreamElements', 'сообщения о старте, оружии и DPI в чат', `<button onclick="showMainTab('general')">Настроить</button>`));
-  if (ds.viewer_enabled) opt.push(item(t.connected ? (ds.viewer_reward_id ? 'ok' : 'warn') : 'warn', 'Зрители: DPI за баллы канала', !cs.channel_login ? 'укажите логин канала' : !t.connected ? (t.last_error ? 'чат: ' + t.last_error : 'подключаюсь к чату…') : (ds.viewer_reward_id ? `чат #${t.channel} читается, награда задана` : `чат #${t.channel} читается; нажмите «Определить» и выкупите награду`), `<button onclick="showMainTab('dpi')">Настроить</button>`));
-  else opt.push(item('off', 'Зрители: DPI за баллы канала', 'зрители добавляют значения на колесо', `<button onclick="showMainTab('dpi')">Настроить</button>`));
-  const wr = (S.donations && S.donations.settings) || {}, openWr = `<button onclick="showMainTab('weapons'); $('wreward-box').open = true; $('wreward-box').scrollIntoView({block: 'center'})">Настроить</button>`;
-  if (wr.reward_enabled) opt.push(item(t.connected && wr.reward_id ? 'ok' : 'warn', 'Зрители: оружие за баллы канала', !cs.channel_login ? 'укажите логин канала' : !t.connected ? (t.last_error ? 'чат: ' + t.last_error : 'подключаюсь к чату…') : (wr.reward_id ? `чат #${t.channel} читается, награда задана` : 'нажмите «Определить» и выкупите награду'), openWr));
-  else opt.push(item('off', 'Зрители: оружие за баллы канала', 'награда кладёт оружие в зрительскую очередь', openWr));
+  const chatSet = `<button onclick="showMainTab('general'); $('sec-chat').scrollIntoView({block: 'start'})">Настроить</button>`;
+  if (cs.enabled) opt.push(item(twa.can_chat && !c.last_error ? 'ok' : 'warn', 'Чат Twitch', !twa.can_chat ? 'войдите через Twitch: кнопка справа сверху' : c.last_error ? 'ошибка: ' + c.last_error : `пишет @${(twa.user || {}).login}`, (twa.can_chat ? `<button onclick="testChat()">Отправить тест</button>` : openTw) + chatSet));
+  else opt.push(item('off', 'Чат Twitch', 'сообщения о старте, оружии и DPI в чат', chatSet));
+  const own = twa.rewards || {};
+  const rewardItem = (on, kind, title, idle, open) => on
+    ? opt.push(item(own[kind] && twa.logged_in ? 'ok' : 'warn', title, !twa.logged_in ? 'войдите через Twitch: кнопка справа сверху' : own[kind] ? `награда «${own[kind].title}» работает, баллы за отказ возвращаются сами` : 'создайте награду кнопкой «Создать в Twitch»', open))
+    : opt.push(item('off', title, idle, open));
+  rewardItem(ds.viewer_enabled, 'dpi', 'Зрители: DPI за баллы канала', 'зрители добавляют значения на колесо', `<button onclick="showMainTab('dpi'); $('sec-viewers').scrollIntoView({block: 'start'})">Настроить</button>`);
+  const wr = (S.donations && S.donations.settings) || {};
+  rewardItem(wr.reward_enabled, 'weapon', 'Зрители: оружие за баллы канала', 'награда кладёт оружие в зрительскую очередь', `<button onclick="showMainTab('weapons'); $('wreward-box').open = true; $('wreward-box').scrollIntoView({block: 'center'})">Настроить</button>`);
   const a = S.autostart || {};
   const dn = S.donations || {}, dns = dn.settings || {};
   if (dns.enabled) opt.push(item((dn.da && dn.da.connected) || (dn.dp && dn.dp.verified) ? 'ok' : 'warn', 'Донаты', [dn.da && dn.da.connected ? 'DonationAlerts подключён' : '', dn.dp && dn.dp.verified ? 'DonatePay: ключ принят' : ''].filter(Boolean).join(' · ') || 'не подключён ни один сервис', `<button onclick="showMainTab('donations')">Открыть</button>`));
@@ -1669,7 +1612,7 @@ es.addEventListener('stats', e => { if (!S) return; S.stats = JSON.parse(e.data)
 es.addEventListener('queue', e => { if (!S) return; S.queue = JSON.parse(e.data); renderRequests(); schedulePreview('queue'); });
 es.addEventListener('donations', e => { if (!S) return; S.donations = JSON.parse(e.data); renderDonations(); renderSettings(); renderChecks(); });
 es.addEventListener('obs', e => { if (!S) return; S.obs = JSON.parse(e.data); renderObs(); renderSettings(); renderChecks(); });
-es.addEventListener('twitch_account', e => { if (!S) return; S.twitch_account = JSON.parse(e.data); renderTwitch(); renderChat(); renderSettings(); renderChecks(); });
+es.addEventListener('twitch_account', e => { if (!S) return; S.twitch_account = JSON.parse(e.data); renderTwitch(); renderChat(); renderWheel(); renderWeaponReward(); renderSettings(); renderChecks(); });
 es.addEventListener('dpi_spin', e => { const sp = JSON.parse(e.data); toast('DPI-рулетка: ' + sp.value + (sp.reason === 'death' ? ' (смерть)' : '')); schedulePreview('dpi'); });
 es.addEventListener('kill', e => { const k = JSON.parse(e.data); if (k.ambiguous) toast('Килл: возможно граната — не засчитан'); else if (k.counted) toast(k.advanced ? 'Килл засчитан → следующее оружие' : 'Килл засчитан'); else if (S && S.roulette.running) toast('Килл не тем оружием', true); });
 es.onerror = () => { $('chip-sse').className='chip bad'; };

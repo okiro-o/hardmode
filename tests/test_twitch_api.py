@@ -147,11 +147,12 @@ def test_create_duplicate_delete_and_sync_rewards(tmp_path):
         svc.create_reward("weapon")                                    # not signed in
     _signed_in(svc)
     r = svc.create_reward("weapon", cost="250")
-    assert r["title"] == "Оружие в очередь" and r["cost"] == 250 and svc.managed_kind(r["id"]) == "weapon"
+    assert r["title"] == "Добавить оружие в очередь" and r["cost"] == 250 and svc.managed_kind(r["id"]) == "weapon"
     with pytest.raises(T.TwitchError) as e:
-        svc.create_reward("dpi", title="Оружие в очередь")
-    assert "уже есть награда" in str(e.value)
-    d = svc.create_reward("dpi", title="DPI", cost=100)
+        svc.create_reward("weapon")                                    # the same fixed title is already there
+    assert "уже есть награда «Добавить оружие в очередь»" in str(e.value)
+    d = svc.create_reward("dpi", cost=100)
+    assert d["title"] == "Добавить DPI в рулетку"
     del fake.rewards[d["id"]]                                          # deleted in the Twitch dashboard
     svc._sync_rewards()
     assert set(svc.state["rewards"]) == {"weapon"}
@@ -218,11 +219,11 @@ def test_app_rewards_refund_rejected_and_dismissed_requests(client, app_twitch, 
     monkeypatch.setattr(st.chat, "notify_request", lambda user, weapon, pos, result="": said.append((user, weapon)))
     monkeypatch.setattr(st.chat, "notify_reject", lambda user, reason: rejected.append((user, reason)) or True)
     r = client.post("/api/twitch/reward", json={"kind": "weapon", "cost": 300}).json()
-    assert r["ok"] and client.get("/api/settings").json()["donations"]["reward_id"] == r["reward"]["id"]
-    assert client.get("/api/settings").json()["donations"]["reward_enabled"] is True
+    assert r["ok"] and r["reward"]["title"] == "Добавить оружие в очередь"
+    assert client.get("/api/settings").json()["donations"]["reward_enabled"] is True     # switched on with it
     w = r["reward"]["id"]
     d = client.post("/api/twitch/reward", json={"kind": "dpi"}).json()["reward"]["id"]
-    assert client.get("/api/settings").json()["dpi"]["viewer_reward_id"] == d
+    assert client.get("/api/settings").json()["dpi"]["viewer_enabled"] is True
     fake.redeem(w, "a1", "Alice", "дай авп")
     fake.redeem(w, "a2", "Bob", "что-нибудь мощное")
     fake.redeem(d, "d1", "Carl", "1600")
@@ -255,21 +256,21 @@ def test_app_rewards_refund_rejected_and_dismissed_requests(client, app_twitch, 
     svc.poll_once()
     svc.flush_actions()
     assert fake.statuses["a4"] == "CANCELED"
-    # deleting the reward clears the ids it set
+    # deleting the reward forgets it
     assert client.post("/api/twitch/reward/delete", json={"kind": "weapon"}).json()["ok"]
-    assert client.get("/api/settings").json()["donations"]["reward_id"] == ""
+    assert "weapon" not in client.get("/api/twitch/account").json()["rewards"]
 
 
 def test_app_chat_from_the_streamer_account(client, app_twitch):
     st, svc, fake = app_twitch
-    client.post("/api/settings", json={"chat": {"enabled": True, "provider": "twitch"}})
-    assert st.chat.can_send()                                          # no StreamElements token needed
+    client.post("/api/settings", json={"chat": {"enabled": True}})
+    assert st.chat.can_send()                                          # the Twitch sign-in is all it needs
     assert client.post("/api/chat/test", json={}).json().get("ok") is True
     assert fake.chat and fake.chat[-1]
     svc.logout(revoke=False)
     assert not st.chat.can_send()
-    client.post("/api/settings", json={"chat": {"provider": "se"}})
-    assert client.get("/api/settings").json()["chat"]["provider"] == "se"
+    assert client.post("/api/chat/test", json={}).json()["ok"] is False
+    assert client.post("/api/chat/verify").status_code in (404, 405)   # the StreamElements routes are gone
 
 
 def test_app_login_with_the_builtin_client_id(client):

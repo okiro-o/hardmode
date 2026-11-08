@@ -281,6 +281,12 @@ def test_queue_describe_for_viewer():
     assert q.describe_for("Eve") == "у тебя нет заявок. В очереди 4: AWP, оружие уточняется, AK-47…"
 
 
+def _signed_in(st, login="mychannel"):
+    """Stand in for a Twitch sign-in (0.24.0: chat and channel come from the streamer's account)."""
+    st.twitch_api.state["token"] = {"access_token": "t", "refresh_token": "r", "expires_at": 4e9}
+    st.twitch_api.state["user"] = {"id": "42", "login": login, "display_name": login, "scopes": list(__import__("app.twitch_api", fromlist=["SCOPES"]).SCOPES)}
+
+
 def test_queue_chat_command_answers_and_starts_reader(client, monkeypatch):
     st = client.app.state.app
     replies, started = [], []
@@ -291,10 +297,11 @@ def test_queue_chat_command_answers_and_starts_reader(client, monkeypatch):
     client.post("/api/twitch/chat", json={"user": "Other", "text": "!ОЧЕРЕДЬ пж"})
     client.post("/api/twitch/chat", json={"user": "Other", "text": "!очередьх"})
     assert replies == [("Viewer_One", "твои заявки: AWP — №1"), ("Other", "у тебя нет заявок. В очереди 1: AWP")]
-    # the reader runs for the command only when the SE bot can answer and a channel is set
-    client.post("/api/settings", json={"chat": {"channel_login": "mychannel"}})
+    # the reader runs for the command only when the streamer is signed in (the channel) and chat is on
+    client.post("/api/settings", json={"chat": {"enabled": True}})
     assert started == []
-    client.post("/api/settings", json={"chat": {"enabled": True, "se_jwt": "x.e30.y"}})
+    _signed_in(st)
+    st.sync_twitch()
     assert started == ["mychannel"]
     client.post("/api/settings", json={"donations": {"queue_command": ""}})
     client.post("/api/twitch/chat", json={"user": "Viewer_One", "text": "!очередь"})
@@ -304,13 +311,14 @@ def test_queue_chat_command_answers_and_starts_reader(client, monkeypatch):
 def test_queue_reply_is_rate_limited_per_viewer():
     from app.chat import ChatNotifier, ChatSettings
     sent = []
-    n = ChatNotifier(ChatSettings(enabled=True, se_jwt="x"), lambda *a: None)
+    n = ChatNotifier(ChatSettings(enabled=True), lambda *a: None)
+    n.twitch_ready = lambda: True
     n._enqueue = lambda kind, msg: sent.append(msg)
     assert n.notify_queue_reply("Alice", "очередь пуста") is True
     assert n.notify_queue_reply("alice", "очередь пуста") is False
     assert n.notify_queue_reply("Bob", "очередь пуста") is True
     assert sent == ["📋 @Alice: очередь пуста", "📋 @Bob: очередь пуста"]
-    assert ChatNotifier(ChatSettings(), lambda *a: None).notify_queue_reply("A", "x") is False   # bot off
+    assert ChatNotifier(ChatSettings(enabled=True), lambda *a: None).notify_queue_reply("A", "x") is False   # no sign-in
 
 
 def test_queue_widget_page_and_settings(client):
@@ -330,80 +338,49 @@ def _reward_setup(client, monkeypatch):
     return st, said, rejected
 
 
-def test_weapon_reward_learn_and_queue(client, monkeypatch):
+def _redeem(st, kind, user, text, rid="r1"):
+    """A redemption of Hardmode's own reward, as app.twitch_api hands it over."""
+    return st._on_twitch_redemption(kind, {"id": rid, "reward_id": f"rw-{kind}", "user": user, "text": text})
+
+
+def test_weapon_reward_queues_known_weapons_and_refunds_the_rest(client, monkeypatch):
     st, said, rejected = _reward_setup(client, monkeypatch)
-    started = []
-    monkeypatch.setattr(st.twitch, "start", lambda channel: started.append(channel))
-    client.post("/api/settings", json={"chat": {"channel_login": "mychannel"}})
-    assert started == []                                           # nothing needs the reader yet
-    assert client.post("/api/queue/reward/learn", json={"on": True}).json() == {"learn": True}
-    assert started == ["mychannel"]                                # learning reads the chat even while off
-    assert client.get("/api/donations").json()["learn_reward"] is True
-    client.post("/api/twitch/chat", json={"user": "Viewer", "text": "дай авапу", "reward_id": "rw-weapon"})
-    s = client.get("/api/settings").json()["donations"]
-    assert s["reward_id"] == "rw-weapon" and client.get("/api/donations").json()["learn_reward"] is False
-    assert st.queue.pending() == [] and said == []                 # learnt, but the reward itself is still off
+    assert _redeem(st, "weapon", "Viewer", "дай авапу") == "cancel"            # the feature is off: refund
+    assert "выключено" in rejected[-1][1]
     client.post("/api/settings", json={"donations": {"reward_enabled": True}})
-    client.post("/api/twitch/chat", json={"user": "Viewer", "text": "дай авапу", "reward_id": "rw-weapon"})
+    assert _redeem(st, "weapon", "Viewer", "дай авапу", "r2") == "keep"        # waits in the queue
     q = client.get("/api/queue").json()["pending"]
-    assert [(e["weapon"], e["user"], e["source"], e["amount"]) for e in q] == [("awp", "Viewer", "reward", None)]
-    assert said == [("Viewer", "AWP", 1)] and rejected == []
-    # persisted: a restart keeps the reward id
-    from app import config
-    assert json.load(open(config.settings_path(), encoding="utf-8"))["donations"]["reward_id"] == "rw-weapon"
-
-
-def test_weapon_reward_rejects_unknown_weapon(client, monkeypatch):
-    st, said, rejected = _reward_setup(client, monkeypatch)
-    client.post("/api/settings", json={"donations": {"reward_enabled": True, "reward_id": "rw-weapon"}})
-    client.post("/api/twitch/chat", json={"user": "Viewer", "text": "лучшая пушка", "reward_id": "rw-weapon"})
-    assert st.queue.pending() == [] and said == []
-    assert rejected and rejected[0][0] == "Viewer" and "не понял" in rejected[0][1]
-
-
-def test_weapon_reward_and_dpi_reward_do_not_take_each_other(client, monkeypatch):
-    st, said, rejected = _reward_setup(client, monkeypatch)
-    added = []
-    monkeypatch.setattr(st.dpi, "add_viewer_value", lambda v, u, source="reward": added.append((v, u)) or {"ok": True})
-    # DPI reward without an id takes any reward, but not the weapon one
-    client.post("/api/settings", json={"dpi": {"viewer_enabled": True},
-                                       "donations": {"reward_enabled": True, "reward_id": "rw-weapon"}})
-    client.post("/api/twitch/chat", json={"user": "A", "text": "калаш", "reward_id": "rw-weapon"})
-    client.post("/api/twitch/chat", json={"user": "B", "text": "2400", "reward_id": "rw-dpi"})
-    assert [e["weapon"] for e in st.queue.pending()] == ["ak47"] and added == [("2400", "B")]
-    # the weapon reward switched off: its redemptions are ignored, never read as a DPI value
-    client.post("/api/settings", json={"donations": {"reward_enabled": False}})
-    client.post("/api/twitch/chat", json={"user": "C", "text": "1600", "reward_id": "rw-weapon"})
-    assert len(st.queue.pending()) == 1 and added == [("2400", "B")]
-    # a plain chat line is never a weapon request
-    client.post("/api/settings", json={"donations": {"reward_enabled": True}})
-    client.post("/api/twitch/chat", json={"user": "D", "text": "awp"})
+    assert [(e["weapon"], e["user"], e["source"], e["redemption"]["id"]) for e in q] == [("awp", "Viewer", "reward", "r2")]
+    assert said == [("Viewer", "AWP", 1)]
+    assert _redeem(st, "weapon", "Viewer", "лучшая пушка", "r3") == "cancel"
+    assert "не понял" in rejected[-1][1] and "Баллы вернул" in rejected[-1][1]
     assert len(st.queue.pending()) == 1
 
 
-def test_weapon_reward_side_alias_and_clear(client, monkeypatch):
+def test_weapon_reward_side_alias(client, monkeypatch):
     st, said, rejected = _reward_setup(client, monkeypatch)
-    started, stopped = [], []
-    monkeypatch.setattr(st.twitch, "start", lambda channel: started.append(channel))
-    monkeypatch.setattr(st.twitch, "stop", lambda: stopped.append(1))
-    client.post("/api/settings", json={"chat": {"channel_login": "mychannel"},
-                                       "donations": {"reward_enabled": True, "reward_id": "rw-weapon"}})
-    assert started[-1] == "mychannel"
+    client.post("/api/settings", json={"donations": {"reward_enabled": True}})
     st.roulette.side = "CT"
-    client.post("/api/twitch/chat", json={"user": "A", "text": "плётку", "reward_id": "rw-weapon"})
+    assert _redeem(st, "weapon", "A", "плётку") == "keep"
     e = st.queue.pending()[0]
     assert (e["weapon"], e["by_side"]) == ("scar20", "CT")
-    n = len(stopped)
-    client.post("/api/queue/reward/learn", json={"on": False, "clear": True})
-    assert client.get("/api/settings").json()["donations"]["reward_id"] == ""
-    client.post("/api/settings", json={"donations": {"reward_enabled": False}})
-    assert len(stopped) > n                                        # nothing needs the chat reader any more
+
+
+def test_dpi_reward_fulfils_or_refunds(client, monkeypatch):
+    st, said, rejected = _reward_setup(client, monkeypatch)
+    assert _redeem(st, "dpi", "A", "1600") == "cancel"                         # viewer values are off
+    client.post("/api/settings", json={"dpi": {"viewer_enabled": True}})
+    assert _redeem(st, "dpi", "A", "1600", "r2") == "fulfill"
+    assert _redeem(st, "dpi", "B", "99999", "r3") == "cancel"
+    assert [v["value"] for v in client.get("/api/state").json()["dpi"]["wheel"]["viewer"]] == [1600]
+    assert rejected[-1][0] == "B" and "Баллы вернул" in rejected[-1][1]
 
 
 def test_reward_request_chat_message():
     from app.chat import ChatNotifier, ChatSettings
     sent = []
-    n = ChatNotifier(ChatSettings(enabled=True, se_jwt="x"), lambda *a: None)
+    n = ChatNotifier(ChatSettings(enabled=True), lambda *a: None)
+    n.twitch_ready = lambda: True
     n._enqueue = lambda kind, msg: sent.append((kind, msg))
     n.notify_request("Alice", "AWP", 2)
     n.notify_request("Alice", "AK-47", 3)
@@ -511,9 +488,9 @@ def test_knife_and_zeus_only_when_in_the_race(client, monkeypatch):
     r = client.post("/api/queue/add", json={"weapon": "knife", "user": "A"})
     assert r.status_code == 400 and "Нож сейчас не принимается" in r.text
     # channel points and donations are refused with the reason in chat
-    client.post("/api/settings", json={"donations": {"reward_enabled": True, "reward_id": "rw", "enabled": True}})
-    client.post("/api/twitch/chat", json={"user": "B", "text": "зевс", "reward_id": "rw"})
-    assert rejected == [("B", "Zeus x27 сейчас не принимается")]
+    client.post("/api/settings", json={"donations": {"reward_enabled": True, "enabled": True}})
+    assert _redeem(st, "weapon", "B", "зевс") == "cancel"
+    assert rejected == [("B", "Zeus x27 сейчас не принимается. Баллы вернул")]
     res = client.post("/api/donations/test", json={"user": "C", "amount": 500, "message": "ножом!"}).json()
     assert res["ok"] is False and res["text"] == "Нож сейчас не принимается"
     assert st.queue.pending() == []
@@ -523,7 +500,7 @@ def test_knife_and_zeus_only_when_in_the_race(client, monkeypatch):
     # switched on in the race settings: accepted
     client.post("/api/settings", json={"roulette": {"include_knife": True, "include_zeus": True}})
     assert client.post("/api/queue/add", json={"weapon": "knife", "user": "A"}).status_code == 200
-    client.post("/api/twitch/chat", json={"user": "B", "text": "зевс", "reward_id": "rw"})
+    assert _redeem(st, "weapon", "B", "зевс", "r2") == "keep"
     assert [x["weapon"] for x in st.queue.pending()] == [None, "knife", "taser"]
 
 
@@ -532,13 +509,15 @@ def test_viewer_dpi_chat_follows_the_chat_switches_only(client, monkeypatch):
     said, rejected = [], []
     monkeypatch.setattr(st.chat, "notify_viewer", lambda user, dpi: said.append((user, dpi)))
     monkeypatch.setattr(st.chat, "notify_reject", lambda user, reason: rejected.append((user, reason)) or True)
-    # an old settings file with the removed DPI switch still loads (the key is ignored)
-    assert client.post("/api/settings", json={"dpi": {"viewer_enabled": True, "viewer_announce": False}}).status_code == 200
-    assert "viewer_announce" not in client.get("/api/settings").json()["dpi"]
-    client.post("/api/twitch/chat", json={"user": "A", "text": "1600", "reward_id": "any"})
-    client.post("/api/twitch/chat", json={"user": "B", "text": "много", "reward_id": "any"})
+    # an old settings file with removed DPI keys still loads (the keys are ignored)
+    body = {"dpi": {"viewer_enabled": True, "viewer_command": "!dpi", "viewer_announce": False, "viewer_reward_id": "x"}}
+    assert client.post("/api/settings", json=body).status_code == 200
+    got = client.get("/api/settings").json()
+    assert "viewer_announce" not in got["dpi"] and "viewer_reward_id" not in got["dpi"]
+    client.post("/api/twitch/chat", json={"user": "A", "text": "!dpi 1600"})
+    client.post("/api/twitch/chat", json={"user": "B", "text": "!dpi много"})
     assert said == [("A", 1600)] and rejected and rejected[0][0] == "B"
-    assert "queue_autocomplete" not in client.get("/api/settings").json()["donations"]
+    assert "queue_autocomplete" not in got["donations"] and "reward_id" not in got["donations"]
 
 
 def test_game_side_switch_reorders_the_queue(client, monkeypatch):
