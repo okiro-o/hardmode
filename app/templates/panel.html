@@ -312,7 +312,11 @@
   .twpop .logout:hover { background:rgba(255,94,94,.12); border-color:var(--bad); }
   .form .pair.solo { grid-template-columns: 1fr; }
   .twr-new { display:grid; grid-template-columns: 130px 1fr; gap:8px 12px; align-items:end; }
-  .twr-new button { grid-column: 1 / -1; justify-self:start; }
+  .twr-new .twr-desc, .twr-new button { grid-column: 1 / -1; }
+  .twr-new button { justify-self:start; }
+  .twr-desc { margin-top:8px; }
+  .twr-desc textarea { resize:vertical; min-height:64px; line-height:1.4; font: inherit; font-size:13.5px; }
+  .twr-desc + button { margin-top:8px; }
   .twr .own { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
   .twr .own .t { flex:1 1 220px; }
   .inrow { display:flex; gap:8px; align-items:stretch; }
@@ -1238,14 +1242,14 @@ function renderTwitchRewards() {
       const state = r.enabled === false ? ' · выключена в Twitch' : r.paused ? ' · на паузе в Twitch' : '';
       box.innerHTML = `<div class="own"><span class="t">Награда <b>«${esc(r.title)}»</b>, ${r.cost} баллов${state}. За отказ и × баллы возвращаются сами</span>`
         + (a.logged_in ? `<button onclick="twitchDeleteReward('${kind}')">Удалить из Twitch</button>` : '<span class="muted">нет входа в Twitch: возврат не работает</span>') + '</div>'
-        + (a.logged_in ? `<label class="f" style="margin-top:8px;"><span>Описание награды</span><div class="inrow">
-            <input type="text" id="twr-${kind}-prompt" maxlength="200" value="${esc(r.prompt || defPrompt)}">
-            <button onclick="twitchSavePrompt('${kind}')">Сохранить</button></div></label>` : '');
+        + (a.logged_in ? `<label class="f twr-desc"><span>Описание награды</span>
+            <textarea id="twr-${kind}-prompt" rows="3" maxlength="200">${esc(r.prompt || defPrompt)}</textarea></label>
+            <button onclick="twitchSavePrompt('${kind}')">Сохранить описание</button>` : '');
       continue;
     }
     box.innerHTML = `<div class="twr-new">
       <label class="f"><span>Стоимость, баллов</span><input type="number" id="twr-${kind}-cost" min="1" step="50" value="${d.cost || 300}"></label>
-      <label class="f"><span>Описание награды</span><input type="text" id="twr-${kind}-prompt" maxlength="200" value="${esc(defPrompt)}"></label>
+      <label class="f twr-desc"><span>Описание награды</span><textarea id="twr-${kind}-prompt" rows="3" maxlength="200">${esc(defPrompt)}</textarea></label>
       <button class="primary" onclick="twitchCreateReward('${kind}')">Создать в Twitch «${esc(d.title || '')}»</button></div>`;
   }
 }
