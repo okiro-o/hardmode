@@ -250,6 +250,9 @@
   .wcard .hint { position:absolute; right:6px; top:4px; font-size:10px; color:var(--muted); }
   .wcard .start { position:absolute; left:6px; top:4px; font-size:9.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); }
   /* loadout: categories as columns, weapons stacked, like the CS2 loadout screen */
+  /* the loadout tab: the block is exactly as wide as the three columns and centred (user's request) */
+  #tab-loadout .col { align-items:center; }
+  #sec-loadout { width:fit-content; max-width:100%; }
   .lcols { display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap; }
   .lcol { display:flex; flex-direction:column; gap:8px; width:168px; }
   .lcol .title { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:4px 0 2px; }
