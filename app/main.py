@@ -26,6 +26,7 @@ from . import autostart, config, docs, loadout as L, steam, weapons as W
 from .events import Broker
 from .gsi import GsiTracker, build_cfg
 from . import ingame as ingame_mod
+from .obs import ObsService, ObsSettings
 from .ingame import IngameOverlays
 from .chat import ChatNotifier, ChatSettings
 from .modules import dpi
@@ -98,6 +99,13 @@ class AppState:
         self.settings.donations = donation_settings.to_dict()
         self.donations = DonationService(donation_settings, os.path.join(config.data_dir(), "donations.json"),
                                          publish=self.broker.publish, call_threadsafe=self.broker.call_threadsafe)
+        try:
+            obs_settings = ObsSettings.from_dict(self.settings.obs)
+        except ValueError:
+            obs_settings = ObsSettings()
+        self.settings.obs = obs_settings.to_dict()
+        self.obs = ObsService(obs_settings, app_port=lambda: self.settings.port,
+                              publish_threadsafe=self.broker.publish_threadsafe)
         self.donations.add_wheel = lambda v, u: self.dpi.add_viewer_value(v, u, source="donation", per_user_limit=False)
         self.donations.queue_weapon = lambda w, text, user, amount, cur, by_side=None, source="donation": self.queue.add(
             w, text, user, amount, cur, source=source, by_side=by_side)
@@ -325,6 +333,7 @@ class AppState:
             "stats": self.stats.snapshot(),
             "queue": self.queue.snapshot(),
             "donations": self.donations.status(),
+            "obs": self.obs.status(),
             "urls": self.urls(),
             "gsi_token": self.settings.gsi_token,
             "port": self.settings.port,
@@ -342,6 +351,7 @@ class AppState:
                 "ingame": self.ingame_info(),
                 "roulette": self.roulette.settings.to_dict(), "dpi": self.dpi.settings.to_dict(),
                 "chat": self.chat.settings.public_dict(), "donations": self.donations.settings.public_dict(),
+                "obs": self.obs.settings.public_dict(),
                 "gsi_token": self.settings.gsi_token, "port": self.settings.port}
 
     def publish_gsi(self, force: bool = False) -> None:
@@ -440,6 +450,7 @@ def create_app() -> FastAPI:
         state.ingame.start()
         state.chat.start()
         state.donations.start()
+        state.obs.start()         # OBS may have been started first: reload its widget sources
         state.sync_twitch()
         stop = asyncio.Event()
 
@@ -634,6 +645,7 @@ def create_app() -> FastAPI:
         d["dpi"] = state.dpi.settings.to_dict()
         d["chat"] = state.chat.settings.public_dict()   # never expose the JWT
         d["donations"] = state.donations.settings.public_dict()   # nor the DA secret / DonatePay key
+        d["obs"] = state.obs.settings.public_dict()               # nor the obs-websocket password
         return d
 
     @app.post("/api/settings")
@@ -641,12 +653,12 @@ def create_app() -> FastAPI:
         body = await _json(request)
         s = state.settings
         rejected: list[str] = []
-        for section in ("roulette", "overlay", "dpi", "chat", "ingame", "donations"):
+        for section in ("roulette", "overlay", "dpi", "chat", "ingame", "donations", "obs"):
             if section in body and body[section] is not None and not isinstance(body[section], dict):
                 raise HTTPException(400, f"{section}: нужен объект")
         # sections validated by their own module: the module keeps the typed settings, AppSettings the dict copy
         for section, owner, label in (("chat", state.chat, "чата"), ("dpi", state.dpi, "DPI"), ("roulette", state.roulette, "рулетки"),
-                                      ("donations", state.donations, "донатов")):
+                                      ("donations", state.donations, "донатов"), ("obs", state.obs, "OBS")):
             if section in body:
                 try:
                     owner.update_settings(body[section] or {})
@@ -778,6 +790,15 @@ def create_app() -> FastAPI:
         log.info("quit requested via API")
         threading.Timer(0.3, do_quit).start()   # let the response leave first
         return {"ok": True, "version": VERSION}
+
+    @app.get("/api/obs")
+    async def obs_status() -> dict:
+        return state.obs.status()
+
+    @app.post("/api/obs/refresh")
+    async def obs_refresh() -> dict:
+        """Reload the widget browser sources in OBS now (also the connection check of the panel)."""
+        return await asyncio.get_running_loop().run_in_executor(None, state.obs.refresh, "manual")
 
     @app.get("/api/ingame/render")
     async def ingame_render(kind: str = "dpi") -> Response:

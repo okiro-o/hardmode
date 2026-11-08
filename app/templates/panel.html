@@ -280,7 +280,8 @@
   .dpibox .l { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; }
   .inlinefield { width:110px !important; }
   .form .pair { grid-column:1 / -1; display:grid; grid-template-columns: minmax(140px, .75fr) 1.25fr; gap:10px 16px; }
-  @media (max-width: 520px) { .form .pair { grid-template-columns: 1fr; } }
+  .form .pair.port { grid-template-columns: 140px 1fr; }    /* a port number needs little room */
+  @media (max-width: 520px) { .form .pair, .form .pair.port { grid-template-columns: 1fr; } }
   .inrow { display:flex; gap:8px; align-items:stretch; }
   .inrow > input { flex:1 1 auto; min-width:0; }
   .inrow > button { flex:0 0 auto; height:36px; padding:0 12px; }
@@ -555,6 +556,25 @@
   <!-- ================= TAB: LOOK (widgets, in-game overlay, colours) ================= -->
   <div class="tabpage" id="tab-look">
     <div class="col">
+<section id="sec-obs">
+        <h2>OBS: перезагрузка виджетов <span class="right"><span class="chip" id="chip-obs"><span class="dot"></span><b>выкл</b></span></span></h2>
+        <div class="form">
+          <label class="inline full"><input type="checkbox" data-key="obs.refresh_on_start"> Обновлять виджеты в OBS при запуске приложения</label>
+          <div class="pair port">
+            <label class="f"><span>Порт</span><input type="number" min="1" max="65535" step="1" data-key="obs.port"></label>
+            <label class="f"><span>Пароль WebSocket-сервера <span id="obs-pass-state" class="muted"></span></span>
+              <div class="tokenbox">
+                <input type="password" id="obs-pass" placeholder="вставьте пароль" autocomplete="off" spellcheck="false">
+                <button type="button" class="eye" onclick="toggleVisible('obs-pass')" title="Показать/скрыть">👁</button>
+                <button type="button" class="primary" onclick="saveSecret('password', 'obs-pass', 'obs')">Сохранить</button>
+                <button type="button" onclick="clearSecret('password', 'obs')" title="Удалить сохранённый пароль">Удалить</button>
+              </div></label>
+          </div>
+          <div class="row full"><button onclick="obsRefresh()">Обновить виджеты в OBS сейчас</button></div>
+          <div class="hint full" id="obs-status"></div>
+        </div>
+      </section>
+
 <section>
         <h2>Виджет оружия</h2>
         <div class="url"><span class="name">Ссылка для OBS</span><code id="url-weapons"></code><button onclick="copyText('url-weapons')">Копировать</button><a id="open-weapons" target="_blank"><button>Открыть</button></a></div>
@@ -1162,8 +1182,20 @@ function openAnyPicker(ev, title, onPick) {
 
 // ---- donations
 function toggleVisible(id) { const i = $(id); i.type = i.type === 'password' ? 'text' : 'password'; }
-async function saveSecret(key, inputId) { const v = $(inputId).value.trim(); if (!v) return toast('Пусто', true); const r = await post('/api/settings', {donations: {[key]: v}}); if (r) { $(inputId).value = ''; toast('Сохранено'); } }
-async function clearSecret(key) { if (!confirm('Удалить сохранённый ключ?')) return; const r = await post('/api/settings', {donations: {[key]: ''}}); if (r) toast('Удалено'); }
+async function saveSecret(key, inputId, group = 'donations') { const v = $(inputId).value.trim(); if (!v) return toast('Пусто', true); const r = await post('/api/settings', {[group]: {[key]: v}}); if (r) { $(inputId).value = ''; toast('Сохранено'); } }
+async function clearSecret(key, group = 'donations') { if (!confirm('Удалить сохранённый ключ?')) return; const r = await post('/api/settings', {[group]: {[key]: ''}}); if (r) toast('Удалено'); }
+async function obsRefresh() { toast('Подключаюсь к OBS…'); const r = await post('/api/obs/refresh', {}); if (r) toast(r.text, !r.ok); }
+function renderObs() {
+  const o = S.obs; if (!o || !$('chip-obs')) return;
+  const st = o.settings || {}, last = o.last || {};
+  $('obs-pass-state').textContent = st.password_set ? '— сохранён' : '— не задан';
+  const chip = $('chip-obs'), b = chip.querySelector('b');
+  if (last.t && !last.ok) { chip.className = 'chip bad'; b.textContent = 'ошибка'; }
+  else if (last.t && last.refreshed && last.refreshed.length) { chip.className = 'chip ok'; b.textContent = 'подключено'; }
+  else { chip.className = 'chip' + (st.refresh_on_start ? ' ok' : ''); b.textContent = st.refresh_on_start ? 'при запуске' : 'выкл'; }
+  $('obs-status').textContent = last.t ? `${fmtTime(last.t)} ${last.text}` : '';
+  $('obs-status').classList.toggle('bad', !!(last.t && !last.ok));
+}
 async function daConnect() { const r = await post('/api/donations/da/connect', {}); if (r && r.url) { window.open(r.url, '_blank'); toast('Разрешите доступ в открывшейся вкладке DonationAlerts'); } }
 async function dpVerify() { toast('Проверяю…'); const r = await post('/api/donations/dp/verify', {}); if (r) toast(r.ok ? 'DonatePay: ' + (r.user || 'ключ принят') : (r.error || 'Ошибка'), !r.ok); }
 async function testDonation() {
@@ -1316,7 +1348,7 @@ function renderLoadout() {
 
 function renderSettings() {
   const r = S.roulette.settings, o = S.overlay;
-  const src = { roulette: r, overlay: o, dpi: (S.dpi && S.dpi.settings) || {}, chat: (S.chat && S.chat.settings) || {}, ingame: S.ingame || {}, donations: (S.donations && S.donations.settings) || {} };
+  const src = { roulette: r, overlay: o, dpi: (S.dpi && S.dpi.settings) || {}, chat: (S.chat && S.chat.settings) || {}, ingame: S.ingame || {}, donations: (S.donations && S.donations.settings) || {}, obs: (S.obs && S.obs.settings) || {} };
   document.querySelectorAll('[data-key]').forEach(el => {
     if (document.activeElement === el) return;
     const [grp, key] = el.dataset.key.split('.'); const v = src[grp] ? src[grp][key] : undefined; if (v === undefined) return;
@@ -1458,6 +1490,10 @@ function renderChecks() {
   const opt = [];
   opt.push(item(qObs ? 'ok' : 'off', 'OBS: виджет зрительской очереди', qObs ? `подключён из OBS (${qObs})` : 'заявки зрителей на стриме: ' + (S.urls ? S.urls.overlay_requests || '' : ''), `<button onclick="copyText('url-requests')">Скопировать ссылку</button>`));
   opt.push(item(lObs ? 'ok' : 'off', 'OBS: виджет лоадаута', lObs ? `подключён из OBS (${lObs})` : 'для предматчевой паузы: ' + (S.urls ? S.urls.overlay_loadout : ''), `<button onclick="copyText('url-loadout')">Скопировать ссылку</button>`));
+  const ob = (S.obs && S.obs.settings) || {}, obLast = (S.obs && S.obs.last) || {};
+  const openObs = `<button onclick="showMainTab('look'); $('sec-obs').scrollIntoView({block: 'start'})">Настроить</button>`;
+  if (ob.refresh_on_start) opt.push(item(obLast.t && !obLast.ok ? 'warn' : 'ok', 'OBS: перезагрузка виджетов при запуске', obLast.t ? obLast.text : 'включена', `<button onclick="obsRefresh()">Обновить сейчас</button>` + openObs));
+  else opt.push(item('off', 'OBS: перезагрузка виджетов при запуске', 'если OBS открыт раньше приложения, виджеты в нём остаются пустыми', openObs));
   const cs = c.settings || {};
   if (cs.enabled) opt.push(item(cs.se_jwt_set && !c.last_error ? 'ok' : 'warn', 'Чат через StreamElements', !cs.se_jwt_set ? 'нет токена' : c.last_error ? 'ошибка: ' + c.last_error : (c.channel && c.channel.username ? `канал ${c.channel.username}` : 'токен сохранён, нажмите «Проверить»'), `<button onclick="verifyChat()">Проверить</button><button onclick="showMainTab('general')">Настроить</button>`));
   else opt.push(item('off', 'Чат через StreamElements', 'сообщения о старте, оружии и DPI в чат', `<button onclick="showMainTab('general')">Настроить</button>`));
@@ -1478,7 +1514,7 @@ function renderChecks() {
   if (!window.__tabChosen && bad && !window.__autoStartup) { window.__autoStartup = true; showMainTab('startup'); }
 }
 
-function renderAll() { if (!S) return; renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); renderChat(); renderWheel(); renderChecks(); renderIngame(); renderStats(); renderRequests(); renderDonations(); }
+function renderAll() { if (!S) return; renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); renderChat(); renderWheel(); renderChecks(); renderIngame(); renderStats(); renderRequests(); renderDonations(); renderObs(); }
 
 // ------------------------------------------------------------------ settings form
 document.querySelectorAll('[data-key]').forEach(el => {
@@ -1507,7 +1543,7 @@ es.addEventListener('snapshot', e => { S = JSON.parse(e.data); renderAll(); $('c
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { schedulePreview('dpi'); schedulePreview('weapons'); schedulePreview('queue'); } });
 es.addEventListener('roulette', e => { if (!S) return; S.roulette = JSON.parse(e.data); renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderChecks(); schedulePreview('weapons'); });
 es.addEventListener('gsi', e => { if (!S) return; const prev = S.gsi || {}; S.gsi = JSON.parse(e.data); renderHeader(); renderMisc(); renderChecks(); if (S.gsi.held !== prev.held || S.gsi.connected !== prev.connected) schedulePreview('weapons'); });
-es.addEventListener('settings', e => { if (!S) return; const d = JSON.parse(e.data); S.overlay = d.overlay; S.ingame = d.ingame || S.ingame; if (S.donations && d.donations) S.donations.settings = d.donations; S.gsi_token = d.gsi_token; S.port = d.port; if (S.dpi && d.dpi) S.dpi.settings = d.dpi; if (S.chat && d.chat) S.chat.settings = d.chat; if (d.roulette) S.roulette.settings = d.roulette; renderHeader(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); refreshState();  renderIngame(); schedulePreview('dpi'); schedulePreview('weapons'); schedulePreview('queue'); });
+es.addEventListener('settings', e => { if (!S) return; const d = JSON.parse(e.data); S.overlay = d.overlay; S.ingame = d.ingame || S.ingame; if (S.donations && d.donations) S.donations.settings = d.donations; if (S.obs && d.obs) S.obs.settings = d.obs; S.gsi_token = d.gsi_token; S.port = d.port; if (S.dpi && d.dpi) S.dpi.settings = d.dpi; if (S.chat && d.chat) S.chat.settings = d.chat; if (d.roulette) S.roulette.settings = d.roulette; renderHeader(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); refreshState();  renderIngame(); schedulePreview('dpi'); schedulePreview('weapons'); schedulePreview('queue'); });
 es.addEventListener('dpi', e => { if (!S) return; S.dpi = JSON.parse(e.data); renderDpi(); renderSettings(); renderWheel(); renderChecks(); renderWeaponReward(); schedulePreview('dpi'); });
 es.addEventListener('twitch', e => { if (!S) return; S.twitch = JSON.parse(e.data); renderWheel(); renderChecks(); renderWeaponReward(); });
 es.addEventListener('clients', e => { if (!S) return; S.clients = JSON.parse(e.data); renderChecks(); });
@@ -1515,6 +1551,7 @@ es.addEventListener('chat', e => { if (!S) return; S.chat = JSON.parse(e.data); 
 es.addEventListener('stats', e => { if (!S) return; S.stats = JSON.parse(e.data); renderStats(); });
 es.addEventListener('queue', e => { if (!S) return; S.queue = JSON.parse(e.data); renderRequests(); schedulePreview('queue'); });
 es.addEventListener('donations', e => { if (!S) return; S.donations = JSON.parse(e.data); renderDonations(); renderSettings(); renderChecks(); });
+es.addEventListener('obs', e => { if (!S) return; S.obs = JSON.parse(e.data); renderObs(); renderSettings(); renderChecks(); });
 es.addEventListener('dpi_spin', e => { const sp = JSON.parse(e.data); toast('DPI-рулетка: ' + sp.value + (sp.reason === 'death' ? ' (смерть)' : '')); schedulePreview('dpi'); });
 es.addEventListener('kill', e => { const k = JSON.parse(e.data); if (k.ambiguous) toast('Килл: возможно граната — не засчитан'); else if (k.counted) toast(k.advanced ? 'Килл засчитан → следующее оружие' : 'Килл засчитан'); else if (S && S.roulette.running) toast('Килл не тем оружием', true); });
 es.onerror = () => { $('chip-sse').className='chip bad'; };
