@@ -868,6 +868,11 @@ def create_app() -> FastAPI:
     async def obs_status() -> dict:
         return state.obs.status()
 
+    @app.post("/api/obs/check")
+    async def obs_check() -> dict:
+        """Is OBS reachable with the saved port/password? (the panel asks when Startup or OBS is shown)"""
+        return await asyncio.get_running_loop().run_in_executor(None, state.obs.check)
+
     @app.post("/api/obs/refresh")
     async def obs_refresh() -> dict:
         """Reload the widget browser sources in OBS now (also the connection check of the panel)."""

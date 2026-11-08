@@ -661,7 +661,6 @@
 <section id="sec-obs">
         <h2>OBS: перезагрузка виджетов <span class="right"><span class="chip" id="chip-obs"><span class="dot"></span><b>выкл</b></span></span></h2>
         <div class="form">
-          <label class="inline full"><input type="checkbox" data-key="obs.refresh_on_start"> Обновлять виджеты в OBS при запуске приложения</label>
           <div class="pair port">
             <label class="f"><span>Порт</span><input type="number" min="1" max="65535" step="1" data-key="obs.port"></label>
             <label class="f"><span>Пароль WebSocket-сервера <span id="obs-pass-state" class="muted"></span></span>
@@ -1228,16 +1227,25 @@ function renderTwitchRewards() {
   }
 }
 async function obsRefresh() { toast('Подключаюсь к OBS…'); const r = await post('/api/obs/refresh', {}); if (r) toast(r.text, !r.ok); }
+function obsState() {
+  // what the Startup item and the OBS block say: {cls, chip, text}
+  const o = S.obs || {}, st = o.settings || {}, conn = o.conn || {};
+  if (conn.state === 'ok') return {cls: 'ok', chip: 'подключено', text: 'подключено, виджеты обновляются при каждом запуске приложения'};
+  if (conn.state === 'auth') return st.password_set
+    ? {cls: 'bad', chip: 'неверный пароль', text: 'OBS не принял пароль WebSocket-сервера'}
+    : {cls: 'warn', chip: 'нужен пароль', text: 'в OBS включён пароль WebSocket-сервера: вставьте его на вкладке OBS'};
+  if (conn.state === 'offline') return {cls: 'off', chip: 'OBS не найден', text: 'OBS не запущен или в нём выключен WebSocket-сервер'};
+  if (conn.state === 'error') return {cls: 'bad', chip: 'ошибка', text: conn.text || 'ошибка'};
+  return {cls: 'off', chip: '—', text: 'проверяю связь с OBS…'};
+}
 function renderObs() {
   const o = S.obs; if (!o || !$('chip-obs')) return;
-  const st = o.settings || {}, last = o.last || {};
+  const st = o.settings || {}, last = o.last || {}, os = obsState();
   $('obs-pass-state').textContent = st.password_set ? '— сохранён' : '— не задан';
-  const chip = $('chip-obs'), b = chip.querySelector('b');
-  if (last.t && !last.ok) { chip.className = 'chip bad'; b.textContent = 'ошибка'; }
-  else if (last.t && last.refreshed && last.refreshed.length) { chip.className = 'chip ok'; b.textContent = 'подключено'; }
-  else { chip.className = 'chip' + (st.refresh_on_start ? ' ok' : ''); b.textContent = st.refresh_on_start ? 'при запуске' : 'выкл'; }
-  $('obs-status').textContent = last.t ? `${fmtTime(last.t)} ${last.text}` : '';
-  $('obs-status').classList.toggle('bad', !!(last.t && !last.ok));
+  const chip = $('chip-obs');
+  chip.className = 'chip' + (os.cls === 'off' ? '' : ' ' + os.cls); chip.querySelector('b').textContent = os.chip;
+  $('obs-status').textContent = os.text + (last.t ? ` · ${fmtTime(last.t)} ${last.text}` : '');
+  $('obs-status').classList.toggle('bad', os.cls === 'bad');
 }
 async function daConnect() { const r = await post('/api/donations/da/connect', {}); if (r && r.url) { window.open(r.url, '_blank'); toast('Разрешите доступ в открывшейся вкладке DonationAlerts'); } }
 async function dpVerify() { toast('Проверяю…'); const r = await post('/api/donations/dp/verify', {}); if (r) toast(r.ok ? 'DonatePay: ' + (r.user || 'ключ принят') : (r.error || 'Ошибка'), !r.ok); }
@@ -1328,6 +1336,7 @@ async function loadHelp() {
 function showMainTab(name) {
   if (name === 'help') loadHelp();
   if (name === 'look') setTimeout(() => { schedulePreview('dpi'); schedulePreview('weapons'); schedulePreview('queue'); }, 0);
+  if ((name === 'startup' || name === 'obs') && typeof S !== 'undefined' && S) post('/api/obs/check', {});   // fresh OBS state
   document.querySelectorAll('.tabpage').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
   document.querySelectorAll('.maintabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   try { localStorage.setItem('cs2r.tab', name); } catch (e) {}
@@ -1528,10 +1537,9 @@ function renderChecks() {
   const opt = [];
   opt.push(item(qObs ? 'ok' : 'off', 'OBS: виджет зрительской очереди', qObs ? `подключён из OBS (${qObs})` : 'заявки зрителей на стриме: ' + (S.urls ? S.urls.overlay_requests || '' : ''), `<button onclick="copyText('url-requests')">Скопировать ссылку</button>`));
   opt.push(item(lObs ? 'ok' : 'off', 'OBS: виджет лоадаута', lObs ? `подключён из OBS (${lObs})` : 'для предматчевой паузы: ' + (S.urls ? S.urls.overlay_loadout : ''), `<button onclick="copyText('url-loadout')">Скопировать ссылку</button>`));
-  const ob = (S.obs && S.obs.settings) || {}, obLast = (S.obs && S.obs.last) || {};
   const openObs = `<button onclick="showMainTab('obs'); $('sec-obs').scrollIntoView({block: 'start'})">Настроить</button>`;
-  if (ob.refresh_on_start) opt.push(item(obLast.t && !obLast.ok ? 'warn' : 'ok', 'OBS: перезагрузка виджетов при запуске', obLast.t ? obLast.text : 'включена', `<button onclick="obsRefresh()">Обновить сейчас</button>` + openObs));
-  else opt.push(item('off', 'OBS: перезагрузка виджетов при запуске', 'если OBS открыт раньше приложения, виджеты в нём остаются пустыми', openObs));
+  const os = obsState(), obsConn = ((S.obs || {}).conn || {}).state === 'ok';
+  opt.push(item(os.cls === 'bad' ? 'warn' : os.cls, 'OBS: перезагрузка виджетов при запуске', os.text, (obsConn ? `<button onclick="obsRefresh()">Обновить сейчас</button>` : '') + openObs));
   const cs = c.settings || {};
   const twa = S.twitch_account || {};
   const openTw = twa.logged_in ? '' : `<button onclick="twitchButton(event)">Войти через Twitch</button>`;

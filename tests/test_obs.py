@@ -11,11 +11,11 @@ from app import obs
 class FakeObs:
     """A tiny obs-websocket 5 server: Hello (with or without auth), Identify, three request types."""
 
-    def __init__(self, password: str | None = "secret", inputs: dict | None = None) -> None:
+    def __init__(self, password: str | None = "secret", inputs: dict | None = None, port: int = 0) -> None:
         self.password = password
         self.inputs = inputs or {}
         self.pressed: list[tuple[str, str]] = []
-        self.server = serve(self.handler, "127.0.0.1", 0)
+        self.server = serve(self.handler, "127.0.0.1", port)
         self.port = self.server.socket.getsockname()[1]
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
@@ -124,12 +124,12 @@ def test_service_status_start_and_settings(fake_obs):
     assert not r["ok"] and "не отвечает" in r["text"]
     with pytest.raises(ValueError):
         obs.ObsSettings.from_dict({"port": 0})
-    assert obs.ObsSettings.from_dict({"refresh_on_start": "1", "port": "4455"}).refresh_on_start is True
+    assert obs.ObsSettings.from_dict({"refresh_on_start": "1", "port": "4455"}).port == 4455   # old key ignored
 
 
 def test_api_settings_hide_the_password_and_refresh_route(client, fake_obs):
     o = fake_obs(password="pw-Q7x-secret", inputs={"W": {"url": "http://127.0.0.1:17890/overlay/weapons"}})
-    r = client.post("/api/settings", json={"obs": {"port": o.port, "password": "pw-Q7x-secret", "refresh_on_start": True}})
+    r = client.post("/api/settings", json={"obs": {"port": o.port, "password": "pw-Q7x-secret"}})
     assert r.status_code == 200 and "pw-Q7x" not in r.text and r.json()["obs"]["password_set"] is True
     assert "pw-Q7x" not in client.get("/api/state").text and "pw-Q7x" not in client.get("/api/obs").text
     res = client.post("/api/obs/refresh").json()
@@ -138,3 +138,68 @@ def test_api_settings_hide_the_password_and_refresh_route(client, fake_obs):
     assert client.post("/api/settings", json={"obs": {"port": "abc"}}).status_code == 400
     client.post("/api/settings", json={"obs": {"password": ""}})
     assert client.get("/api/settings").json()["obs"]["password_set"] is False
+
+
+def _service(port, password="pw"):
+    published = []
+    svc = obs.ObsService(obs.ObsSettings(port=port, password=password), app_port=lambda: 17890,
+                         publish_threadsafe=lambda ev, d: published.append((ev, d)))
+    return svc, published
+
+
+def test_start_retries_until_obs_answers(fake_obs):
+    """OBS and the app start together at Windows login: the WebSocket may answer only after a while."""
+    import time
+    port = _free_port()
+    svc, _ = _service(port, "secret")
+    started = []
+
+    def later():
+        time.sleep(0.4)
+        started.append(fake_obs(inputs={"W": {"url": "http://127.0.0.1:17890/overlay/weapons"}}, port=port))
+    threading.Thread(target=later, daemon=True).start()
+    t0 = time.monotonic()
+    res = svc.start_refresh(retry_for=5, every=0.1)
+    assert res["ok"] and res["refreshed"] == ["W"] and svc.conn["state"] == "ok"
+    assert started[0].pressed == [("W", "refreshnocache")] and time.monotonic() - t0 < 4
+
+
+def test_start_gives_up_on_a_wrong_password_and_after_the_window(fake_obs):
+    import time
+    o = fake_obs(password="right")
+    svc, _ = _service(o.port, "wrong")
+    t0 = time.monotonic()
+    res = svc.start_refresh(retry_for=5, every=0.1)
+    assert not res["ok"] and svc.conn["state"] == "auth" and time.monotonic() - t0 < 2   # no pointless retries
+    nobody, _ = _service(_free_port())
+    t0 = time.monotonic()
+    nobody.start_refresh(retry_for=0.3, every=0.1)
+    assert nobody.conn["state"] == "offline" and time.monotonic() - t0 < 3
+    assert "ещё не был запущен" in nobody.last["text"]
+
+
+def test_connection_check_states_and_settings_change(fake_obs):
+    import time
+    o = fake_obs(password="right")
+    svc, published = _service(o.port, "")
+    assert svc.check(force=True)["state"] == "auth"                    # OBS wants a password, none saved
+    svc.update_settings({"password": "right"})                         # a new password: checked by itself
+    for _ in range(40):
+        if svc.conn.get("state") == "ok":
+            break
+        time.sleep(0.05)
+    assert svc.conn["state"] == "ok" and o.pressed == []                # a check never touches the sources
+    assert svc.check()["state"] == "ok"                                 # throttled: the last answer
+    svc.update_settings({"port": _free_port()})
+    for _ in range(40):
+        if svc.conn.get("state") == "offline":
+            break
+        time.sleep(0.05)
+    assert svc.conn["state"] == "offline" and published[-1][1]["conn"]["state"] == "offline"
+
+
+def test_api_obs_check_route(client, fake_obs):
+    o = fake_obs(password=None)
+    client.post("/api/settings", json={"obs": {"port": o.port}})
+    assert client.post("/api/obs/check").json()["state"] == "ok"
+    assert client.get("/api/state").json()["obs"]["conn"]["state"] == "ok"

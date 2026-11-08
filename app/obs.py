@@ -30,11 +30,12 @@ from . import config
 
 log = logging.getLogger("hardmode.obs")
 DEFAULT_PORT = 4455
+START_RETRY_FOR_S = 180.0   # OBS and the app often start together at Windows login: OBS's WebSocket may answer late
+START_RETRY_EVERY_S = 5.0
 
 
 @dataclass
 class ObsSettings:
-    refresh_on_start: bool = False      # reload the widget sources in OBS when the app starts
     port: int = DEFAULT_PORT
     password: str = ""                  # secret: obs-websocket server password
 
@@ -42,7 +43,6 @@ class ObsSettings:
     def from_dict(cls, d: dict | None) -> "ObsSettings":
         s = cls()
         config.assign_fields(s, d, "obs")
-        s.refresh_on_start = config.to_bool(s.refresh_on_start)
         try:
             s.port = int(float(s.port))
         except (TypeError, ValueError):
@@ -171,6 +171,12 @@ class ObsSession:
         return d.get("responseData") or {}
 
 
+def check_connection(port: int, password: str, timeout: float = 3.0) -> None:
+    """Connect and identify only (no source is touched). Raises ObsError with ``kind`` on failure."""
+    with ObsSession(port, password, timeout):
+        pass
+
+
 def refresh_widgets(port: int, password: str, app_port: int, timeout: float = 4.0) -> dict:
     """Reload every browser source showing this app. Returns {refreshed: [names], browser_sources: n}."""
     with ObsSession(port, password, timeout) as obs:
@@ -207,17 +213,45 @@ class ObsService:
         self._app_port = app_port
         self._publish = publish_threadsafe
         self._lock = threading.Lock()
-        self.last: dict = {}                 # {t, ok, text, refreshed}
+        self.last: dict = {}                 # last refresh: {t, ok, text, refreshed}
+        # last connection check: {t, state: ok|offline|auth|error, text}. The streamer enabling the WebSocket
+        # server in OBS expected the Startup item to turn green by itself (2026-11-08), so the app checks on
+        # its own: at start, after the port/password change, and when the panel shows Startup or OBS.
+        self.conn: dict = {}
 
     def update_settings(self, patch: dict) -> None:
         patch = dict(patch or {})
         merged = {**self.settings.to_dict(), **patch}
         if "password" not in patch:          # absent or "password_set" keeps the stored secret
             merged["password"] = self.settings.password
-        self.settings = ObsSettings.from_dict(merged)
+        new = ObsSettings.from_dict(merged)
+        changed = (new.port, new.password) != (self.settings.port, self.settings.password)
+        self.settings = new
+        if changed:
+            threading.Thread(target=self.check, kwargs={"force": True}, name="obs-check", daemon=True).start()
 
     def status(self) -> dict:
-        return {"settings": self.settings.public_dict(), "last": dict(self.last)}
+        return {"settings": self.settings.public_dict(), "last": dict(self.last), "conn": dict(self.conn)}
+
+    def _set_conn(self, state: str, text: str) -> None:
+        self.conn = {"t": time.time(), "state": state, "text": text}
+
+    def check(self, force: bool = False) -> dict:
+        """Blocking: is OBS reachable with these settings? Throttled to one real check per 10 s unless forced."""
+        with self._lock:
+            if not force and self.conn and time.time() - self.conn["t"] < 10:
+                return dict(self.conn)
+            s = self.settings
+            try:
+                check_connection(s.port, s.password)
+                self._set_conn("ok", "подключено к OBS")
+            except ObsError as e:
+                self._set_conn(e.kind if e.kind in ("offline", "auth") else "error", str(e))
+            except Exception as e:  # noqa: BLE001
+                self._set_conn("error", f"{type(e).__name__}: {e}")
+            out = dict(self.conn)
+        self._publish("obs", self.status())
+        return out
 
     def refresh(self, reason: str = "manual") -> dict:
         """Blocking. Never raises: the result goes to ``last`` and is published as the ``obs`` event."""
@@ -229,7 +263,9 @@ class ObsService:
                 text = (f"обновлено источников: {n} ({', '.join(res['refreshed'])})" if n else
                         "в OBS нет источников-браузеров с адресом Hardmode")
                 self.last = {"t": time.time(), "ok": True, "text": text, "refreshed": res["refreshed"], "reason": reason}
+                self._set_conn("ok", "подключено к OBS")
             except ObsError as e:
+                self._set_conn(e.kind if e.kind in ("offline", "auth") else "error", str(e))
                 if reason == "start" and e.kind == "offline":
                     # the app was started first: the widgets load by themselves when OBS opens
                     self.last = {"t": time.time(), "ok": True, "refreshed": [], "reason": reason,
@@ -245,13 +281,22 @@ class ObsService:
         self._publish("obs", self.status())
         return out
 
-    def start(self) -> None:
-        """At app start: once our server listens, reload the widget sources (OBS may have been first)."""
-        if not self.settings.refresh_on_start:
-            return
+    def start_refresh(self, retry_for: float = START_RETRY_FOR_S, every: float = START_RETRY_EVERY_S) -> dict:
+        """Blocking. Reload our widgets as soon as OBS answers. While OBS is not reachable (it may still be
+        starting next to the app — then its pages may have loaded before our server did) retry for a while;
+        a wrong password or another error needs the streamer, so it stops there."""
+        end = time.monotonic() + retry_for
+        while True:
+            res = self.refresh("start")
+            if self.conn.get("state") != "offline" or time.monotonic() >= end:
+                return res
+            time.sleep(every)
 
+    def start(self) -> None:
+        """At app start, always (0.25.1: the on/off switch was removed — nobody wants blank widgets): once our
+        server listens, reload the widget sources in OBS."""
         def run() -> None:
             if wait_for_port(self._app_port()):
                 time.sleep(0.5)
-                self.refresh("start")
+                self.start_refresh()
         threading.Thread(target=run, name="obs-refresh", daemon=True).start()
