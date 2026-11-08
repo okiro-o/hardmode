@@ -297,14 +297,19 @@
   .twbtn .twdot { width:8px; height:8px; border-radius:50%; background:#fff; }
   .twbtn.in { background:var(--panel2); border-color:var(--line); color:var(--text); }
   .twbtn.in .twdot { background:#9146ff; box-shadow:0 0 8px #9146ff; }
+  .twbtn.in:hover, .twbtn.bad:hover { background:var(--panel3); border-color:var(--line2); }
   .twbtn.wait .twdot { background:var(--accent); }
   .twbtn.bad { background:var(--panel2); border-color:var(--bad); color:var(--text); }
   .twbtn.bad .twdot { background:var(--bad); }
-  .twpop { position:absolute; right:0; top:calc(100% + 8px); width:300px; display:none; z-index:30; background:var(--panel2);
+  .twpop { position:absolute; right:0; top:calc(100% + 8px); width:max-content; min-width:230px; max-width:320px; display:none; z-index:30; background:var(--panel2);
            border:1px solid var(--line2); border-radius:12px; padding:12px 14px; box-shadow:0 16px 40px rgba(0,0,0,.6); }
   .twpop.open { display:flex; flex-direction:column; gap:10px; }
   .twpop .code { font-size:24px; letter-spacing:.14em; color:var(--accent); font-weight:700; font-family: ui-monospace, Consolas, monospace; }
   .twpop .err { color:var(--bad); font-size:12.5px; }
+  .twpop .who { font-size:13.5px; color:var(--muted); }
+  .twpop .who b { display:block; margin-top:2px; font-size:15px; color:var(--text); }
+  .twpop .logout { width:100%; background:transparent; border:1px solid var(--bad); color:var(--bad); font-weight:600; }
+  .twpop .logout:hover { background:rgba(255,94,94,.12); border-color:var(--bad); }
   .form .pair.solo { grid-template-columns: 1fr; }
   .twr .own { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
   .twr .own .t { flex:1 1 220px; }
@@ -1255,10 +1260,10 @@ function renderTwitch() {
     pop.innerHTML = `<div>Нажмите «Разрешить» на странице Twitch. Код должен совпасть:</div><div class="code">${esc(a.login_flow.user_code || '')}</div>`
       + `<a href="${esc(a.login_flow.uri || 'https://www.twitch.tv/activate')}" target="_blank" rel="noopener"><button class="primary">Открыть страницу Twitch</button></a>`;
   } else if (a.logged_in) {
-    pop.innerHTML = `<div>Вошли как <b>${esc(u.display_name || u.login || '')}</b></div>`
+    pop.innerHTML = `<div class="who">Вы вошли как<b>${esc(u.display_name || u.login || '')}</b></div>`
       + (u.broadcaster_type ? '' : '<div class="muted">Награды за баллы есть только у компаньонов и партнёров Twitch.</div>')
       + (a.error ? `<div class="err">${esc(a.error)}</div>` : '')
-      + `<div><button onclick="twitchLogout()">Выйти</button></div>`;
+      + `<button class="logout" onclick="twitchLogout()">Выйти</button>`;
   } else {
     pop.innerHTML = a.error ? `<div class="err">${esc(a.error)}</div>` : '';
     pop.classList.remove('open');
