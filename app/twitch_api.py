@@ -49,7 +49,8 @@ SCOPES = ("channel:manage:redemptions", "user:write:chat")
 DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
 POLL_S = 3.0
 VALIDATE_S = 3600.0
-SYNC_S = 60.0            # how often our rewards are re-read from Twitch (deleted? guarded settings changed?)
+SYNC_S = 30.0            # how often our rewards are re-read from Twitch (deleted? paused? guarded settings changed?)
+SYNC_ON_VIEW_S = 5.0     # the panel asks for a fresh read when the streamer looks; at most this often
 FRESH_S = 600.0
 MAX_HANDLED = 1000
 USER_AGENT = "hardmode/1.0"
@@ -130,6 +131,7 @@ class TwitchService:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._next_validate = 0.0
+        self._last_sync = 0.0
         # wired by app.main, called on the event-loop thread: (kind, redemption) -> "fulfill" | "cancel" | "keep"
         self.on_redemption: Callable[[str, dict], str] = lambda kind, r: "cancel"
         self.on_login: Callable[[dict], None] = lambda user: None     # called from the sign-in thread
@@ -420,9 +422,20 @@ class TwitchService:
         self._changed()
         return dict(r)
 
+    def sync_now(self) -> dict:
+        """Blocking: re-read our rewards right away (the panel asks when the streamer opens a tab with them, so a
+        reward paused or switched off in Twitch shows up at once — user's report 2026-11-08). Never raises."""
+        if self.logged_in and time.monotonic() - self._last_sync >= SYNC_ON_VIEW_S:
+            try:
+                self._sync_rewards()
+            except TwitchError as e:
+                log.warning("twitch: sync: %s", e)
+        return self.status()
+
     def _sync_rewards(self) -> None:
         """Re-read our rewards: forget the ones deleted in Twitch, take over title/cost/description/pause edited
         there, and put back the two settings the app relies on (text required, no auto-fulfil)."""
+        self._last_sync = time.monotonic()
         if not self.state["rewards"]:
             return
         data = self.helix("GET", "channel_points/custom_rewards",

@@ -841,6 +841,11 @@ def create_app() -> FastAPI:
         state.on_reward_created(kind)
         return {"ok": True, "reward": r}
 
+    @app.post("/api/twitch/sync")
+    async def twitch_sync() -> dict:
+        """Re-read Hardmode's rewards from Twitch now (the panel asks when the streamer looks at them)."""
+        return await asyncio.get_running_loop().run_in_executor(None, state.twitch_api.sync_now)
+
     @app.post("/api/twitch/reward/update")
     async def twitch_reward_update(request: Request) -> dict:
         """{kind, cost?, prompt?}: change the cost / the description of Hardmode's reward in Twitch."""

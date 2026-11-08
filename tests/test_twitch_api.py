@@ -348,3 +348,20 @@ def test_app_reward_routes_with_description(client, app_twitch):
     own = client.get("/api/twitch/account").json()["rewards"]["dpi"]
     assert (own["cost"], own["prompt"]) == (450, "Пиши число")
     assert client.post("/api/twitch/reward/update", json={"kind": "nope", "prompt": "x"}).json()["ok"] is False
+
+
+def test_sync_now_shows_a_reward_switched_off_in_twitch(client, app_twitch):
+    st, svc, fake = app_twitch
+    r = client.post("/api/twitch/reward", json={"kind": "dpi"}).json()["reward"]
+    fake.rewards[r["id"]]["is_enabled"] = False                         # «деактивировал» in the Twitch dashboard
+    svc._last_sync = 0.0
+    acc = client.post("/api/twitch/sync").json()
+    assert acc["rewards"]["dpi"]["enabled"] is False                    # at once, not after the next round
+    fake.rewards[r["id"]]["is_enabled"] = True
+    calls = len(fake.calls)
+    acc = client.post("/api/twitch/sync").json()                        # asked again right away: throttled
+    assert acc["rewards"]["dpi"]["enabled"] is False and len(fake.calls) == calls
+    svc._last_sync = 0.0
+    assert client.post("/api/twitch/sync").json()["rewards"]["dpi"]["enabled"] is True
+    svc.logout(revoke=False)
+    assert client.post("/api/twitch/sync").json()["logged_in"] is False  # signed out: nothing to read
