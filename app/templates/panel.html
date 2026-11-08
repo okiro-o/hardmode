@@ -857,7 +857,6 @@
 <section id="sec-twitch">
         <h2>Twitch-аккаунт <span class="right"><span class="chip" id="chip-twitch-acc"><span class="dot"></span><b>не вошёл</b></span></span></h2>
         <div class="form">
-          <label class="f full"><span>Client ID приложения Twitch</span><input type="text" data-key="twitch.client_id" placeholder="со страницы приложения в dev.twitch.tv/console" autocomplete="off" spellcheck="false"></label>
           <div class="row full">
             <button class="primary" id="tw-login" onclick="twitchLogin()">Войти через Twitch</button>
             <button id="tw-logout" onclick="twitchLogout()" style="display:none;">Выйти</button>
@@ -868,6 +867,11 @@
           </div>
           <div class="hint full" id="tw-status"></div>
         </div>
+        <details style="margin-top:6px;"><summary>Своё приложение Twitch (необязательно)</summary>
+          <div class="form" style="margin-top:8px;">
+            <label class="f full"><span>Client ID (пусто — встроенное приложение Hardmode)</span><input type="text" data-key="twitch.client_id" placeholder="со страницы приложения в dev.twitch.tv/console" autocomplete="off" spellcheck="false"></label>
+          </div>
+        </details>
       </section>
 
 <section id="sec-chat">
@@ -1221,9 +1225,12 @@ async function saveSecret(key, inputId, group = 'donations') { const v = $(input
 async function clearSecret(key, group = 'donations') { if (!confirm('Удалить сохранённый ключ?')) return; const r = await post('/api/settings', {[group]: {[key]: ''}}); if (r) toast('Удалено'); }
 // ---- Twitch account: sign-in with a code, Hardmode's own rewards (points come back by themselves)
 async function twitchLogin() {
-  const r = await post('/api/twitch/login', {}); if (!r) return;
-  if (!r.ok) return toast(r.error, true);
-  toast('Подтвердите вход на странице Twitch');
+  // the tab is opened inside the click (popup blockers allow only that), the address comes with the answer
+  let w = null; try { w = window.open('about:blank', '_blank'); } catch (e) {}
+  const r = await post('/api/twitch/login', {});
+  if (!r || !r.ok) { if (w) w.close(); if (r) toast(r.error, true); return; }
+  if (w) { try { w.opener = null; w.location.href = r.uri; } catch (e) {} }
+  toast(w ? 'Нажмите «Разрешить» на открывшейся странице Twitch' : 'Нажмите «Открыть страницу Twitch»');
 }
 async function twitchLogout() { if (!confirm('Выйти из Twitch? Награды Hardmode останутся в канале, но баллы перестанут возвращаться сами.')) return; await post('/api/twitch/logout', {}); }
 async function twitchCreateReward(kind) {

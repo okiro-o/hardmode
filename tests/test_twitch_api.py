@@ -11,7 +11,8 @@ CID = "abcdef0123456789xyz"
 class FakeTwitch:
     """Just enough of id.twitch.tv and Helix for the service."""
 
-    def __init__(self) -> None:
+    def __init__(self, cid: str = CID) -> None:
+        self.cid = cid
         self.pending_polls = 1
         self.rewards: dict[str, dict] = {}
         self.redemptions: dict[str, list[dict]] = {}
@@ -29,7 +30,7 @@ class FakeTwitch:
         path = u.path
         self.calls.append((method, path))
         if path == "/oauth2/device":
-            assert form["client_id"] == CID and form["scopes"] == " ".join(T.SCOPES)
+            assert form["client_id"] == self.cid and form["scopes"] == " ".join(T.SCOPES)
             return {"device_code": "dev-1", "user_code": "ABCD-EFGH", "expires_in": 1800, "interval": 1,
                     "verification_uri": "https://www.twitch.tv/activate?public=true&device-code=ABCDEFGH"}
         if path == "/oauth2/token":
@@ -45,11 +46,11 @@ class FakeTwitch:
             self.access_ok.add(acc)
             return {"access_token": acc, "refresh_token": ref, "expires_in": 14000}
         if path == "/oauth2/validate":
-            return {"client_id": CID, "login": "streamer", "user_id": "42", "scopes": self.scopes}
+            return {"client_id": self.cid, "login": "streamer", "user_id": "42", "scopes": self.scopes}
         if path == "/oauth2/revoke":
             return {}
         # Helix
-        assert headers["Client-Id"] == CID
+        assert headers["Client-Id"] == self.cid
         token = headers["Authorization"].split(" ", 1)[1]
         if token not in self.access_ok:
             raise T.TwitchError("Invalid OAuth token", 401)
@@ -278,8 +279,28 @@ def test_app_chat_from_the_streamer_account(client, app_twitch):
     assert client.get("/api/settings").json()["chat"]["provider"] == "se"
 
 
-def test_app_login_route_without_client_id(client):
+def test_app_login_with_the_builtin_client_id(client):
+    st = client.app.state.app
+    svc = st.twitch_api
+    svc.stop()
+    if svc._thread:
+        svc._thread.join(timeout=2)
+    svc._stop.clear()                                                  # the sign-in thread waits on the same event
+    fake = FakeTwitch(cid=T.BUILTIN_CLIENT_ID)
+    svc._http = fake
+    acc = client.get("/api/twitch/account").json()
+    assert acc["builtin_client"] is True and acc["client_id"] == ""      # nothing to paste: one button
     r = client.post("/api/twitch/login").json()
-    assert r["ok"] is False and "Client ID" in r["error"]
+    assert r["ok"] and r["user_code"] == "ABCD-EFGH" and "twitch.tv/activate" in r["uri"]
+    for _ in range(60):
+        if svc.logged_in:
+            break
+        time.sleep(0.1)
+    assert svc.logged_in and "access_token" not in client.get("/api/twitch/account").text
+    svc.logout(revoke=False)
+    # another application may still be configured; a bad id is refused
     assert client.post("/api/settings", json={"twitch": {"client_id": "bad id"}}).status_code == 400
-    assert "access_token" not in client.get("/api/twitch/account").text
+    client.post("/api/settings", json={"twitch": {"client_id": CID}})
+    acc = client.get("/api/twitch/account").json()
+    assert acc["builtin_client"] is False and acc["client_id"] == CID and svc.client_id == CID
+    svc._stop.set()

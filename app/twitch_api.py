@@ -16,8 +16,9 @@ Login: OAuth device code flow, public client (no secret, no server, no redirect)
 → the streamer confirms on twitch.tv/activate → ``POST /oauth2/token`` with the device code. Public-client
 refresh tokens rotate and live 30 days, so the account stays signed in while the app is used at least
 monthly. Tokens are validated at start and hourly (Twitch requirement). Scopes: ``channel:manage:redemptions``
-(also covers reading redemptions) and ``user:write:chat``. The client id comes from an application the streamer registers once
-in dev.twitch.tv/console (Client Type «Public»).
+(also covers reading redemptions) and ``user:write:chat``. The client id of Hardmode's own public Twitch
+application is built in (``BUILTIN_CLIENT_ID``, registered by the user 2026-11-08; not a secret), so signing in is
+one button; ``settings.client_id`` may override it with another application.
 
 Redemptions are polled (``GET …/custom_rewards/redemptions?status=UNFULFILLED``, every ``POLL_S``) instead of
 EventSub: the request queue itself is the source of truth, nothing is lost across restarts, and handled ids
@@ -52,6 +53,7 @@ VALIDATE_S = 3600.0
 FRESH_S = 600.0
 MAX_HANDLED = 1000
 USER_AGENT = "hardmode/1.0"
+BUILTIN_CLIENT_ID = "z18ygf73k0iud6iym5zzx1h9u2h9fq"     # Hardmode's public Twitch application
 
 # the rewards Hardmode can create: kind -> defaults (title ≤ 45 chars, prompt ≤ 200)
 REWARDS = {
@@ -68,7 +70,7 @@ class TwitchError(RuntimeError):
 
 @dataclass
 class TwitchSettings:
-    client_id: str = ""             # of the streamer's own Twitch application (public, not a secret)
+    client_id: str = ""             # optional: another Twitch application instead of the built-in one
 
     @classmethod
     def from_dict(cls, d: dict | None) -> "TwitchSettings":
@@ -172,11 +174,16 @@ class TwitchService:
 
     def update_settings(self, patch: dict) -> None:
         new = TwitchSettings.from_dict({**self.settings.to_dict(), **(patch or {})})
-        changed = new.client_id != self.settings.client_id
+        old = self.client_id
         self.settings = new
+        changed = self.client_id != old
         if changed and self.state["token"]:
             self.logout(revoke=False)         # tokens belong to the old application
         self._changed()
+
+    @property
+    def client_id(self) -> str:
+        return self.settings.client_id or BUILTIN_CLIENT_ID
 
     @property
     def logged_in(self) -> bool:
@@ -189,7 +196,8 @@ class TwitchService:
     def status(self) -> dict:
         with self._lock:
             u = self.state["user"]
-            return {"client_id": self.settings.client_id, "logged_in": self.logged_in,
+            return {"client_id": self.settings.client_id, "builtin_client": not self.settings.client_id,
+                    "logged_in": self.logged_in,
                     "user": {"login": u.get("login"), "display_name": u.get("display_name"),
                              "broadcaster_type": u.get("broadcaster_type")} if u else None,
                     "can_chat": self.can_chat,
@@ -210,9 +218,7 @@ class TwitchService:
     # ------------------------------------------------------------------ login
     def start_login(self) -> dict:
         """Blocking (HTTP). Returns the code the streamer confirms on twitch.tv/activate."""
-        cid = self.settings.client_id
-        if not cid:
-            raise TwitchError("сначала вставьте Client ID своего приложения Twitch")
+        cid = self.client_id
         d = self._http("POST", f"{ID_BASE}/device", form={"client_id": cid, "scopes": " ".join(SCOPES)})
         if not d.get("device_code"):
             raise TwitchError(f"Twitch не выдал код: {str(d)[:200]}")
@@ -287,16 +293,16 @@ class TwitchService:
             self.login_flow = None
             self.state["token"], self.state["user"] = {}, {}
             self.error = None
-        if revoke and token and self.settings.client_id:
+        if revoke and token:
             try:
-                self._http("POST", f"{ID_BASE}/revoke", form={"client_id": self.settings.client_id, "token": token})
+                self._http("POST", f"{ID_BASE}/revoke", form={"client_id": self.client_id, "token": token})
             except TwitchError:
                 pass
         self._changed()
 
     # ------------------------------------------------------------------ tokens & helix
     def _headers(self, access_token: str) -> dict:
-        return {"Authorization": f"Bearer {access_token}", "Client-Id": self.settings.client_id}
+        return {"Authorization": f"Bearer {access_token}", "Client-Id": self.client_id}
 
     def _refresh(self) -> str:
         with self._lock:
@@ -304,7 +310,7 @@ class TwitchService:
         if not rt:
             raise TwitchError("вход устарел: войдите через Twitch ещё раз", 401)
         try:
-            tok = self._http("POST", f"{ID_BASE}/token", form={"client_id": self.settings.client_id,
+            tok = self._http("POST", f"{ID_BASE}/token", form={"client_id": self.client_id,
                                                                "grant_type": "refresh_token", "refresh_token": rt})
         except TwitchError as e:
             if e.status in (400, 401):
