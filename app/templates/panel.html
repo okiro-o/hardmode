@@ -317,14 +317,18 @@
   .twpop .logout { width:100%; background:transparent; border:1px solid var(--bad); color:var(--bad); font-weight:600; }
   .twpop .logout:hover { background:rgba(255,94,94,.12); border-color:var(--bad); }
   .form .pair.solo { grid-template-columns: 1fr; }
-  .twr-new { display:grid; grid-template-columns: 130px 1fr; gap:8px 12px; align-items:end; }
-  .twr-new .twr-desc, .twr-new button { grid-column: 1 / -1; }
-  .twr-new button { justify-self:start; }
-  .twr-desc { margin-top:8px; }
-  .twr-desc textarea { resize:vertical; min-height:64px; line-height:1.4; font: inherit; font-size:13.5px; }
-  .twr-desc + button { margin-top:0; }
-  .twr .own { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-  .twr .own .t { flex:1 1 220px; }
+  /* Hardmode's own Twitch reward: a small card — title and state, cost + description, actions */
+  .twr-card { border:1px solid var(--line); border-radius:10px; background:transparent; padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
+  .twr-head { display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-size:14px; }
+  .twr-head .tag { font-size:11px; line-height:18px; padding:0 8px; border-radius:999px; border:1px solid var(--line2); color:var(--muted); }
+  .twr-head .tag.ok { color:var(--ok); border-color:rgba(76,217,100,.45); }
+  .twr-head .tag.warn { color:var(--accent); border-color:rgba(255,209,102,.45); }
+  .twr-fields { display:grid; grid-template-columns: 130px 1fr; gap:10px 12px; align-items:start; }
+  .twr-fields textarea { resize:vertical; min-height:64px; line-height:1.4; font: inherit; font-size:13.5px; }
+  @media (max-width: 520px) { .twr-fields { grid-template-columns: 1fr; } }
+  .twr-actions { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+  button.danger-outline { background:transparent; border:1px solid var(--bad); color:var(--bad); font-weight:600; }
+  button.danger-outline:hover { background:rgba(255,94,94,.12); border-color:var(--bad); }
   .inrow { display:flex; gap:8px; align-items:stretch; }
   .inrow > input { flex:1 1 auto; min-width:0; }
   .inrow > button { flex:0 0 auto; height:36px; padding:0 12px; }
@@ -1208,22 +1212,27 @@ function renderTwitchRewards() {
       box.innerHTML = `<div class="hint">Чтобы зрители могли выкупать «${esc(d.title || '')}», войдите через Twitch кнопкой справа сверху.</div>`;
       continue;
     }
-    if (box.contains(document.activeElement)) continue;          // the streamer is typing a description
+    if (box.contains(document.activeElement)) continue;          // the streamer is typing
     const defPrompt = kind === 'dpi' ? `Число DPI от ${ds.viewer_min || 400} до ${ds.viewer_max || 6400}` : (d.prompt || '');
+    const fields = (cost, prompt) => `<div class="twr-fields">
+        <label class="f"><span>Стоимость, баллов</span><input type="number" id="twr-${kind}-cost" min="1" step="50" value="${cost}"></label>
+        <label class="f"><span>Описание награды</span><textarea id="twr-${kind}-prompt" rows="3" maxlength="200">${esc(prompt)}</textarea></label></div>`;
+    let head, body = '', actions = '';
     if (r) {
-      const state = r.enabled === false ? ' · выключена в Twitch' : r.paused ? ' · на паузе в Twitch' : '';
-      box.innerHTML = `<div class="own"><span class="t">Награда <b>«${esc(r.title)}»</b>${state}. За отказ и × баллы возвращаются сами</span>`
-        + (a.logged_in ? `<button onclick="twitchDeleteReward('${kind}')">Удалить из Twitch</button>` : '<span class="muted">нет входа в Twitch: возврат не работает</span>') + '</div>'
-        + (a.logged_in ? `<div class="twr-new" style="margin-top:8px;">
-            <label class="f"><span>Стоимость, баллов</span><input type="number" id="twr-${kind}-cost" min="1" step="50" value="${r.cost || d.cost || 300}"></label>
-            <label class="f twr-desc"><span>Описание награды</span><textarea id="twr-${kind}-prompt" rows="3" maxlength="200">${esc(r.prompt || defPrompt)}</textarea></label>
-            <button onclick="twitchSaveReward('${kind}')">Сохранить</button></div>` : '');
-      continue;
+      const state = r.enabled === false ? '<span class="tag warn">выключена в Twitch</span>' : r.paused ? '<span class="tag warn">на паузе в Twitch</span>' : '<span class="tag ok">активна</span>';
+      head = `<b>«${esc(r.title)}»</b>${state}`;
+      if (a.logged_in) {
+        body = '<div class="hint">За отказ и × баллы возвращаются сами.</div>' + fields(r.cost || d.cost || 300, r.prompt || defPrompt);
+        actions = `<button onclick="twitchSaveReward('${kind}')">Сохранить</button><button class="danger-outline" onclick="twitchDeleteReward('${kind}')">Удалить из Twitch</button>`;
+      } else {
+        body = '<div class="hint">Нет входа в Twitch: баллы не возвращаются.</div>';
+      }
+    } else {
+      head = `<b>«${esc(d.title || '')}»</b><span class="tag">ещё не создана</span>`;
+      body = fields(d.cost || 300, defPrompt);
+      actions = `<button class="primary" onclick="twitchCreateReward('${kind}')">Создать в Twitch</button>`;
     }
-    box.innerHTML = `<div class="twr-new">
-      <label class="f"><span>Стоимость, баллов</span><input type="number" id="twr-${kind}-cost" min="1" step="50" value="${d.cost || 300}"></label>
-      <label class="f twr-desc"><span>Описание награды</span><textarea id="twr-${kind}-prompt" rows="3" maxlength="200">${esc(defPrompt)}</textarea></label>
-      <button class="primary" onclick="twitchCreateReward('${kind}')">Создать в Twitch «${esc(d.title || '')}»</button></div>`;
+    box.innerHTML = `<div class="twr-card"><div class="twr-head">${head}</div>${body}${actions ? `<div class="twr-actions">${actions}</div>` : ''}</div>`;
   }
 }
 async function obsRefresh() { toast('Подключаюсь к OBS…'); const r = await post('/api/obs/refresh', {}); if (r) toast(r.text, !r.ok); }
