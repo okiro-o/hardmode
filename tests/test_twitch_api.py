@@ -365,3 +365,42 @@ def test_sync_now_shows_a_reward_switched_off_in_twitch(client, app_twitch):
     assert client.post("/api/twitch/sync").json()["rewards"]["dpi"]["enabled"] is True
     svc.logout(revoke=False)
     assert client.post("/api/twitch/sync").json()["logged_in"] is False  # signed out: nothing to read
+
+
+def _wait(cond, timeout=3.0):
+    end = time.time() + timeout
+    while time.time() < end:
+        if cond():
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def test_app_switch_turns_the_reward_on_and_off_in_twitch(client, app_twitch):
+    st, svc, fake = app_twitch
+    rid = client.post("/api/twitch/reward", json={"kind": "dpi"}).json()["reward"]["id"]
+    assert client.get("/api/settings").json()["dpi"]["viewer_enabled"] is True     # created → switched on
+    fake.patches.clear()
+    client.post("/api/settings", json={"dpi": {"viewer_min": 500}})               # another setting: untouched
+    time.sleep(0.2)
+    assert fake.patches == []
+    assert client.post("/api/settings", json={"dpi": {"viewer_enabled": False}}).status_code == 200
+    assert _wait(lambda: fake.rewards[rid]["is_enabled"] is False)
+    assert fake.patches == [{"is_enabled": False}] and svc.state["rewards"]["dpi"]["enabled"] is False
+    client.post("/api/settings", json={"dpi": {"viewer_enabled": True}})
+    assert _wait(lambda: fake.rewards[rid]["is_enabled"] is True)
+    # switched off in Twitch while the app switch stays on: the app does not switch it back on
+    fake.rewards[rid]["is_enabled"] = False
+    svc._last_sync = 0.0
+    client.post("/api/twitch/sync")
+    fake.patches.clear()
+    client.post("/api/settings", json={"dpi": {"viewer_max": 6000}})
+    time.sleep(0.2)
+    assert fake.patches == [] and fake.rewards[rid]["is_enabled"] is False
+    # the weapon switch follows its own reward; no reward yet: nothing to switch
+    client.post("/api/settings", json={"donations": {"reward_enabled": True}})
+    time.sleep(0.2)
+    assert fake.patches == []
+    wid = client.post("/api/twitch/reward", json={"kind": "weapon"}).json()["reward"]["id"]
+    client.post("/api/settings", json={"donations": {"reward_enabled": False}})
+    assert _wait(lambda: fake.rewards[wid]["is_enabled"] is False)

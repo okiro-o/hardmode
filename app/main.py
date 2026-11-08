@@ -680,6 +680,8 @@ def create_app() -> FastAPI:
         for section in ("roulette", "overlay", "dpi", "chat", "ingame", "donations", "obs"):
             if section in body and body[section] is not None and not isinstance(body[section], dict):
                 raise HTTPException(400, f"{section}: нужен объект")
+        # the app's switches of the channel-points features also switch Hardmode's rewards in Twitch
+        was_on = {"weapon": state.donations.settings.reward_enabled, "dpi": state.dpi.settings.viewer_enabled}
         # sections validated by their own module: the module keeps the typed settings, AppSettings the dict copy
         for section, owner, label in (("chat", state.chat, "чата"), ("dpi", state.dpi, "DPI"), ("roulette", state.roulette, "рулетки"),
                                       ("donations", state.donations, "донатов"), ("obs", state.obs, "OBS")):
@@ -691,6 +693,11 @@ def create_app() -> FastAPI:
                 setattr(s, section, owner.settings.to_dict())
         if "dpi" in body or "chat" in body or "donations" in body:
             state.sync_twitch()
+        now_on = {"weapon": state.donations.settings.reward_enabled, "dpi": state.dpi.settings.viewer_enabled}
+        for kind in ("weapon", "dpi"):
+            if now_on[kind] != was_on[kind] and kind in state.twitch_api.state["rewards"]:
+                threading.Thread(target=state.twitch_api.set_enabled, args=(kind, now_on[kind]),
+                                 name="twitch-reward-onoff", daemon=True).start()
         if "overlay" in body:
             rejected += [f"overlay.{k}" for k in s.overlay.apply(body["overlay"] or {})]
         if "ingame" in body:

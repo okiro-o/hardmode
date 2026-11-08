@@ -399,6 +399,27 @@ class TwitchService:
             self.state["rewards"].pop(kind, None)
         self._changed()
 
+    def set_enabled(self, kind: str, enabled: bool) -> None:
+        """Blocking. Switch our reward on/off in Twitch — follows the app's own switch for the feature
+        (user's request 2026-11-08). The other way round never happens: a reward switched off or paused in
+        Twitch is not switched back on by the app. Errors are logged and shown, never raised."""
+        with self._lock:
+            r = self.state["rewards"].get(kind)
+        if not r or not self.logged_in or r.get("enabled", True) == enabled:
+            return
+        try:
+            self.helix("PATCH", "channel_points/custom_rewards", {"broadcaster_id": self.state["user"]["id"], "id": r["id"]},
+                       {"is_enabled": bool(enabled)})
+        except TwitchError as e:
+            log.warning("twitch: reward %s on=%s failed: %s", kind, enabled, e)
+            self.error = f"не удалось {'включить' if enabled else 'выключить'} награду в Twitch: {e}"
+            self._changed()
+            return
+        with self._lock:
+            r["enabled"] = bool(enabled)
+        log.info("twitch: reward %s %s", kind, "enabled" if enabled else "disabled")
+        self._changed()
+
     def update_reward(self, kind: str, cost: Any = None, prompt: str | None = None) -> dict:
         """Blocking. Change the cost and/or the description of our reward (both are also editable in Twitch)."""
         with self._lock:
