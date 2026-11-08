@@ -313,10 +313,15 @@ def test_reward_description_pause_and_guarded_settings(tmp_path):
     assert r["prompt"] == "Пиши оружие" and fake.rewards[r["id"]]["prompt"] == "Пиши оружие"
     assert fake.rewards[r["id"]]["is_user_input_required"] is True
     assert fake.rewards[r["id"]]["should_redemptions_skip_request_queue"] is False
-    svc.update_prompt("weapon", "AWP, калаш, плётка")
-    assert fake.rewards[r["id"]]["prompt"] == "AWP, калаш, плётка" and svc.state["rewards"]["weapon"]["prompt"] == "AWP, калаш, плётка"
+    svc.update_reward("weapon", prompt="AWP, калаш, плётка\nили дигл")
+    assert fake.rewards[r["id"]]["prompt"] == "AWP, калаш, плётка\nили дигл"     # line breaks kept
+    svc.update_reward("weapon", cost="750")
+    assert fake.rewards[r["id"]]["cost"] == 750 and svc.state["rewards"]["weapon"]["cost"] == 750
+    assert fake.patches[-1] == {"cost": 750}                           # only what changed is sent
     with pytest.raises(T.TwitchError):
-        svc.update_prompt("dpi", "x")                                   # not created yet
+        svc.update_reward("weapon", cost="много")
+    with pytest.raises(T.TwitchError):
+        svc.update_reward("dpi", prompt="x")                            # not created yet
     # end of stream: the streamer pauses it in Twitch and (by mistake) lets it skip the queue without text
     fake.rewards[r["id"]].update({"is_paused": True, "is_enabled": False, "is_user_input_required": False,
                                   "should_redemptions_skip_request_queue": True, "cost": 600})
@@ -338,6 +343,8 @@ def test_app_reward_routes_with_description(client, app_twitch):
     assert r["ok"] and r["reward"]["prompt"].startswith("Число DPI от ")          # range from the DPI settings
     r = client.post("/api/twitch/reward", json={"kind": "weapon", "prompt": "Какую пушку?"}).json()
     assert r["reward"]["prompt"] == "Какую пушку?"
-    r = client.post("/api/twitch/reward/prompt", json={"kind": "weapon", "prompt": "Пиши ствол"}).json()
-    assert r["ok"] and client.get("/api/twitch/account").json()["rewards"]["weapon"]["prompt"] == "Пиши ствол"
-    assert client.post("/api/twitch/reward/prompt", json={"kind": "nope", "prompt": "x"}).json()["ok"] is False
+    r = client.post("/api/twitch/reward/update", json={"kind": "dpi", "cost": 450, "prompt": "Пиши число"}).json()
+    assert r["ok"] and (r["reward"]["cost"], r["reward"]["prompt"]) == (450, "Пиши число")
+    own = client.get("/api/twitch/account").json()["rewards"]["dpi"]
+    assert (own["cost"], own["prompt"]) == (450, "Пиши число")
+    assert client.post("/api/twitch/reward/update", json={"kind": "nope", "prompt": "x"}).json()["ok"] is False

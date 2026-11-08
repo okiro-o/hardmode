@@ -841,13 +841,15 @@ def create_app() -> FastAPI:
         state.on_reward_created(kind)
         return {"ok": True, "reward": r}
 
-    @app.post("/api/twitch/reward/prompt")
-    async def twitch_reward_prompt(request: Request) -> dict:
-        """{kind, prompt}: the description viewers see under Hardmode's reward."""
+    @app.post("/api/twitch/reward/update")
+    async def twitch_reward_update(request: Request) -> dict:
+        """{kind, cost?, prompt?}: change the cost / the description of Hardmode's reward in Twitch."""
         body = await _json(request)
+        prompt = body.get("prompt")
         try:
             r = await asyncio.get_running_loop().run_in_executor(
-                None, state.twitch_api.update_prompt, str(body.get("kind") or ""), str(body.get("prompt") or ""))
+                None, state.twitch_api.update_reward, str(body.get("kind") or ""), body.get("cost"),
+                None if prompt is None else str(prompt))
         except (TwitchError, KeyError) as e:
             return {"ok": False, "error": str(e)}
         return {"ok": True, "reward": r}

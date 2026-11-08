@@ -397,17 +397,26 @@ class TwitchService:
             self.state["rewards"].pop(kind, None)
         self._changed()
 
-    def update_prompt(self, kind: str, prompt: str) -> dict:
-        """Blocking. Change the description viewers see under our reward."""
+    def update_reward(self, kind: str, cost: Any = None, prompt: str | None = None) -> dict:
+        """Blocking. Change the cost and/or the description of our reward (both are also editable in Twitch)."""
         with self._lock:
             r = self.state["rewards"].get(kind)
         if not r:
             raise TwitchError("награда ещё не создана")
-        prompt = (str(prompt or "").strip() or REWARDS[kind]["prompt"])[:200]
+        body: dict = {}
+        if cost not in (None, ""):
+            try:
+                body["cost"] = max(1, int(float(cost)))
+            except (TypeError, ValueError):
+                raise TwitchError("стоимость: нужно число") from None
+        if prompt is not None:
+            body["prompt"] = (str(prompt).strip() or REWARDS[kind]["prompt"])[:200]
+        if not body:
+            return dict(r)
         self.helix("PATCH", "channel_points/custom_rewards", {"broadcaster_id": self.state["user"]["id"], "id": r["id"]},
-                   {"prompt": prompt})
+                   body)
         with self._lock:
-            r["prompt"] = prompt
+            r.update(body)
         self._changed()
         return dict(r)
 

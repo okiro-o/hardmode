@@ -316,7 +316,7 @@
   .twr-new button { justify-self:start; }
   .twr-desc { margin-top:8px; }
   .twr-desc textarea { resize:vertical; min-height:64px; line-height:1.4; font: inherit; font-size:13.5px; }
-  .twr-desc + button { margin-top:8px; }
+  .twr-desc + button { margin-top:0; }
   .twr .own { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
   .twr .own .t { flex:1 1 220px; }
   .inrow { display:flex; gap:8px; align-items:stretch; }
@@ -416,16 +416,16 @@
       <section id="sec-requests">
         <h2>Зрительская очередь <span class="right"><span class="chip" id="chip-requests"><span class="dot"></span><b>пусто</b></span></span></h2>
         <div id="requests"></div>
-        <details style="margin-top:6px;"><summary>Выполнено недавно</summary>
-          <div id="requests-history" style="margin:6px 0 8px;"></div>
-          <button onclick="post('/api/queue/clear')">Очистить историю</button>
-        </details>
-        <details style="margin-top:6px;" id="wreward-box"><summary>Twitch: оружие за баллы и команда очереди <span class="muted" id="wreward-sum"></span></summary>
+        <details style="margin-top:6px;" id="wreward-box" open><summary>Twitch: оружие за баллы и команда очереди <span class="muted" id="wreward-sum"></span></summary>
           <div class="form" style="margin-top:8px;">
             <label class="inline full"><input type="checkbox" data-key="donations.reward_enabled"> Оружие за баллы канала</label>
             <div class="full twr" id="twr-weapon"></div>
             <label class="f"><span>Команда в чате (пусто — выключена)</span><input type="text" data-key="donations.queue_command" placeholder="!очередь"></label>
           </div>
+        </details>
+        <details style="margin-top:6px;"><summary>Выполнено недавно</summary>
+          <div id="requests-history" style="margin:6px 0 8px;"></div>
+          <button onclick="post('/api/queue/clear')">Очистить историю</button>
         </details>
       </section>
 
@@ -1191,9 +1191,9 @@ async function twitchCreateReward(kind) {
   const r = await post('/api/twitch/reward', {kind, cost: $('twr-' + kind + '-cost').value, prompt: $('twr-' + kind + '-prompt').value});
   if (r) toast(r.ok ? 'Награда создана в Twitch' : r.error, !r.ok);
 }
-async function twitchSavePrompt(kind) {
-  const r = await post('/api/twitch/reward/prompt', {kind, prompt: $('twr-' + kind + '-prompt').value});
-  if (r) toast(r.ok ? 'Описание сохранено в Twitch' : r.error, !r.ok);
+async function twitchSaveReward(kind) {
+  const r = await post('/api/twitch/reward/update', {kind, cost: $('twr-' + kind + '-cost').value, prompt: $('twr-' + kind + '-prompt').value});
+  if (r) toast(r.ok ? 'Награда обновлена в Twitch' : r.error, !r.ok);
 }
 async function twitchDeleteReward(kind) { if (!confirm('Удалить эту награду из канала Twitch?')) return; const r = await post('/api/twitch/reward/delete', {kind}); if (r) toast(r.ok ? 'Награда удалена' : r.error, !r.ok); }
 let twWasIn = null;
@@ -1240,11 +1240,12 @@ function renderTwitchRewards() {
     const defPrompt = kind === 'dpi' ? `Число DPI от ${ds.viewer_min || 400} до ${ds.viewer_max || 6400}` : (d.prompt || '');
     if (r) {
       const state = r.enabled === false ? ' · выключена в Twitch' : r.paused ? ' · на паузе в Twitch' : '';
-      box.innerHTML = `<div class="own"><span class="t">Награда <b>«${esc(r.title)}»</b>, ${r.cost} баллов${state}. За отказ и × баллы возвращаются сами</span>`
+      box.innerHTML = `<div class="own"><span class="t">Награда <b>«${esc(r.title)}»</b>${state}. За отказ и × баллы возвращаются сами</span>`
         + (a.logged_in ? `<button onclick="twitchDeleteReward('${kind}')">Удалить из Twitch</button>` : '<span class="muted">нет входа в Twitch: возврат не работает</span>') + '</div>'
-        + (a.logged_in ? `<label class="f twr-desc"><span>Описание награды</span>
-            <textarea id="twr-${kind}-prompt" rows="3" maxlength="200">${esc(r.prompt || defPrompt)}</textarea></label>
-            <button onclick="twitchSavePrompt('${kind}')">Сохранить описание</button>` : '');
+        + (a.logged_in ? `<div class="twr-new" style="margin-top:8px;">
+            <label class="f"><span>Стоимость, баллов</span><input type="number" id="twr-${kind}-cost" min="1" step="50" value="${r.cost || d.cost || 300}"></label>
+            <label class="f twr-desc"><span>Описание награды</span><textarea id="twr-${kind}-prompt" rows="3" maxlength="200">${esc(r.prompt || defPrompt)}</textarea></label>
+            <button onclick="twitchSaveReward('${kind}')">Сохранить</button></div>` : '');
       continue;
     }
     box.innerHTML = `<div class="twr-new">
