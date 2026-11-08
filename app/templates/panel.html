@@ -25,6 +25,9 @@
   .chip b { color:var(--text); font-weight:600; }
   /* main tabs */
   .maintabs { display:flex; flex-direction:column; gap:2px; }
+  .quitbtn { margin-top:auto; width:100%; padding:8px 6px; font-size:12.5px; white-space:nowrap; background:transparent;
+             border:1px solid var(--bad); color:var(--bad); font-weight:600; }
+  .quitbtn:hover { background:rgba(255,94,94,.12); border-color:var(--bad); }
   .maintabs button { display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:transparent; border:0;
                      border-left:3px solid transparent; border-radius:8px; color:var(--muted); padding:10px 12px; font:inherit;
                      font-weight:600; cursor:pointer; letter-spacing:.02em; white-space:nowrap; }
@@ -36,6 +39,7 @@
     .sidebar { position:sticky; height:auto; flex-direction:row; align-items:center; padding:8px 10px; border-right:0; border-bottom:1px solid var(--line); overflow-x:auto; }
     .brand { display:none; }
     .maintabs { flex-direction:row; }
+    .quitbtn { margin-top:0; width:auto; flex:0 0 auto; white-space:nowrap; }
     .maintabs button { border-left:0; border-bottom:2px solid transparent; border-radius:8px 8px 0 0; padding:8px 12px; }
     .maintabs button.active { border-bottom-color:var(--accent); }
     header { position:static; }
@@ -339,6 +343,7 @@
     <button data-tab="general" onclick="showMainTab('general')"><span class="i">⚙</span>Общее</button>
     <button data-tab="help" onclick="showMainTab('help')"><span class="i">📖</span>Справка</button>
   </nav>
+  <button class="quitbtn" onclick="quitApp()">Завершить приложение</button>
 </aside>
 <div class="content">
 <header>
@@ -829,16 +834,6 @@
           <div class="hint">Адрес приёма: <code id="gsi-uri"></code><br>Папка CS2: <code id="cs2-dir">ищу…</code><br>Конфиг: <code id="cfg-installed">—</code><br>Токен: <code id="gsi-token"></code></div>
         </details>
       </section>
-
-<section>
-        <h2>Разное</h2>
-        <div class="form">
-          <label class="inline"><input type="checkbox" id="autostart-toggle" onchange="toggleAutostart(this)"> Автозапуск с Windows (в трее)</label>
-          <div class="hint" id="mode-info" style="align-self:center;"></div>
-          <button onclick="quitApp()" style="margin-left:auto;">Завершить приложение</button>
-        </div>
-        <div class="hint" style="margin-top:8px;">Папка данных: <code id="data-dir"></code><br>Лог: <code id="log-path"></code><br>Порт: <code id="port"></code> (меняется в <code>data/settings.json</code>, нужен перезапуск)</div>
-      </section>
     </div>
     <div class="col">
 <section id="sec-chat">
@@ -957,7 +952,6 @@ function enhanceSelects() {
 function refreshDropdowns() { document.querySelectorAll('select[data-key]').forEach(s => s._ddSync && s._ddSync()); }
 enhanceSelects();
 
-async function toggleAutostart(el) { const r = await post('/api/autostart', {enabled: el.checked}); if (!r) { el.checked = !el.checked; return; } toast(r.enabled ? 'Автозапуск включён' : 'Автозапуск выключен'); }
 async function quitApp() { if (!confirm('Завершить Hardmode? Виджеты в OBS перестанут обновляться.')) return; const r = await post('/api/quit', {}); if (r && r.ok) toast('Завершаю…'); }
 async function addCustomDpi() { const v = parseInt($('custom-dpi').value, 10); if (!Number.isFinite(v)) return toast('Введите DPI', true); const r = await post('/api/dpi/values/add', {value: v}); if (r) { $('custom-dpi').value = ''; toast('Добавлено: ' + r.value); } }
 function renderWheel() {
@@ -1403,9 +1397,6 @@ function renderMisc() {
   $('cfg-installed').textContent = S.cfg_state === 'ok' ? 'установлен: ' + S.cfg_installed : S.cfg_state === 'stale' ? 'устарел (другой токен/порт) — нажмите «Установить конфиг в CS2»: ' + S.cfg_installed : 'не установлен';
   $('cfg-short').textContent = S.cfg_state === 'ok' ? '✓ конфиг установлен' : S.cfg_state === 'stale' ? 'конфиг устарел, установите заново' : (S.cs2_cfg_dir ? 'конфиг ещё не установлен' : 'папка CS2 не найдена: см. «Дополнительно»');
   $('gsi-token').textContent = S.gsi_token;
-  $('data-dir').textContent = S.data_dir; $('port').textContent = S.port; $('log-path').textContent = S.log_path || '';
-  const a = S.autostart || {}; const at = $('autostart-toggle'); at.disabled = !a.available; if (document.activeElement !== at) at.checked = !!a.enabled;
-  $('mode-info').textContent = S.mode === 'tray' ? 'режим: трей' : 'режим: консоль';
   const g = S.gsi; const badTok = g.rejected_auth ? ` · отклонено по токену: ${g.rejected_auth}` : '';
   $('gsi-detail').textContent = g.payloads ? `Пакетов: ${g.payloads} · режим: ${g.mode||'?'} · киллов в раунде: ${g.round_kills??'-'} · за матч: ${g.match_kills??'-'}` + badTok : '';
   $('gsi-player').textContent = g.name || g.rejected_name || '—';
