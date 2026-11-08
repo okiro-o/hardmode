@@ -253,6 +253,9 @@
   /* the loadout tab: the block is exactly as wide as the three columns and centred (user's request) */
   #tab-loadout .col { align-items:center; }
   #sec-loadout { width:fit-content; max-width:100%; }
+  #sec-loadout h2 .right { gap:8px; }
+  #sec-loadout h2 .tabs { margin-right:8px; }
+  #sec-loadout h2 button { letter-spacing:normal; text-transform:none; font-size:14px; }
   .lcols { display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap; }
   .lcol { display:flex; flex-direction:column; gap:8px; width:168px; }
   .lcol .title { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:4px 0 2px; }
@@ -570,15 +573,11 @@
 <section id="sec-loadout">
         <h2>Лоадаут
           <span class="right">
+            <span class="tabs"><button class="T" data-tab="T" onclick="showTab('T')">T</button><button class="CT" data-tab="CT" onclick="showTab('CT')">CT</button></span>
             <button class="primary" onclick="post('/api/loadout/generate',{sides:['T','CT']})">🎲 Сгенерировать</button>
-            <button onclick="post('/api/loadout/generate',{sides:['T']})">только T</button>
-            <button onclick="post('/api/loadout/generate',{sides:['CT']})">только CT</button>
             <button onclick="copyLoadout()" title="Скопировать список оружия текстом">⧉</button>
           </span>
         </h2>
-        <div class="row" style="margin-bottom:6px;">
-          <div class="tabs"><button class="T" data-tab="T" onclick="showTab('T')">T</button><button class="CT" data-tab="CT" onclick="showTab('CT')">CT</button></div>
-        </div>
         <div id="loadout"></div>
       </section>
     </div>
