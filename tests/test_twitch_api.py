@@ -5,7 +5,7 @@ import pytest
 
 from app import twitch_api as T
 
-CID = "abcdef0123456789xyz"
+CID = T.BUILTIN_CLIENT_ID
 
 
 class FakeTwitch:
@@ -95,7 +95,7 @@ class FakeTwitch:
 
 def _service(tmp_path, fake, **kw):
     published = []
-    svc = T.TwitchService(T.TwitchSettings(client_id=CID), str(tmp_path / "twitch.json"),
+    svc = T.TwitchService(str(tmp_path / "twitch.json"),
                           publish_threadsafe=lambda ev, d: published.append((ev, d)),
                           call_threadsafe=lambda fn, *a: fn(*a))
     svc._http = fake
@@ -104,12 +104,6 @@ def _service(tmp_path, fake, **kw):
 
 def _signed_in(svc):
     svc._finish_login({"access_token": "tok-1", "refresh_token": "ref-1", "expires_in": 14000})
-
-
-def test_settings_client_id():
-    assert T.TwitchSettings.from_dict({"client_id": "  " + CID + " "}).client_id == CID
-    with pytest.raises(ValueError):
-        T.TwitchSettings.from_dict({"client_id": "not a client id!"})
 
 
 def test_device_code_login(tmp_path):
@@ -214,7 +208,6 @@ def app_twitch(client, tmp_path):
         svc._thread.join(timeout=2)
     svc._http = fake
     svc._call = lambda fn, *a: fn(*a)                                  # dispatch synchronously in tests
-    client.post("/api/settings", json={"twitch": {"client_id": CID}})
     _signed_in(svc)
     return st, svc, fake
 
@@ -288,8 +281,7 @@ def test_app_login_with_the_builtin_client_id(client):
     svc._stop.clear()                                                  # the sign-in thread waits on the same event
     fake = FakeTwitch(cid=T.BUILTIN_CLIENT_ID)
     svc._http = fake
-    acc = client.get("/api/twitch/account").json()
-    assert acc["builtin_client"] is True and acc["client_id"] == ""      # nothing to paste: one button
+    assert "client_id" not in client.get("/api/twitch/account").json()   # nothing to paste: one button
     r = client.post("/api/twitch/login").json()
     assert r["ok"] and r["user_code"] == "ABCD-EFGH" and "twitch.tv/activate" in r["uri"]
     for _ in range(60):
@@ -298,9 +290,7 @@ def test_app_login_with_the_builtin_client_id(client):
         time.sleep(0.1)
     assert svc.logged_in and "access_token" not in client.get("/api/twitch/account").text
     svc.logout(revoke=False)
-    # another application may still be configured; a bad id is refused
-    assert client.post("/api/settings", json={"twitch": {"client_id": "bad id"}}).status_code == 400
-    client.post("/api/settings", json={"twitch": {"client_id": CID}})
-    acc = client.get("/api/twitch/account").json()
-    assert acc["builtin_client"] is False and acc["client_id"] == CID and svc.client_id == CID
+    # an old settings file with the removed «twitch» section still loads
+    assert client.post("/api/settings", json={"twitch": {"client_id": "x"}}).status_code == 200
+    assert "twitch" not in client.get("/api/settings").json()
     svc._stop.set()

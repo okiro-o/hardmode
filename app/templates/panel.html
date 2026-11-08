@@ -289,8 +289,22 @@
   .form .pair { grid-column:1 / -1; display:grid; grid-template-columns: minmax(140px, .75fr) 1.25fr; gap:10px 16px; }
   .form .pair.port { grid-template-columns: 140px 1fr; }    /* a port number needs little room */
   @media (max-width: 520px) { .form .pair, .form .pair.port { grid-template-columns: 1fr; } }
-  .tw-code { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:10px 12px; border:1px dashed var(--accent); border-radius:10px; }
-  .tw-code b { font-size:22px; letter-spacing:.12em; color:var(--accent); font-family: ui-monospace, Consolas, monospace; }
+  /* Twitch sign-in: always visible at the top right (user's request) */
+  .twbox { margin-left:auto; position:relative; }
+  .twbtn { display:flex; align-items:center; gap:8px; padding:6px 12px; border-radius:999px; font-size:12.5px; font-weight:700;
+           background:#9146ff; border-color:#9146ff; color:#fff; }
+  .twbtn:hover { background:#a970ff; border-color:#a970ff; }
+  .twbtn .twdot { width:8px; height:8px; border-radius:50%; background:#fff; }
+  .twbtn.in { background:var(--panel2); border-color:var(--line); color:var(--text); }
+  .twbtn.in .twdot { background:#9146ff; box-shadow:0 0 8px #9146ff; }
+  .twbtn.wait .twdot { background:var(--accent); }
+  .twbtn.bad { background:var(--panel2); border-color:var(--bad); color:var(--text); }
+  .twbtn.bad .twdot { background:var(--bad); }
+  .twpop { position:absolute; right:0; top:calc(100% + 8px); width:300px; display:none; z-index:30; background:var(--panel2);
+           border:1px solid var(--line2); border-radius:12px; padding:12px 14px; box-shadow:0 16px 40px rgba(0,0,0,.6); }
+  .twpop.open { display:flex; flex-direction:column; gap:10px; }
+  .twpop .code { font-size:24px; letter-spacing:.14em; color:var(--accent); font-weight:700; font-family: ui-monospace, Consolas, monospace; }
+  .twpop .err { color:var(--bad); font-size:12.5px; }
   .form .pair.solo { grid-template-columns: 1fr; }
   .twr .own { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
   .twr .own .t { flex:1 1 220px; }
@@ -323,6 +337,10 @@
     <span class="chip" id="chip-held"><span class="dot"></span>В руках: <b>—</b></span>
     <span class="chip" id="chip-mouse"><span class="dot"></span><b>мышь: ?</b></span>
     <span class="chip" id="chip-sse"><span class="dot"></span>Связь с сервером</span>
+    <div class="twbox" id="twbox">
+      <button class="twbtn" id="tw-btn" onclick="twitchButton(event)"><span class="twdot"></span><span id="tw-btn-label">Войти через Twitch</span></button>
+      <div class="twpop" id="tw-pop"></div>
+    </div>
   </div>
 </header>
 
@@ -854,31 +872,11 @@
       </section>
     </div>
     <div class="col">
-<section id="sec-twitch">
-        <h2>Twitch-аккаунт <span class="right"><span class="chip" id="chip-twitch-acc"><span class="dot"></span><b>не вошёл</b></span></span></h2>
-        <div class="form">
-          <div class="row full">
-            <button class="primary" id="tw-login" onclick="twitchLogin()">Войти через Twitch</button>
-            <button id="tw-logout" onclick="twitchLogout()" style="display:none;">Выйти</button>
-          </div>
-          <div class="full tw-code" id="tw-code" style="display:none;">
-            <span>Код для Twitch:</span> <b id="tw-user-code"></b>
-            <a id="tw-open" target="_blank" rel="noopener"><button class="primary">Открыть страницу Twitch</button></a>
-          </div>
-          <div class="hint full" id="tw-status"></div>
-        </div>
-        <details style="margin-top:6px;"><summary>Своё приложение Twitch (необязательно)</summary>
-          <div class="form" style="margin-top:8px;">
-            <label class="f full"><span>Client ID (пусто — встроенное приложение Hardmode)</span><input type="text" data-key="twitch.client_id" placeholder="со страницы приложения в dev.twitch.tv/console" autocomplete="off" spellcheck="false"></label>
-          </div>
-        </details>
-      </section>
-
 <section id="sec-chat">
         <h2>Чат Twitch <span class="right"><span class="chip" id="chip-chat"><span class="dot"></span><b>выкл</b></span></span></h2>
         <div class="form">
           <label class="inline full"><input type="checkbox" data-key="chat.enabled"> Уведомления в чат включены</label>
-          <label class="f full"><span>Кто пишет в чат</span><select data-key="chat.provider"><option value="se">бот StreamElements</option><option value="twitch">мой аккаунт Twitch (вход выше)</option></select></label>
+          <label class="f full"><span>Кто пишет в чат</span><select data-key="chat.provider"><option value="se">бот StreamElements</option><option value="twitch">мой аккаунт Twitch (вход — кнопка справа сверху)</option></select></label>
           <div class="full se-only">
             <div class="hint">Токен: streamelements.com → аккаунт → канал → Show secrets → JWT Token. Не показывайте его на стриме.</div>
             <label class="f" style="margin-top:8px;"><span>JWT-токен StreamElements <span id="chat-jwt-state" class="muted"></span></span>
@@ -1230,6 +1228,7 @@ async function twitchLogin() {
   const r = await post('/api/twitch/login', {});
   if (!r || !r.ok) { if (w) w.close(); if (r) toast(r.error, true); return; }
   if (w) { try { w.opener = null; w.location.href = r.uri; } catch (e) {} }
+  if (!w) $('tw-pop').classList.add('open');                          // the tab was blocked: the code and a link are here
   toast(w ? 'Нажмите «Разрешить» на открывшейся странице Twitch' : 'Нажмите «Открыть страницу Twitch»');
 }
 async function twitchLogout() { if (!confirm('Выйти из Twitch? Награды Hardmode останутся в канале, но баллы перестанут возвращаться сами.')) return; await post('/api/twitch/logout', {}); }
@@ -1238,18 +1237,34 @@ async function twitchCreateReward(kind) {
   if (r) toast(r.ok ? 'Награда создана в Twitch' : r.error, !r.ok);
 }
 async function twitchDeleteReward(kind) { if (!confirm('Удалить эту награду из канала Twitch?')) return; const r = await post('/api/twitch/reward/delete', {kind}); if (r) toast(r.ok ? 'Награда удалена' : r.error, !r.ok); }
+let twWasIn = null;
+function twitchButton(ev) {
+  ev.stopPropagation();
+  const a = S.twitch_account || {};
+  if (!a.logged_in && !a.login_flow) { twitchLogin(); return; }      // one click: Twitch opens right away
+  $('tw-pop').classList.toggle('open');
+}
+document.addEventListener('click', e => { if (!e.target.closest('#twbox')) $('tw-pop').classList.remove('open'); });
 function renderTwitch() {
-  const a = S.twitch_account; if (!a || !$('chip-twitch-acc')) return;
-  const chip = $('chip-twitch-acc'), b = chip.querySelector('b'), u = a.user || {};
-  if (a.logged_in) { chip.className = 'chip ok'; b.textContent = '@' + (u.login || ''); }
-  else if (a.login_flow) { chip.className = 'chip warn'; b.textContent = 'ждёт подтверждения'; }
-  else { chip.className = 'chip' + (a.error ? ' bad' : ''); b.textContent = 'не вошёл'; }
-  $('tw-login').style.display = a.logged_in ? 'none' : '';
-  $('tw-logout').style.display = a.logged_in ? '' : 'none';
-  $('tw-code').style.display = a.login_flow ? '' : 'none';
-  if (a.login_flow) { $('tw-user-code').textContent = a.login_flow.user_code || ''; $('tw-open').href = a.login_flow.uri || 'https://www.twitch.tv/activate'; }
-  $('tw-status').textContent = a.error ? a.error : a.logged_in ? `Вошли как ${u.display_name || u.login}` + (u.broadcaster_type ? '' : '. Награды за баллы есть только у компаньонов и партнёров') : '';
-  $('tw-status').classList.toggle('bad', !!a.error);
+  const a = S.twitch_account; if (!a || !$('tw-btn')) return;
+  const btn = $('tw-btn'), u = a.user || {}, pop = $('tw-pop');
+  btn.className = 'twbtn' + (a.logged_in ? ' in' : a.login_flow ? ' wait' : a.error ? ' bad' : '');
+  $('tw-btn-label').textContent = a.logged_in ? '@' + (u.login || '') : a.login_flow ? 'Ждёт «Разрешить» в Twitch' : 'Войти через Twitch';
+  btn.title = a.error || '';
+  if (a.login_flow) {
+    pop.innerHTML = `<div>Нажмите «Разрешить» на странице Twitch. Код должен совпасть:</div><div class="code">${esc(a.login_flow.user_code || '')}</div>`
+      + `<a href="${esc(a.login_flow.uri || 'https://www.twitch.tv/activate')}" target="_blank" rel="noopener"><button class="primary">Открыть страницу Twitch</button></a>`;
+  } else if (a.logged_in) {
+    pop.innerHTML = `<div>Вошли как <b>${esc(u.display_name || u.login || '')}</b></div>`
+      + (u.broadcaster_type ? '' : '<div class="muted">Награды за баллы есть только у компаньонов и партнёров Twitch.</div>')
+      + (a.error ? `<div class="err">${esc(a.error)}</div>` : '')
+      + `<div><button onclick="twitchLogout()">Выйти</button></div>`;
+  } else {
+    pop.innerHTML = a.error ? `<div class="err">${esc(a.error)}</div>` : '';
+    pop.classList.remove('open');
+  }
+  if (twWasIn === false && a.logged_in) { pop.classList.remove('open'); toast('Вход в Twitch выполнен: @' + (u.login || '')); }
+  twWasIn = !!a.logged_in;
   renderTwitchRewards();
 }
 function renderTwitchRewards() {
@@ -1440,7 +1455,7 @@ function renderLoadout() {
 
 function renderSettings() {
   const r = S.roulette.settings, o = S.overlay;
-  const src = { roulette: r, overlay: o, dpi: (S.dpi && S.dpi.settings) || {}, chat: (S.chat && S.chat.settings) || {}, ingame: S.ingame || {}, donations: (S.donations && S.donations.settings) || {}, obs: (S.obs && S.obs.settings) || {}, twitch: {client_id: (S.twitch_account || {}).client_id || ''} };
+  const src = { roulette: r, overlay: o, dpi: (S.dpi && S.dpi.settings) || {}, chat: (S.chat && S.chat.settings) || {}, ingame: S.ingame || {}, donations: (S.donations && S.donations.settings) || {}, obs: (S.obs && S.obs.settings) || {} };
   document.querySelectorAll('[data-key]').forEach(el => {
     if (document.activeElement === el) return;
     const [grp, key] = el.dataset.key.split('.'); const v = src[grp] ? src[grp][key] : undefined; if (v === undefined) return;
@@ -1588,10 +1603,10 @@ function renderChecks() {
   else opt.push(item('off', 'OBS: перезагрузка виджетов при запуске', 'если OBS открыт раньше приложения, виджеты в нём остаются пустыми', openObs));
   const cs = c.settings || {};
   const twa = S.twitch_account || {};
-  const openTw = `<button onclick="showMainTab('general'); $('sec-twitch').scrollIntoView({block: 'start'})">Настроить</button>`;
+  const openTw = twa.logged_in ? '' : `<button onclick="twitchButton(event)">Войти через Twitch</button>`;
   if (twa.logged_in) opt.push(item(twa.error ? 'warn' : 'ok', 'Twitch-аккаунт', twa.error || `@${(twa.user || {}).login}: свои награды возвращают баллы сами` + (Object.keys(twa.rewards || {}).length ? '' : ' (наград Hardmode пока нет)'), openTw));
   else opt.push(item('off', 'Twitch-аккаунт', 'награды с автовозвратом баллов, чат от твоего имени', openTw));
-  if (cs.enabled && cs.provider === 'twitch') opt.push(item(twa.can_chat && !c.last_error ? 'ok' : 'warn', 'Чат от аккаунта Twitch', !twa.can_chat ? 'войдите через Twitch на вкладке «Общее»' : c.last_error ? 'ошибка: ' + c.last_error : `пишет @${(twa.user || {}).login}`, `<button onclick="testChat()">Отправить тест</button>` + openTw));
+  if (cs.enabled && cs.provider === 'twitch') opt.push(item(twa.can_chat && !c.last_error ? 'ok' : 'warn', 'Чат от аккаунта Twitch', !twa.can_chat ? 'войдите через Twitch: кнопка справа сверху' : c.last_error ? 'ошибка: ' + c.last_error : `пишет @${(twa.user || {}).login}`, `<button onclick="testChat()">Отправить тест</button>` + openTw));
   else if (cs.enabled) opt.push(item(cs.se_jwt_set && !c.last_error ? 'ok' : 'warn', 'Чат через StreamElements', !cs.se_jwt_set ? 'нет токена' : c.last_error ? 'ошибка: ' + c.last_error : (c.channel && c.channel.username ? `канал ${c.channel.username}` : 'токен сохранён, нажмите «Проверить»'), `<button onclick="verifyChat()">Проверить</button><button onclick="showMainTab('general')">Настроить</button>`));
   else opt.push(item('off', 'Чат через StreamElements', 'сообщения о старте, оружии и DPI в чат', `<button onclick="showMainTab('general')">Настроить</button>`));
   if (ds.viewer_enabled) opt.push(item(t.connected ? (ds.viewer_reward_id ? 'ok' : 'warn') : 'warn', 'Зрители: DPI за баллы канала', !cs.channel_login ? 'укажите логин канала' : !t.connected ? (t.last_error ? 'чат: ' + t.last_error : 'подключаюсь к чату…') : (ds.viewer_reward_id ? `чат #${t.channel} читается, награда задана` : `чат #${t.channel} читается; нажмите «Определить» и выкупите награду`), `<button onclick="showMainTab('dpi')">Настроить</button>`));

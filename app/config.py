@@ -255,7 +255,6 @@ class AppSettings:
     chat: dict = field(default_factory=dict)          # ChatSettings as dict (contains the SE JWT secret)
     donations: dict = field(default_factory=dict)     # DonationSettings as dict (contains DA/DonatePay secrets)
     obs: dict = field(default_factory=dict)           # ObsSettings as dict (contains the obs-websocket password)
-    twitch: dict = field(default_factory=dict)        # TwitchSettings as dict (client id; tokens live in data/twitch.json)
     overlay: OverlaySettings = field(default_factory=OverlaySettings)
     ingame: IngameSettings = field(default_factory=IngameSettings)
     open_browser: bool = True
@@ -282,7 +281,6 @@ class AppSettings:
         s.chat = dict(d.get("chat") or {}) if isinstance(d.get("chat"), dict) else {}
         s.donations = dict(d.get("donations") or {}) if isinstance(d.get("donations"), dict) else {}
         s.obs = dict(d.get("obs") or {}) if isinstance(d.get("obs"), dict) else {}
-        s.twitch = dict(d.get("twitch") or {}) if isinstance(d.get("twitch"), dict) else {}
         s.open_browser = to_bool(d.get("open_browser", True))
         if isinstance(d.get("overlay"), dict):
             s.overlay.apply(d["overlay"])

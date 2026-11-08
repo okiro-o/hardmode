@@ -27,7 +27,7 @@ from .events import Broker
 from .gsi import GsiTracker, build_cfg
 from . import ingame as ingame_mod
 from .obs import ObsService, ObsSettings
-from .twitch_api import TwitchError, TwitchService, TwitchSettings
+from .twitch_api import TwitchError, TwitchService
 from .ingame import IngameOverlays
 from .chat import ChatNotifier, ChatSettings
 from .modules import dpi
@@ -107,13 +107,8 @@ class AppState:
         self.settings.obs = obs_settings.to_dict()
         self.obs = ObsService(obs_settings, app_port=lambda: self.settings.port,
                               publish_threadsafe=self.broker.publish_threadsafe)
-        try:
-            twitch_settings = TwitchSettings.from_dict(self.settings.twitch)
-        except ValueError:
-            twitch_settings = TwitchSettings()
-        self.settings.twitch = twitch_settings.to_dict()
         # the streamer's Twitch account: Hardmode's own rewards with refunds, optionally chat as the streamer
-        self.twitch_api = TwitchService(twitch_settings, os.path.join(config.data_dir(), "twitch.json"),
+        self.twitch_api = TwitchService(os.path.join(config.data_dir(), "twitch.json"),
                                         publish_threadsafe=self.broker.publish_threadsafe,
                                         call_threadsafe=self.broker.call_threadsafe)
         self.twitch_api.on_redemption = self._on_twitch_redemption
@@ -229,7 +224,6 @@ class AppState:
         self.settings.dpi = self.dpi.settings.to_dict()
         self.settings.chat = self.chat.settings.to_dict()
         self.settings.donations = self.donations.settings.to_dict()
-        self.settings.twitch = self.twitch_api.settings.to_dict()
         try:
             self.settings.save()
         except OSError:
@@ -709,7 +703,6 @@ def create_app() -> FastAPI:
         d["chat"] = state.chat.settings.public_dict()   # never expose the JWT
         d["donations"] = state.donations.settings.public_dict()   # nor the DA secret / DonatePay key
         d["obs"] = state.obs.settings.public_dict()               # nor the obs-websocket password
-        d["twitch"] = state.twitch_api.settings.to_dict()         # only the client id: tokens stay in twitch.json
         return d
 
     @app.post("/api/settings")
@@ -717,13 +710,12 @@ def create_app() -> FastAPI:
         body = await _json(request)
         s = state.settings
         rejected: list[str] = []
-        for section in ("roulette", "overlay", "dpi", "chat", "ingame", "donations", "obs", "twitch"):
+        for section in ("roulette", "overlay", "dpi", "chat", "ingame", "donations", "obs"):
             if section in body and body[section] is not None and not isinstance(body[section], dict):
                 raise HTTPException(400, f"{section}: нужен объект")
         # sections validated by their own module: the module keeps the typed settings, AppSettings the dict copy
         for section, owner, label in (("chat", state.chat, "чата"), ("dpi", state.dpi, "DPI"), ("roulette", state.roulette, "рулетки"),
-                                      ("donations", state.donations, "донатов"), ("obs", state.obs, "OBS"),
-                                      ("twitch", state.twitch_api, "Twitch")):
+                                      ("donations", state.donations, "донатов"), ("obs", state.obs, "OBS")):
             if section in body:
                 try:
                     owner.update_settings(body[section] or {})

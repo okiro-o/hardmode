@@ -18,7 +18,7 @@ refresh tokens rotate and live 30 days, so the account stays signed in while the
 monthly. Tokens are validated at start and hourly (Twitch requirement). Scopes: ``channel:manage:redemptions``
 (also covers reading redemptions) and ``user:write:chat``. The client id of Hardmode's own public Twitch
 application is built in (``BUILTIN_CLIENT_ID``, registered by the user 2026-11-08; not a secret), so signing in is
-one button; ``settings.client_id`` may override it with another application.
+one button (the field for another application was removed at the user's request, 0.23.2).
 
 Redemptions are polled (``GET …/custom_rewards/redemptions?status=UNFULFILLED``, every ``POLL_S``) instead of
 EventSub: the request queue itself is the source of truth, nothing is lost across restarts, and handled ids
@@ -37,7 +37,6 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import asdict, dataclass
 from typing import Any, Callable
 
 from . import config
@@ -66,24 +65,6 @@ class TwitchError(RuntimeError):
     def __init__(self, message: str, status: int | None = None) -> None:
         super().__init__(message)
         self.status = status
-
-
-@dataclass
-class TwitchSettings:
-    client_id: str = ""             # optional: another Twitch application instead of the built-in one
-
-    @classmethod
-    def from_dict(cls, d: dict | None) -> "TwitchSettings":
-        s = cls()
-        config.assign_fields(s, d, "twitch")
-        cid = s.client_id.strip() if isinstance(s.client_id, str) else ""
-        if cid and not re.fullmatch(r"[A-Za-z0-9]{10,64}", cid):
-            raise ValueError("client_id: это строка из латинских букв и цифр со страницы приложения Twitch")
-        s.client_id = cid
-        return s
-
-    def to_dict(self) -> dict:
-        return asdict(self)
 
 
 # ----------------------------------------------------------------------------- HTTP
@@ -130,9 +111,7 @@ def _ts(value: Any) -> float | None:
 
 # ----------------------------------------------------------------------------- service
 class TwitchService:
-    def __init__(self, settings: TwitchSettings, state_path: str,
-                 publish_threadsafe: Callable[[str, dict], None], call_threadsafe: Callable[..., None]) -> None:
-        self.settings = settings
+    def __init__(self, state_path: str, publish_threadsafe: Callable[[str, dict], None], call_threadsafe: Callable[..., None]) -> None:
         self.state_path = state_path
         self._publish = publish_threadsafe
         self._call = call_threadsafe
@@ -172,18 +151,9 @@ class TwitchService:
             except OSError:
                 log.warning("cannot save twitch state", exc_info=True)
 
-    def update_settings(self, patch: dict) -> None:
-        new = TwitchSettings.from_dict({**self.settings.to_dict(), **(patch or {})})
-        old = self.client_id
-        self.settings = new
-        changed = self.client_id != old
-        if changed and self.state["token"]:
-            self.logout(revoke=False)         # tokens belong to the old application
-        self._changed()
-
     @property
     def client_id(self) -> str:
-        return self.settings.client_id or BUILTIN_CLIENT_ID
+        return BUILTIN_CLIENT_ID
 
     @property
     def logged_in(self) -> bool:
@@ -196,8 +166,7 @@ class TwitchService:
     def status(self) -> dict:
         with self._lock:
             u = self.state["user"]
-            return {"client_id": self.settings.client_id, "builtin_client": not self.settings.client_id,
-                    "logged_in": self.logged_in,
+            return {"logged_in": self.logged_in,
                     "user": {"login": u.get("login"), "display_name": u.get("display_name"),
                              "broadcaster_type": u.get("broadcaster_type")} if u else None,
                     "can_chat": self.can_chat,
