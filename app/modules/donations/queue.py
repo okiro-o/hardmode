@@ -41,6 +41,8 @@ class ViewerQueue:
         self.context: Callable[[], dict | None] = lambda: None
         # None when the weapon may be requested, else the reason (knife/Zeus switched off in the race)
         self.allowed: Callable[[str], str | None] = lambda weapon: None
+        # a request was closed (done/dismissed): app.main answers the Twitch redemption behind it (refund on ×)
+        self.on_close: Callable[[dict], None] | None = None
         self._avail_key: tuple | None = None
         self._load()
 
@@ -131,8 +133,10 @@ class ViewerQueue:
 
     # ------------------------------------------------------------------ changes
     def add(self, weapon: str | None, text: str, user: str, amount: float | None = None,
-            currency: str = "", source: str = "donation", by_side: str | None = None) -> dict:
-        """``by_side``: the alias named several weapons («плётка») and the one of this side was taken."""
+            currency: str = "", source: str = "donation", by_side: str | None = None,
+            redemption: dict | None = None) -> dict:
+        """``by_side``: the alias named several weapons («плётка») and the one of this side was taken.
+        ``redemption``: {reward_id, id} of the Twitch redemption that paid for it (rewards made by Hardmode)."""
         if weapon is not None and weapon not in W.BY_ID:
             weapon = None
         if weapon is not None and (why := self.allowed(weapon)):
@@ -144,6 +148,8 @@ class ViewerQueue:
             entry = {"id": self._next_id, "weapon": weapon, "text": str(text or "")[:200], "user": str(user or "?")[:40],
                      "amount": amount, "currency": currency, "source": source, "t": time.time(), "status": "pending",
                      "by_side": by_side}
+            if redemption:
+                entry["redemption"] = {"reward_id": str(redemption.get("reward_id") or ""), "id": str(redemption.get("id") or "")}
             self._next_id += 1
             self.entries.append(entry)
             position = self.pending(ctx).index(entry) + 1 if ctx is not None else len(self.pending(ordered=False))
@@ -163,7 +169,15 @@ class ViewerQueue:
             e["closed_t"] = time.time()
             self._trim()
         self._changed()
+        self._closed(e)
         return self._view(e)
+
+    def _closed(self, e: dict) -> None:
+        if self.on_close:
+            try:
+                self.on_close(e)
+            except Exception:  # noqa: BLE001 - the queue must not break because of Twitch
+                pass
 
     def done(self, entry_id: int) -> dict | None:
         return self._close(entry_id, "done")
@@ -240,6 +254,7 @@ class ViewerQueue:
             e["auto"] = True
             self._trim()
         self._changed()
+        self._closed(e)
         return self._view(e)
 
     def _trim(self) -> None:

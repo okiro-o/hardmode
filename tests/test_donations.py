@@ -110,7 +110,7 @@ class Harness:
                                    publish=lambda e, d: None, call_threadsafe=lambda fn, *a: fn(*a))
         self.svc.add_wheel = lambda v, u: (self.calls.append(("wheel", v, u)) or
                                            ({"ok": False, "error": "вне диапазона 400–6400"} if v > 6400 else {"ok": True, "value": v}))
-        self.svc.queue_weapon = lambda w, text, user, amount, cur, by_side=None, source="donation": (
+        self.svc.queue_weapon = lambda w, text, user, amount, cur, by_side=None, source="donation", redemption=None: (
             self.calls.append(("weapon", w, user, by_side)) or {"name": {"awp": "AWP"}.get(w), "position": 1})
         self.svc.chat_result = lambda u, t: self.chat.append(("ok", u, t))
         self.svc.chat_reject = lambda u, t: self.chat.append(("no", u, t))

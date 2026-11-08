@@ -57,6 +57,7 @@ def jwt_claims(token: str) -> dict:
 class ChatSettings:
     enabled: bool = False
     se_jwt: str = ""                        # secret
+    provider: str = "se"                    # who writes: "se" = StreamElements bot, "twitch" = streamer's account
     on_start: bool = True
     on_weapon: bool = True
     on_dpi: bool = True
@@ -87,6 +88,8 @@ class ChatSettings:
             setattr(s, b, config.to_bool(getattr(s, b)))
         s.channel_login = s.channel_login.strip().lstrip("#").lower()[:40] if isinstance(s.channel_login, str) else ""
         s.se_jwt = s.se_jwt.strip() if isinstance(s.se_jwt, str) else ""
+        if s.provider not in ("se", "twitch"):
+            s.provider = "se"
         for t in ("start_template", "weapon_template", "dpi_template", "viewer_template", "reject_template",
                   "donation_template", "request_template", "request_done_template", "queue_template"):
             v = getattr(s, t)
@@ -128,6 +131,9 @@ class ChatNotifier:
         self.settings = settings
         self._publish = publish_threadsafe
         self._sender = sender or self._send_streamelements
+        # the streamer's own Twitch account (app.twitch_api), wired by app.main
+        self.twitch_send: Callable[[str], dict] | None = None
+        self.twitch_ready: Callable[[], bool] = lambda: False
         self._queue: "queue.Queue[tuple[str, str] | None]" = queue.Queue()
         self._thread: threading.Thread | None = None
         self.channel: dict = {}
@@ -185,8 +191,15 @@ class ChatNotifier:
         cid = self.channel.get("id") or jwt_claims(self.settings.se_jwt).get("channel")
         return str(cid) if cid else None
 
+    def can_send(self) -> bool:
+        """Messages are on and the chosen sender is set up (SE token, or Twitch sign-in with the chat scope)."""
+        s = self.settings
+        if not s.enabled:
+            return False
+        return self.twitch_ready() if s.provider == "twitch" else bool(s.se_jwt)
+
     def _enqueue(self, kind: str, message: str) -> None:
-        if not self.settings.enabled or not self.settings.se_jwt or not message.strip():
+        if not self.can_send() or not message.strip():
             return
         self._queue.put((kind, message.strip()[:450]))
         self.start()
@@ -231,7 +244,7 @@ class ChatNotifier:
 
     def notify_queue_reply(self, user: str, result: str) -> bool:
         """Answer the queue command; one answer per viewer per 15 s so the command cannot flood the chat."""
-        if not (self.settings.enabled and self.settings.se_jwt):
+        if not self.can_send():
             return False
         key = (user or "").lower()
         now = time.monotonic()
@@ -301,6 +314,16 @@ class ChatNotifier:
                 time.sleep(self.settings.min_interval_s)
 
     def _deliver(self, message: str) -> None:
+        if self.settings.provider == "twitch":
+            if not self.twitch_send:
+                raise RuntimeError("отправка от аккаунта Twitch недоступна")
+            res = self.twitch_send(message)
+            self.last_response = res if isinstance(res, dict) else None
+            self.sent_count += 1
+            self.last_error = None
+            log.info("chat: sent as the streamer %r", message)
+            self._log("sent", message)
+            return
         cid = self.channel_id()
         if not cid:
             raise RuntimeError("не удалось определить канал: проверьте JWT-токен StreamElements")

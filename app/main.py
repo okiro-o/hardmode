@@ -27,6 +27,7 @@ from .events import Broker
 from .gsi import GsiTracker, build_cfg
 from . import ingame as ingame_mod
 from .obs import ObsService, ObsSettings
+from .twitch_api import TwitchError, TwitchService, TwitchSettings
 from .ingame import IngameOverlays
 from .chat import ChatNotifier, ChatSettings
 from .modules import dpi
@@ -106,9 +107,22 @@ class AppState:
         self.settings.obs = obs_settings.to_dict()
         self.obs = ObsService(obs_settings, app_port=lambda: self.settings.port,
                               publish_threadsafe=self.broker.publish_threadsafe)
+        try:
+            twitch_settings = TwitchSettings.from_dict(self.settings.twitch)
+        except ValueError:
+            twitch_settings = TwitchSettings()
+        self.settings.twitch = twitch_settings.to_dict()
+        # the streamer's Twitch account: Hardmode's own rewards with refunds, optionally chat as the streamer
+        self.twitch_api = TwitchService(twitch_settings, os.path.join(config.data_dir(), "twitch.json"),
+                                        publish_threadsafe=self.broker.publish_threadsafe,
+                                        call_threadsafe=self.broker.call_threadsafe)
+        self.twitch_api.on_redemption = self._on_twitch_redemption
+        self.queue.on_close = self._on_request_closed
+        self.chat.twitch_send = self.twitch_api.send_chat
+        self.chat.twitch_ready = lambda: self.twitch_api.can_chat
         self.donations.add_wheel = lambda v, u: self.dpi.add_viewer_value(v, u, source="donation", per_user_limit=False)
-        self.donations.queue_weapon = lambda w, text, user, amount, cur, by_side=None, source="donation": self.queue.add(
-            w, text, user, amount, cur, source=source, by_side=by_side)
+        self.donations.queue_weapon = lambda w, text, user, amount, cur, by_side=None, source="donation", redemption=None: \
+            self.queue.add(w, text, user, amount, cur, source=source, by_side=by_side, redemption=redemption)
         self.donations.current_side = lambda: self.gsi.status.team or self.roulette.side
         self.donations.chat_result = lambda user, text: self.chat.notify_donation(user, text, ok=True)
         self.donations.chat_reject = lambda user, text: self.chat.notify_donation(user, text, ok=False)
@@ -215,6 +229,7 @@ class AppState:
         self.settings.dpi = self.dpi.settings.to_dict()
         self.settings.chat = self.chat.settings.to_dict()
         self.settings.donations = self.donations.settings.to_dict()
+        self.settings.twitch = self.twitch_api.settings.to_dict()
         try:
             self.settings.save()
         except OSError:
@@ -225,8 +240,8 @@ class AppState:
         """Start/stop the anonymous chat reader: needed for viewer DPI values, the weapon reward, and for the
         queue command when the StreamElements bot can answer it."""
         channel = self.chat.settings.channel_login
-        cs, dn = self.chat.settings, self.donations
-        queue_cmd = bool(dn.settings.queue_command and cs.enabled and cs.se_jwt)
+        dn = self.donations
+        queue_cmd = bool(dn.settings.queue_command and self.chat.can_send())
         weapon_reward = dn.settings.reward_enabled or dn.learn_reward
         if channel and (self.dpi.settings.viewer_enabled or queue_cmd or weapon_reward):
             self.twitch.start(channel)
@@ -239,6 +254,8 @@ class AppState:
     def handle_chat_message(self, msg: IrcMessage) -> None:
         if self._queue_command(msg):
             return
+        if msg.reward_id and self.twitch_api.managed_kind(msg.reward_id):
+            return                # Hardmode's own reward: read from the Twitch API with its redemption id
         if msg.reward_id and self._weapon_reward(msg):
             return
         s = self.dpi.settings
@@ -297,12 +314,55 @@ class AppState:
             self.chat.notify_reject(user, res["text"])
         return True
 
-    def _viewer_rejected(self, user: str, text: str, error: str) -> None:
-        self.dpi._log("viewer", f"{user}: «{text[:30]}» не принято ({error})")
+    def _viewer_rejected(self, user: str, text: str, error: str, refunded: bool = False) -> None:
+        self.dpi._log("viewer", f"{user}: «{text[:30]}» не принято ({error})" + (", баллы возвращены" if refunded else ""))
         self.dpi._changed()
         s = self.dpi.settings
         reason = {"не число": f"нужно число от {s.viewer_min} до {s.viewer_max}"}.get(error, error)
-        self.chat.notify_reject(user, reason)
+        self.chat.notify_reject(user, reason + (". Баллы вернул" if refunded else ""))
+
+    # ------------------------------------------------------------ twitch account (own rewards)
+    def _on_twitch_redemption(self, kind: str, r: dict) -> str:
+        """A redemption of a reward made by Hardmode: "fulfill" | "cancel" (refund) | "keep" (waits in the queue)."""
+        user, text = r.get("user") or "?", (r.get("text") or "").strip()
+        if kind == "weapon":
+            dn = self.donations
+            if not dn.settings.reward_enabled:
+                self.chat.notify_reject(user, "оружие за баллы сейчас выключено. Баллы вернул")
+                return "cancel"
+            res = dn.reward_request(text, user, redemption={"reward_id": r["reward_id"], "id": r["id"]})
+            if res["ok"]:
+                self.chat.notify_request(user, res.get("weapon") or "оружие", res.get("position") or "?", res["text"])
+                return "keep"
+            self.chat.notify_reject(user, res["text"] + ". Баллы вернул")
+            return "cancel"
+        if kind == "dpi":
+            if not self.dpi.settings.viewer_enabled:
+                self.chat.notify_reject(user, "DPI за баллы сейчас выключены. Баллы вернул")
+                return "cancel"
+            res = self.dpi.add_viewer_value(text, user, source="reward")
+            if res["ok"]:
+                return "fulfill"
+            self._viewer_rejected(user, text, res["error"], refunded=True)
+            return "cancel"
+        return "cancel"
+
+    def _on_request_closed(self, e: dict) -> None:
+        """A viewer request paid with Hardmode's reward was closed: ✓/kill fulfils it, × refunds the points."""
+        red = e.get("redemption")
+        if red:
+            self.twitch_api.set_status(red, "FULFILLED" if e.get("status") == "done" else "CANCELED")
+
+    def set_managed_reward_ids(self) -> None:
+        """Our rewards are also «the» weapon / DPI reward of the existing settings (panel shows the same id)."""
+        rewards = self.twitch_api.state["rewards"]
+        w, d = rewards.get("weapon"), rewards.get("dpi")
+        if w and self.donations.settings.reward_id != w["id"]:
+            self.donations.update_settings({"reward_id": w["id"], "reward_enabled": True})
+        if d and self.dpi.settings.viewer_reward_id != d["id"]:
+            self.dpi.update_settings({"viewer_reward_id": d["id"], "viewer_enabled": True})
+        self.persist_dpi_settings()
+        self.sync_twitch()
 
     def urls(self) -> dict:
         base = f"http://127.0.0.1:{self.settings.port}"
@@ -334,6 +394,7 @@ class AppState:
             "queue": self.queue.snapshot(),
             "donations": self.donations.status(),
             "obs": self.obs.status(),
+            "twitch_account": self.twitch_api.status(),
             "urls": self.urls(),
             "gsi_token": self.settings.gsi_token,
             "port": self.settings.port,
@@ -451,6 +512,7 @@ def create_app() -> FastAPI:
         state.chat.start()
         state.donations.start()
         state.obs.start()         # OBS may have been started first: reload its widget sources
+        state.twitch_api.start()
         state.sync_twitch()
         stop = asyncio.Event()
 
@@ -480,6 +542,7 @@ def create_app() -> FastAPI:
             state.ingame.stop()
             state.chat.stop()
             state.donations.stop()
+            state.twitch_api.stop()
             state.twitch.stop()
             state.stats.flush()
             state.save_state()
@@ -646,6 +709,7 @@ def create_app() -> FastAPI:
         d["chat"] = state.chat.settings.public_dict()   # never expose the JWT
         d["donations"] = state.donations.settings.public_dict()   # nor the DA secret / DonatePay key
         d["obs"] = state.obs.settings.public_dict()               # nor the obs-websocket password
+        d["twitch"] = state.twitch_api.settings.to_dict()         # only the client id: tokens stay in twitch.json
         return d
 
     @app.post("/api/settings")
@@ -653,12 +717,13 @@ def create_app() -> FastAPI:
         body = await _json(request)
         s = state.settings
         rejected: list[str] = []
-        for section in ("roulette", "overlay", "dpi", "chat", "ingame", "donations", "obs"):
+        for section in ("roulette", "overlay", "dpi", "chat", "ingame", "donations", "obs", "twitch"):
             if section in body and body[section] is not None and not isinstance(body[section], dict):
                 raise HTTPException(400, f"{section}: нужен объект")
         # sections validated by their own module: the module keeps the typed settings, AppSettings the dict copy
         for section, owner, label in (("chat", state.chat, "чата"), ("dpi", state.dpi, "DPI"), ("roulette", state.roulette, "рулетки"),
-                                      ("donations", state.donations, "донатов"), ("obs", state.obs, "OBS")):
+                                      ("donations", state.donations, "донатов"), ("obs", state.obs, "OBS"),
+                                      ("twitch", state.twitch_api, "Twitch")):
             if section in body:
                 try:
                     owner.update_settings(body[section] or {})
@@ -790,6 +855,56 @@ def create_app() -> FastAPI:
         log.info("quit requested via API")
         threading.Timer(0.3, do_quit).start()   # let the response leave first
         return {"ok": True, "version": VERSION}
+
+    @app.get("/api/twitch/account")
+    async def twitch_account() -> dict:
+        return state.twitch_api.status()
+
+    @app.post("/api/twitch/login")
+    async def twitch_login() -> dict:
+        """Start the device-code sign-in: the panel shows the code and opens twitch.tv/activate."""
+        try:
+            flow = await asyncio.get_running_loop().run_in_executor(None, state.twitch_api.start_login)
+        except TwitchError as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True, **flow}
+
+    @app.post("/api/twitch/logout")
+    async def twitch_logout() -> dict:
+        await asyncio.get_running_loop().run_in_executor(None, state.twitch_api.logout)
+        return {"ok": True}
+
+    @app.post("/api/twitch/reward")
+    async def twitch_reward_create(request: Request) -> dict:
+        """{kind: weapon|dpi, title?, cost?}: create Hardmode's reward in the channel (refunds work only for it)."""
+        body = await _json(request)
+        kind = str(body.get("kind") or "")
+        prompt = None
+        if kind == "dpi":
+            prompt = f"Число DPI от {state.dpi.settings.viewer_min} до {state.dpi.settings.viewer_max}"
+        try:
+            r = await asyncio.get_running_loop().run_in_executor(
+                None, state.twitch_api.create_reward, kind, body.get("title"), body.get("cost"), prompt)
+        except TwitchError as e:
+            return {"ok": False, "error": str(e)}
+        state.set_managed_reward_ids()
+        return {"ok": True, "reward": r}
+
+    @app.post("/api/twitch/reward/delete")
+    async def twitch_reward_delete(request: Request) -> dict:
+        body = await _json(request)
+        kind = str(body.get("kind") or "")
+        old = (state.twitch_api.state["rewards"].get(kind) or {}).get("id")
+        try:
+            await asyncio.get_running_loop().run_in_executor(None, state.twitch_api.delete_reward, kind)
+        except TwitchError as e:
+            return {"ok": False, "error": str(e)}
+        if old and kind == "weapon" and state.donations.settings.reward_id == old:
+            state.donations.update_settings({"reward_id": ""})
+        if old and kind == "dpi" and state.dpi.settings.viewer_reward_id == old:
+            state.dpi.update_settings({"viewer_reward_id": ""})
+        state.persist_dpi_settings()
+        return {"ok": True}
 
     @app.get("/api/obs")
     async def obs_status() -> dict:

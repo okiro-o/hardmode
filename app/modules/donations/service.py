@@ -408,26 +408,26 @@ class DonationService:
         return {"ok": True, "action": action, "text": f"{res['value']} DPI на колесе"}
 
     def _enqueue(self, candidates: list[str], text: str, user: str, amount: float | None, currency: str,
-                 source: str = "donation") -> dict:
+                 source: str = "donation", redemption: dict | None = None) -> dict:
         """Queue a request; several candidates («плётка») — the one of the side being played."""
         side = self.current_side()
         wid = next((w for w in candidates if side and W.BY_ID[w].usable_by(side)), candidates[0] if candidates else None)
         try:
             e = self.queue_weapon(wid, text, user, amount, currency,
-                                  by_side=side if len(candidates) > 1 else None, source=source)
+                                  by_side=side if len(candidates) > 1 else None, source=source, redemption=redemption)
         except ValueError as err:
             return {"ok": False, "text": str(err)}
         what = e.get("name") or "оружие (уточнит стример)"
         return {"ok": True, "text": f"{what} в очереди, №{e.get('position', '?')}", "weapon": e.get("name"),
                 "position": e.get("position")}
 
-    def reward_request(self, text: str, user: str) -> dict:
+    def reward_request(self, text: str, user: str, redemption: dict | None = None) -> dict:
         """A channel-points redemption of the weapon reward: {ok, text[, weapon, position]}."""
         found = self.aliases.match(text)
         if not found:
             res = {"ok": False, "text": "не понял, какое оружие: напиши название, например AWP или «калаш»"}
         else:
-            res = self._enqueue(found[0], text, user, None, "", source="reward")
+            res = self._enqueue(found[0], text, user, None, "", source="reward", redemption=redemption)
         log.info("reward %s «%s»: %s", user, text[:40], res["text"])
         return res
 
