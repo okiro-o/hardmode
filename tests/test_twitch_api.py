@@ -404,3 +404,32 @@ def test_app_switch_turns_the_reward_on_and_off_in_twitch(client, app_twitch):
     wid = client.post("/api/twitch/reward", json={"kind": "weapon"}).json()["reward"]["id"]
     client.post("/api/settings", json={"donations": {"reward_enabled": False}})
     assert _wait(lambda: fake.rewards[wid]["is_enabled"] is False)
+
+
+def test_refund_all_points_requests_at_the_end_of_a_stream(client, app_twitch):
+    st, svc, fake = app_twitch
+    assert client.post("/api/queue/refund").json() == {"ok": True, "count": 0}       # nothing to give back
+    w = client.post("/api/twitch/reward", json={"kind": "weapon"}).json()["reward"]["id"]
+    fake.redeem(w, "p1", "Alice", "авп")
+    fake.redeem(w, "p2", "Bob", "калаш")
+    svc.poll_once()
+    client.post("/api/queue/add", json={"weapon": "nova", "user": "Донатер"})            # not paid with points
+    st.queue.add("deagle", "дигл", "Carl", 300, "RUB")                                   # a donation
+    published = []
+    real = st.queue._publish
+    st.queue._publish = lambda ev, d: (published.append(ev), real(ev, d))
+    r = client.post("/api/queue/refund").json()
+    st.queue._publish = real
+    assert r == {"ok": True, "count": 2} and published == ["queue"]                    # one update for all
+    svc.flush_actions()
+    assert fake.statuses == {"p1": "CANCELED", "p2": "CANCELED"}
+    assert sorted(e["user"] for e in st.queue.pending()) == ["Carl", "Донатер"]
+    hist = {e["user"]: e["status"] for e in client.get("/api/queue").json()["history"]}
+    assert hist["Alice"] == hist["Bob"] == "dismissed"
+    # signed out: refusing is better than dropping requests without giving the points back
+    fake.redeem(w, "p3", "Dan", "awp")
+    svc.poll_once()
+    svc.logout(revoke=False)
+    res = client.post("/api/queue/refund")
+    assert res.status_code == 400 and "Twitch" in res.text
+    assert any(e["user"] == "Dan" for e in st.queue.pending())

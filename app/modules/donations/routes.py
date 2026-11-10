@@ -175,6 +175,19 @@ async def queue_move(request: Request) -> dict:
     return {"ok": _state(request).queue.move(_int(body, "id"), _int(body, "delta"))}
 
 
+@router.post("/api/queue/refund")
+async def queue_refund(request: Request) -> dict:
+    """End of stream: give the points back for every open request paid with Hardmode's reward and drop it.
+    Requests from donations or added by hand stay (no points were spent on them)."""
+    st = _state(request)
+    if not any(e.get("redemption") for e in st.queue.pending(ordered=False)):
+        return {"ok": True, "count": 0}
+    if not st.twitch_api.logged_in:
+        raise HTTPException(400, "Нет входа в Twitch: без него баллы не вернуть")
+    closed = st.queue.dismiss_where(lambda e: bool(e.get("redemption")))
+    return {"ok": True, "count": len(closed)}
+
+
 @router.post("/api/queue/clear")
 async def queue_clear(request: Request) -> dict:
     _state(request).queue.clear_history()

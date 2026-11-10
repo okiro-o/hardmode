@@ -185,6 +185,21 @@ class ViewerQueue:
     def dismiss(self, entry_id: int) -> dict | None:
         return self._close(entry_id, "dismissed")
 
+    def dismiss_where(self, pred: Callable[[dict], bool]) -> list[dict]:
+        """Dismiss every open request matching ``pred`` at once (one save, one event). Returns them."""
+        now = time.time()
+        with self._lock:
+            hit = [e for e in self.entries if e["status"] == "pending" and pred(e)]
+            for e in hit:
+                e["status"], e["closed_t"] = "dismissed", now
+            if hit:
+                self._trim()
+        if hit:
+            self._changed()
+            for e in hit:
+                self._closed(e)
+        return [self._view(e) for e in hit]
+
     def resolve(self, entry_id: int, weapon: str) -> dict | None:
         """The streamer picked the weapon for a request that was not recognised (or fixes a wrong one)."""
         if weapon not in W.BY_ID:

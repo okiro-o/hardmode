@@ -146,6 +146,11 @@
   .req .acts { display:flex; gap:4px; }
   .req .acts button { padding:4px 9px; }
   .req.first { border-color:rgba(255,209,102,.5); }
+  /* under the queue: how many requests were paid with channel points + give them all back (end of stream) */
+  .req-foot { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+              padding:8px 2px 4px; margin-top:2px; border-top:1px solid var(--line); }
+  .req-foot span { color:var(--muted); font-size:12.5px; }
+  .req-foot span b { color:var(--text); }
   /* a rule is two lines: [on] action … ↑↓× / [on] от · до · слово — fits the narrow right column */
   .rule { display:grid; grid-template-columns: auto 1fr 1fr 1.6fr auto; grid-template-areas: "on act act act acts" "on min max kw kw";
     gap:6px 8px; align-items:center; padding:8px; border:1px solid var(--line); border-radius:10px; background:var(--panel2); margin-bottom:6px; }
@@ -431,6 +436,10 @@
       <section id="sec-requests">
         <h2>Зрительская очередь <span class="right"><span class="chip" id="chip-requests"><span class="dot"></span><b>пусто</b></span></span></h2>
         <div id="requests"></div>
+        <div class="req-foot" id="requests-foot" style="display:none;">
+          <span id="requests-pts"></span>
+          <button class="danger-outline" onclick="refundAllPoints()">Вернуть баллы за все</button>
+        </div>
         <details style="margin-top:6px;" id="wreward-box" open><summary>Twitch: оружие за баллы и команда очереди <span class="muted" id="wreward-sum"></span></summary>
           <div class="form" style="margin-top:8px;">
             <label class="inline full"><input type="checkbox" data-key="donations.reward_enabled"> Оружие за баллы канала</label>
@@ -1120,10 +1129,23 @@ function downloadStatsCsv() {
 }
 // ---- viewer weapon queue
 function fmtMoney(a, cur) { const c = ({'': '₽', RUB: '₽', USD: '$', EUR: '€'})[(cur || '').toUpperCase()] ?? cur; return a == null ? '' : `${+a} ${c}`; }
+function plural(n, one, few, many) {
+  const a = Math.abs(n) % 100, b = a % 10;
+  return a > 10 && a < 20 ? many : b === 1 ? one : b >= 2 && b <= 4 ? few : many;
+}
+async function refundAllPoints() {
+  const n = ((S.queue || {}).pending || []).filter(e => e.redemption).length;
+  if (!n || !confirm(`Вернуть баллы за ${n} ${plural(n, 'заявку', 'заявки', 'заявок')} и убрать ${n === 1 ? 'её' : 'их'} из очереди?\nЗаявки из донатов останутся.`)) return;
+  const r = await post('/api/queue/refund', {});
+  if (r) toast(r.count ? `Баллы возвращены: ${r.count} ${plural(r.count, 'заявка', 'заявки', 'заявок')}` : 'Заявок за баллы нет');
+}
 function renderRequests() {
   const q = S.queue; if (!q || !$('requests')) return;
   const chip = $('chip-requests'); const n = q.pending.length;
   chip.className = 'chip' + (n ? ' warn' : ''); chip.querySelector('b').textContent = n ? `заявок: ${n}` : 'пусто';
+  const pts = q.pending.filter(e => e.redemption).length;
+  $('requests-foot').style.display = pts ? '' : 'none';
+  $('requests-pts').innerHTML = `За баллы канала: <b>${pts}</b> ${plural(pts, 'заявка', 'заявки', 'заявок')}`;
   $('requests').innerHTML = n ? q.pending.map((e, i) => `<div class="req ${i === 0 ? 'first' : ''}">
       ${e.icon ? `<div class="icon" style="--mask:url('${e.icon}')"></div>` : '<div class="icon unknown">?</div>'}
       <div class="body"><div class="l1"><b>${esc(e.name || 'не распознано')}</b>${e.by_side ? `<span class="tag">за ${esc(e.by_side)}</span>` : ''}${e.note ? `<span class="tag out">${esc(e.note)}</span>` : ''}</div>
