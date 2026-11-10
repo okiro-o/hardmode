@@ -60,7 +60,12 @@
   h3::after { content:""; flex:1; height:1px; background:var(--line); order:2; }
   /* a configured block shrinks to its heading; «Настроить» opens the fields again (0.27.0) */
   section.setup-collapsed h2 { margin-bottom:0; }
+  section h2 .wsize { font-size:12px; font-weight:500; letter-spacing:normal; text-transform:none; color:var(--muted); display:block; white-space:nowrap; }
+  section h2 .wsize b { color:var(--text); font-weight:700; }
+  details.wset { margin-top:8px; }
   section h2 .right.nowrap { flex-wrap:nowrap; flex-shrink:0; }
+  h3 .setup-sum { order:1; font-size:12.5px; font-weight:600; letter-spacing:normal; text-transform:none; color:var(--text); }
+  #setup-sum-race { margin-top:-2px; }
   .setup-btn { order:3; padding:3px 10px; font-size:12px; font-weight:600; letter-spacing:normal; text-transform:none; }
   /* buttons */
   button { background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:7px 12px; cursor:pointer; font: inherit; transition: background .15s, border-color .15s; }
@@ -216,6 +221,12 @@
   .check .s { font-size:12.5px; color:var(--muted); margin-top:2px; }
   .check .acts { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; flex:0 0 auto; }
   .check .acts button { padding:6px 10px; font-size:13px; }
+  details.okfold > summary { list-style:none; cursor:pointer; color:var(--text); font-size:inherit; margin:0 0 8px; }
+  details.okfold > summary::-webkit-details-marker { display:none; }
+  details.okfold > summary .okmore { font-size:12.5px; color:var(--muted); padding:6px 4px; }
+  details.okfold > summary:hover .okmore { color:var(--text); }
+  details.okfold[open] > div.check { margin-left:18px; }
+  details.okfold[open] > summary .s { display:none; }
   /* weapon picker popover */
   .picker { position:absolute; z-index:40; background:var(--panel2); border:1px solid var(--line2); border-radius:12px; padding:10px; box-shadow:0 16px 40px rgba(0,0,0,.6); width:440px; display:none; }
   .picker.open { display:block; animation: ddin .12s ease-out; }
@@ -470,7 +481,9 @@
       </section>
 
       <section>
-        <h2>Настройки гонки</h2>
+        <h2>Настройки гонки <span class="right"><button class="setup-btn" id="setup-btn-race" onclick="setupToggle('race')">Настроить</button></span></h2>
+        <div class="hint" id="setup-sum-race"></div>
+        <div id="setup-race">
         <div class="form">
           <label class="f full"><span>Автопереход после килла</span>
             <select data-key="roulette.auto_advance">
@@ -498,6 +511,7 @@
               <select data-key="roulette.ct_starting"><option value="random">случайно</option><option value="usp_silencer">USP-S</option><option value="hkp2000">P2000</option></select></label>
           </div>
         </details>
+        </div>
       </section>
     </div>
   </div>
@@ -719,8 +733,9 @@
       </section>
 
 <section>
-        <h2>Виджет оружия</h2>
-        <div class="url"><span class="name">Ссылка для OBS</span><code id="url-weapons"></code><button onclick="copyText('url-weapons')">Копировать</button><a id="open-weapons" target="_blank"><button>Открыть</button></a></div>
+        <h2>Виджет оружия <span class="right wsize">размер <b id="size-weapons">—</b></span></h2>
+        <div class="url"><span class="name">Ссылка для OBS</span><code id="url-weapons"></code><button onclick="copyText('url-weapons')">Копировать</button></div>
+        <details class="wset"><summary>Настройки виджета</summary>
         <div class="form" style="margin-top:8px;">
           <label class="f"><span>Масштаб</span><input type="number" min="0.3" max="3" step="0.1" data-key="overlay.scale"></label>
           <label class="f"><span>Раскладка</span><select data-key="overlay.layout"><option value="horizontal">горизонтально</option><option value="vertical">вертикально</option></select></label>
@@ -731,46 +746,45 @@
           <label class="inline"><input type="checkbox" data-key="overlay.show_kills"> Бейдж «киллов x/y» (если нужно &gt; 1 килла)</label>
           <label class="inline"><input type="checkbox" data-key="overlay.show_match"> Подсвечивать цветом оружие в руках</label>
         </div>
-        <div class="hint" style="margin-top:8px;">Размер источника: <b id="size-weapons">—</b></div>
+        </details>
       </section>
 
 <section>
-        <h2>Виджет лоадаута</h2>
-        <div class="url"><span class="name">Ссылка для OBS</span><code id="url-loadout"></code><button onclick="copyText('url-loadout')">Копировать</button><a id="open-loadout" target="_blank"><button>Открыть</button></a></div>
+        <h2>Виджет лоадаута <span class="right wsize">размер <b id="size-loadout">—</b>, обе стороны <b id="size-loadout-both">—</b></span></h2>
+        <div class="url"><span class="name">Ссылка для OBS</span><code id="url-loadout"></code><button onclick="copyText('url-loadout')">Копировать</button></div>
+        <details class="wset"><summary>Настройки виджета</summary>
         <div class="form" style="margin-top:8px;">
           <label class="f"><span>Раскладка лоадаута</span><select data-key="overlay.loadout_layout"><option value="rows">строки: категория в строку</option><option value="columns">колонки: как в игре (пистолеты | мид | винтовки)</option></select></label>
           <label class="inline" style="align-self:end;"><input type="checkbox" data-key="overlay.loadout_names"> Названия под силуэтами</label>
         </div>
-        <div class="hint" style="margin-top:8px;">Размер источника: <b id="size-loadout">—</b>, обе стороны <b id="size-loadout-both">—</b></div>
+        </details>
       </section>
     </div>
     <div class="col">
       <section>
-        <h2>Виджет зрительской очереди</h2>
-        <div class="url"><span class="name">Ссылка для OBS</span><code id="url-requests"></code><button onclick="copyText('url-requests')">Копировать</button><a id="open-requests" target="_blank"><button>Открыть</button></a></div>
+        <h2>Виджет зрительской очереди <span class="right wsize">размер <b id="size-requests">—</b></span></h2>
+        <div class="url"><span class="name">Ссылка для OBS</span><code id="url-requests"></code><button onclick="copyText('url-requests')">Копировать</button></div>
+        <details class="wset"><summary>Настройки виджета</summary>
         <div class="form" style="margin-top:8px;">
           <label class="f"><span>Строк на экране</span><input type="number" min="1" max="10" step="1" data-key="overlay.queue_max"></label>
           <div></div>
           <label class="inline"><input type="checkbox" data-key="overlay.queue_title"> Заголовок</label>
           <label class="inline"><input type="checkbox" data-key="overlay.queue_amount"> Сумма доната</label>
         </div>
-        <div class="hint" style="margin-top:8px;">Размер источника: <b id="size-requests">—</b></div>
+        </details>
       </section>
 
 <section>
-        <h2>Виджет DPI</h2>
-        <div class="url"><span class="name">Ссылка для OBS</span><code id="url-dpi"></code><button onclick="copyText('url-dpi')">Копировать</button><a id="open-dpi" target="_blank"><button>Открыть</button></a></div>
+        <h2>Виджет DPI <span class="right wsize">размер <b id="size-dpi">600×750</b></span></h2>
+        <div class="url"><span class="name">Ссылка для OBS</span><code id="url-dpi"></code><button onclick="copyText('url-dpi')">Копировать</button></div>
+        <details class="wset"><summary>Настройки виджета</summary>
         <div class="form" style="margin-top:8px;">
           <label class="f"><span>Колесо на виджете</span><select data-key="dpi.wheel_mode"><option value="spin">только пока крутится, потом остаётся число</option><option value="always">всегда видно</option></select></label>
           <label class="inline" style="align-self:end;"><input type="checkbox" data-key="dpi.show_current"> Показывать текущий DPI между кручениями</label>
+          <label class="f"><span>Колесо остаётся после остановки, с</span><input type="number" min="0" max="60" step="0.5" data-key="dpi.wheel_linger_s"></label>
+          <label class="f"><span>Прятать число через, с (0 — не прятать)</span><input type="number" min="0" max="3600" step="1" data-key="dpi.idle_hide_s"></label>
         </div>
-        <details style="margin-top:6px;"><summary>Дополнительно</summary>
-          <div class="form" style="margin-top:8px;">
-            <label class="f"><span>Колесо остаётся после остановки, с</span><input type="number" min="0" max="60" step="0.5" data-key="dpi.wheel_linger_s"></label>
-            <label class="f"><span>Прятать число через, с (0 — не прятать)</span><input type="number" min="0" max="3600" step="1" data-key="dpi.idle_hide_s"></label>
-          </div>
         </details>
-        <div class="hint" style="margin-top:8px;">Размер источника: <b id="size-dpi">600×750</b></div>
       </section>
     </div>
   </div>
@@ -896,7 +910,9 @@
         <div class="form">
           <label class="inline full"><input type="checkbox" data-key="chat.enabled"> Уведомления в чат включены</label>
           <div class="hint full" id="chat-status"></div>
-          <h3 class="full">Когда писать</h3>
+        </div>
+        <h3>Когда писать <span class="setup-sum" id="setup-sum-chatev"></span><button class="setup-btn" id="setup-btn-chatev" onclick="setupToggle('chatev')">Настроить</button></h3>
+        <div class="form" id="setup-chatev">
           <label class="inline"><input type="checkbox" data-key="chat.on_start"> Старт гонки вооружений</label>
           <label class="inline"><input type="checkbox" data-key="chat.on_weapon"> Новое оружие</label>
           <label class="inline"><input type="checkbox" data-key="chat.on_dpi"> Новый DPI</label>
@@ -1176,6 +1192,7 @@ function setupBlock(id, done) {
   document.querySelectorAll(`#sec-${id} .setup-part`).forEach(el => el.style.display = collapsed ? 'none' : '');
   if (btn) { btn.style.display = done ? '' : 'none'; btn.textContent = setupOpened[id] ? 'Свернуть' : 'Настроить'; }
   if (btn && body && btn.closest('h2')) btn.closest('section').classList.toggle('setup-collapsed', collapsed);
+  const sum = $('setup-sum-' + id); if (sum) sum.style.display = collapsed ? '' : 'none';
 }
 function setupToggle(id) { setupOpened[id] = !setupOpened[id]; setupBlock(id, !!setupDone[id]); }
 function plural(n, one, few, many) {
@@ -1491,7 +1508,19 @@ function renderLoadout() {
     + items.map(([cat, id]) => card(cat, id)).join('') + '</div>').join('') + '</div>';
 }
 
+const AUTO_TEXT = {strict: 'килл назначенным оружием', any: 'любой килл', off: 'только кнопкой'};
+const CHAT_EVENTS = ['on_start', 'on_weapon', 'on_dpi', 'on_viewer', 'on_reject', 'on_donation', 'on_request', 'on_request_done'];
+function renderFolded() {
+  const r = S.roulette.settings || {}, c = (S.chat && S.chat.settings) || {};
+  const extra = [r.include_starting && 'стартовый пистолет', r.include_knife && 'нож', r.include_zeus && 'Zeus'].filter(Boolean);
+  $('setup-sum-race').textContent = `Переход: ${AUTO_TEXT[r.auto_advance] || '—'} · ${r.kills_per_weapon || 1} ${plural(r.kills_per_weapon || 1, 'килл', 'килла', 'киллов')} на оружие`
+    + (extra.length ? ` · в рулетке ${extra.join(', ')}` : '');
+  const on = CHAT_EVENTS.filter(k => c[k]).length;
+  $('setup-sum-chatev').textContent = on === CHAT_EVENTS.length ? 'все события' : on ? `${on} из ${CHAT_EVENTS.length}` : 'ничего';
+  setupBlock('race', true); setupBlock('chatev', true);
+}
 function renderSettings() {
+  renderFolded();
   const r = S.roulette.settings, o = S.overlay;
   const src = { roulette: r, overlay: o, dpi: (S.dpi && S.dpi.settings) || {}, chat: (S.chat && S.chat.settings) || {}, ingame: S.ingame || {}, donations: (S.donations && S.donations.settings) || {}, obs: (S.obs && S.obs.settings) || {} };
   document.querySelectorAll('[data-key]').forEach(el => {
@@ -1504,10 +1533,10 @@ function renderSettings() {
 
 function renderMisc() {
   $('version').textContent = 'v' + S.version;
-  $('url-weapons').textContent = S.urls.overlay_weapons; $('open-weapons').href = S.urls.overlay_weapons + '?bg=1b1e26';
-  $('url-loadout').textContent = S.urls.overlay_loadout; $('open-loadout').href = S.urls.overlay_loadout + '?bg=1b1e26';
-  $('url-requests').textContent = S.urls.overlay_requests; $('open-requests').href = S.urls.overlay_requests + '?bg=1b1e26';
-  $('url-dpi').textContent = S.urls.overlay_dpi; $('open-dpi').href = S.urls.overlay_dpi + '?bg=1b1e26';
+  $('url-weapons').textContent = S.urls.overlay_weapons;
+  $('url-loadout').textContent = S.urls.overlay_loadout;
+  $('url-requests').textContent = S.urls.overlay_requests;
+  $('url-dpi').textContent = S.urls.overlay_dpi;
   $('gsi-uri').textContent = S.urls.gsi;
   $('cs2-dir').textContent = S.cs2_cfg_dir || 'не найдена автоматически — скачайте конфиг и положите в game/csgo/cfg вручную';
   $('cfg-installed').textContent = S.cfg_state === 'ok' ? 'установлен: ' + S.cfg_installed : S.cfg_state === 'stale' ? 'устарел (другой токен/порт) — нажмите «Установить конфиг в CS2»: ' + S.cfg_installed : 'не установлен';
@@ -1597,6 +1626,16 @@ function renderSizes() {
   const [qw, qh] = queueBox(o); $('size-requests').textContent = `${qw}×${qh}`;
 }
 
+// items that are fine fold into one «Всё в порядке: N» row; what needs attention stays on top
+const okOpen = {};
+function foldOk(items, key) {
+  const ok = items.filter(h => h.startsWith('<div class="check ok"')), rest = items.filter(h => !ok.includes(h));
+  if (!ok.length) return rest.join('');
+  const names = ok.map(h => (h.match(/<div class="t">(.*?)<\/div>/) || [])[1] || '').join(' · ');
+  return rest.join('') + `<details class="okfold" ${okOpen[key] ? 'open' : ''} ontoggle="okOpen['${key}'] = this.open; this.querySelector('.okmore').textContent = this.open ? 'свернуть' : 'показать'">
+    <summary class="check ok"><div class="mark">✓</div><div class="body"><div class="t">Всё в порядке: ${ok.length}</div><div class="s">${names}</div></div><div class="acts"><span class="okmore">${okOpen[key] ? 'свернуть' : 'показать'}</span></div></summary>
+    ${ok.join('')}</details>`;
+}
 function renderChecks() {
   const g = S.gsi || {}, d = S.dpi || {}, c = S.chat || {}, t = S.twitch || {}, cl = S.clients || {}, r = S.roulette || {};
   const obs = p => (cl[p] && cl[p].obs) || 0, brw = p => (cl[p] && cl[p].browser) || 0;
@@ -1631,7 +1670,7 @@ function renderChecks() {
   } else {
     req.push(item('off', 'DPI-рулетка', 'выключена', `<button onclick="showMainTab('dpi')">Включить</button>`));
   }
-  $('checks').innerHTML = req.join('');
+  $('checks').innerHTML = foldOk(req, 'req');
   // optional
   const opt = [];
   opt.push(item(qObs ? 'ok' : 'off', 'OBS: виджет зрительской очереди', qObs ? `подключён из OBS (${qObs})` : 'заявки зрителей на стриме: ' + (S.urls ? S.urls.overlay_requests || '' : ''), `<button onclick="copyText('url-requests')">Скопировать ссылку</button>`));
@@ -1659,7 +1698,7 @@ function renderChecks() {
   if (dns.enabled) opt.push(item((dn.da && dn.da.connected) || (dn.dp && dn.dp.verified) ? 'ok' : 'warn', 'Донаты', [dn.da && dn.da.connected ? 'DonationAlerts подключён' : '', dn.dp && dn.dp.verified ? 'DonatePay: ключ принят' : ''].filter(Boolean).join(' · ') || 'не подключён ни один сервис', `<button onclick="showMainTab('donations')">Открыть</button>`));
   else opt.push(item('off', 'Донаты', 'оружие в зрительскую очередь, DPI на колесо', `<button onclick="showMainTab('donations')">Настроить</button>`));
   opt.push(item(a.enabled ? 'ok' : 'off', 'Автозапуск с Windows', a.available ? (a.enabled ? 'включён' : 'выключен') : 'только в Windows', a.available ? `<button onclick="post('/api/autostart',{enabled:${!a.enabled}}).then(()=>refreshState())">${a.enabled ? 'Выключить' : 'Включить'}</button>` : ''));
-  $('checks-optional').innerHTML = opt.join('');
+  $('checks-optional').innerHTML = foldOk(opt, 'opt');
   const bad = (req.join('').match(/class="check (bad|warn)"/g) || []).length;
   $('startup-summary').textContent = bad ? `${bad} из ${req.length} пунктов требуют внимания` : 'всё готово';
   // first run: open Startup until the required items are green (unless the user picked a tab)
