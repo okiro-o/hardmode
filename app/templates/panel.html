@@ -57,7 +57,11 @@
   section h2 { margin:0 0 10px; font-size:15px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); display:flex; align-items:center; gap:10px; }
   section h2 .right { margin-left:auto; display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
   h3 { margin:14px 0 8px; font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); display:flex; align-items:center; gap:8px; }
-  h3::after { content:""; flex:1; height:1px; background:var(--line); }
+  h3::after { content:""; flex:1; height:1px; background:var(--line); order:2; }
+  /* a configured block shrinks to its heading; «Настроить» opens the fields again (0.27.0) */
+  section.setup-collapsed h2 { margin-bottom:0; }
+  section h2 .right.nowrap { flex-wrap:nowrap; flex-shrink:0; }
+  .setup-btn { order:3; padding:3px 10px; font-size:12px; font-weight:600; letter-spacing:normal; text-transform:none; }
   /* buttons */
   button { background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:7px 12px; cursor:pointer; font: inherit; transition: background .15s, border-color .15s; }
   button:hover { border-color:var(--line2); background:var(--panel3); }
@@ -152,7 +156,7 @@
   .req-foot span { color:var(--muted); font-size:12.5px; }
   .req-foot span b { color:var(--text); }
   /* a rule is two lines: [on] action … ↑↓× / [on] от · до · слово — fits the narrow right column */
-  .rule { display:grid; grid-template-columns: auto 1fr 1fr 1.6fr auto; grid-template-areas: "on act act act acts" "on min max kw kw";
+  .rule { display:grid; grid-template-columns: auto 1fr 1fr 1.1fr auto; grid-template-areas: "on act act act acts" "on min max kw kw";
     gap:6px 8px; align-items:center; padding:8px; border:1px solid var(--line); border-radius:10px; background:var(--panel2); margin-bottom:6px; }
   .rule.off { opacity:.55; }
   .rule .ron { grid-area:on; padding:4px; }
@@ -163,6 +167,7 @@
   .rule .rmin { grid-area:min; } .rule .rmax { grid-area:max; } .rule .rkw { grid-area:kw; }
   .rule .rf { display:flex; align-items:center; gap:6px; min-width:0; font-size:11.5px; color:var(--muted); white-space:nowrap; }
   .rule .rf input { flex:1 1 auto; min-width:0; height:32px; }
+  .rule .rmin input, .rule .rmax input { padding:0 6px; }
   @media (max-width: 520px) { .rule { grid-template-columns: auto 1fr 1fr; grid-template-areas: "on act acts" "on min max" "on kw kw"; } }
   .aliaslist { display:grid; grid-template-columns: 110px 1fr; gap:4px 12px; font-size:12.5px; margin-top:6px; }
   .aliaslist b { font-weight:600; }
@@ -308,6 +313,7 @@
   @media (max-width: 520px) { .form .pair, .form .pair.port { grid-template-columns: 1fr; } }
   /* Twitch sign-in: always visible at the top right (user's request) */
   .twbox { margin-left:auto; position:relative; }
+  #chip-sse:not(.bad) { display:none; }      /* shown only when the panel lost the app (0.27.0) */
   .twbtn { display:flex; align-items:center; gap:8px; padding:6px 12px; border-radius:999px; font-size:12.5px; font-weight:700;
            background:#9146ff; border-color:#9146ff; color:#fff; }
   .twbtn:hover { background:#a970ff; border-color:#a970ff; }
@@ -329,6 +335,16 @@
   .twpop .logout:hover { background:rgba(255,94,94,.12); border-color:var(--bad); }
   .form .pair.solo { grid-template-columns: 1fr; }
   /* Hardmode's own Twitch reward: a small card — title and state, cost + description, actions */
+  /* «Поверх игры»: one block, a switch between the three overlays (0.27.0) */
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .seg button { border:0; border-radius:0; background:transparent; padding:6px 12px; font-size:13px; font-weight:600;
+                letter-spacing:normal; text-transform:none; color:var(--muted); display:flex; align-items:center; gap:6px; }
+  .seg button + button { border-left:1px solid var(--line); }
+  .seg button.active { background:rgba(255,209,102,.12); color:var(--accent); }
+  .seg .d { width:7px; height:7px; border-radius:50%; background:var(--line2); }
+  .seg .d.on { background:var(--ok); }
+  .ig-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px; }
+  .ig-pane .row { margin-top:10px; align-items:center; gap:14px; flex-wrap:wrap; }
   .twr-card { border:1px solid var(--line); border-radius:10px; background:transparent; padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
   .twr-head { display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-size:14px; }
   .twr-head .tag { font-size:11px; line-height:18px; padding:0 8px; border-radius:999px; border:1px solid var(--line2); color:var(--muted); }
@@ -374,7 +390,7 @@
     <span class="chip" id="chip-side"><span class="dot"></span>Сторона: <b>—</b></span>
     <span class="chip" id="chip-held"><span class="dot"></span>В руках: <b>—</b></span>
     <span class="chip" id="chip-mouse"><span class="dot"></span><b>мышь: ?</b></span>
-    <span class="chip" id="chip-sse"><span class="dot"></span>Связь с сервером</span>
+    <span class="chip" id="chip-sse"><span class="dot"></span><b>нет связи с приложением</b></span>
     <div class="twbox" id="twbox">
       <button class="twbtn" id="tw-btn" onclick="twitchButton(event)"><span class="twdot"></span><span id="tw-btn-label">Войти через Twitch</span></button>
       <div class="twpop" id="tw-pop"></div>
@@ -595,6 +611,80 @@
   <!-- ================= TAB: LOOK (widgets, in-game overlay, colours) ================= -->
   <div class="tabpage" id="tab-look">
     <div class="col">
+<section id="sec-ingame">
+        <h2>Поверх игры <span class="right"><span class="seg" id="ig-seg"><button data-k="weapons" onclick="showIngame('weapons')">Оружие<span class="d" id="ig-dot-weapons"></span></button><button data-k="dpi" onclick="showIngame('dpi')">DPI<span class="d" id="ig-dot-dpi"></span></button><button data-k="queue" onclick="showIngame('queue')">Очередь<span class="d" id="ig-dot-queue"></span></button></span></span></h2>
+        <div class="ig-pane" data-k="weapons">
+          <div class="ig-head"><label class="inline"><input type="checkbox" data-key="ingame.weapons_enabled"> Включено</label><span class="chip" id="chip-ingame-weapons"><span class="dot"></span><b>—</b></span></span></div>
+          <div class="form">
+            <label class="f"><span>Когда показывать</span><select data-key="ingame.weapons_mode"><option value="change">после смены, на несколько секунд</option><option value="always">всегда</option></select></label>
+            <label class="f"><span>Угол экрана</span><select data-key="ingame.weapons_corner"><option value="tl">слева сверху</option><option value="tr">справа сверху</option><option value="bl">слева снизу</option><option value="br">справа снизу</option></select></label>
+            <label class="f"><span>Масштаб</span><input type="number" min="0.5" max="3" step="0.1" data-key="ingame.weapons_scale"></label>
+            <label class="f"><span>Следующих оружий рядом</span><input type="number" min="0" max="3" step="1" data-key="ingame.weapons_next"></label>
+            <label class="inline full"><input type="checkbox" data-key="ingame.weapons_names"> Название под силуэтом</label>
+          </div>
+          <details style="margin-top:6px;"><summary>Дополнительно</summary>
+            <div class="form" style="margin-top:8px;">
+              <label class="f"><span>Держать на экране, с</span><input type="number" min="1" max="120" step="1" data-key="ingame.weapons_show_s"></label>
+              <label class="f"><span>Непрозрачность</span><input type="number" min="0.2" max="1" step="0.05" data-key="ingame.weapons_opacity"></label>
+              <label class="f"><span>Отступ по горизонтали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.weapons_x"></label>
+              <label class="f"><span>Отступ по вертикали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.weapons_y"></label>
+            </div>
+          </details>
+          <div class="row" style="margin-top:10px; align-items:center; gap:14px; flex-wrap:wrap;">
+          <button onclick="ingamePreview('weapons')">Показать поверх игры на 5 с</button>
+          <img id="ingame-prev-weapons" class="ingame-prev" alt="">
+          <span class="hint" id="ingame-note-weapons"></span>
+        </div>
+        </div>
+        <div class="ig-pane" data-k="dpi">
+          <div class="ig-head"><label class="inline"><input type="checkbox" data-key="ingame.dpi_enabled"> Включено</label><span class="chip" id="chip-ingame-dpi"><span class="dot"></span><b>—</b></span></span></div>
+          <div class="form">
+            <label class="f"><span>Когда показывать</span><select data-key="ingame.dpi_mode"><option value="change">после смены, на несколько секунд</option><option value="always">всегда</option></select></label>
+            <label class="f"><span>Угол экрана</span><select data-key="ingame.dpi_corner"><option value="tl">слева сверху</option><option value="tr">справа сверху</option><option value="bl">слева снизу</option><option value="br">справа снизу</option></select></label>
+            <label class="f"><span>Масштаб</span><input type="number" min="0.5" max="3" step="0.1" data-key="ingame.dpi_scale"></label>
+            <div></div>
+            
+          </div>
+          <details style="margin-top:6px;"><summary>Дополнительно</summary>
+            <div class="form" style="margin-top:8px;">
+              <label class="f"><span>Держать на экране, с</span><input type="number" min="1" max="120" step="1" data-key="ingame.dpi_show_s"></label>
+              <label class="f"><span>Непрозрачность</span><input type="number" min="0.2" max="1" step="0.05" data-key="ingame.dpi_opacity"></label>
+              <label class="f"><span>Отступ по горизонтали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.dpi_x"></label>
+              <label class="f"><span>Отступ по вертикали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.dpi_y"></label>
+            </div>
+          </details>
+          <div class="row" style="margin-top:10px; align-items:center; gap:14px; flex-wrap:wrap;">
+          <button onclick="ingamePreview('dpi')">Показать поверх игры на 5 с</button>
+          <img id="ingame-prev-dpi" class="ingame-prev" alt="">
+          <span class="hint" id="ingame-note-dpi"></span>
+        </div>
+        </div>
+        <div class="ig-pane" data-k="queue">
+          <div class="ig-head"><label class="inline"><input type="checkbox" data-key="ingame.queue_enabled"> Включено</label><span class="chip" id="chip-ingame-queue"><span class="dot"></span><b>—</b></span></span></div>
+          <div class="form">
+            <label class="f"><span>Когда показывать</span><select data-key="ingame.queue_mode"><option value="always">всегда, пока есть заявки</option><option value="change">после изменения, на несколько секунд</option></select></label>
+            <label class="f"><span>Угол экрана</span><select data-key="ingame.queue_corner"><option value="tl">слева сверху</option><option value="tr">справа сверху</option><option value="bl">слева снизу</option><option value="br">справа снизу</option></select></label>
+            <label class="f"><span>Масштаб</span><input type="number" min="0.5" max="3" step="0.1" data-key="ingame.queue_scale"></label>
+            <label class="f"><span>Заявок в списке</span><input type="number" min="1" max="10" step="1" data-key="ingame.queue_max"></label>
+            <label class="inline full"><input type="checkbox" data-key="ingame.queue_names"> Кто заказал</label>
+          </div>
+          <details style="margin-top:6px;"><summary>Дополнительно</summary>
+            <div class="form" style="margin-top:8px;">
+              <label class="f"><span>Держать на экране, с</span><input type="number" min="1" max="120" step="1" data-key="ingame.queue_show_s"></label>
+              <label class="f"><span>Непрозрачность</span><input type="number" min="0.2" max="1" step="0.05" data-key="ingame.queue_opacity"></label>
+              <label class="f"><span>Отступ по горизонтали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.queue_x"></label>
+              <label class="f"><span>Отступ по вертикали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.queue_y"></label>
+            </div>
+          </details>
+          <div class="row" style="margin-top:10px; align-items:center; gap:14px; flex-wrap:wrap;">
+          <button onclick="ingamePreview('queue')">Показать поверх игры на 5 с</button>
+          <img id="ingame-prev-queue" class="ingame-prev" alt="">
+          <span class="hint" id="ingame-note-queue"></span>
+        </div>
+        </div>
+      </section>
+    </div>
+    <div class="col">
 <section>
         <h2>Цвета</h2>
         <div class="colors">
@@ -602,69 +692,6 @@
           <div class="swatch"><input type="color" data-key="overlay.accent"><div><div class="t">Акцент</div><div class="d">счётчики, бейджи, сегменты колеса DPI</div></div></div>
           <div class="swatch"><input type="color" data-key="overlay.match_color"><div><div class="t">Оружие в руках</div><div class="d">подсветка, когда держишь назначенное оружие</div></div></div>
           <div class="swatch"><input type="color" data-key="dpi.home_color"><div><div class="t">Сегмент «мой DPI»</div><div class="d">на колесе и число при выпадении на него</div></div></div>
-        </div>
-      </section>
-
-<section>
-        <h2>Поверх игры: оружие <span class="right"><span class="chip" id="chip-ingame-weapons"><span class="dot"></span><b>—</b></span></span></h2>
-        <div class="form" style="margin-top:8px;">
-          <label class="f"><span>Когда показывать</span><select data-key="ingame.weapons_mode"><option value="change">после смены, на несколько секунд</option><option value="always">всегда</option></select></label>
-          <label class="f"><span>Держать на экране, с</span><input type="number" min="1" max="120" step="1" data-key="ingame.weapons_show_s"></label>
-          <label class="f"><span>Угол экрана</span><select data-key="ingame.weapons_corner"><option value="tl">слева сверху</option><option value="tr">справа сверху</option><option value="bl">слева снизу</option><option value="br">справа снизу</option></select></label>
-          <label class="f"><span>Масштаб</span><input type="number" min="0.5" max="3" step="0.1" data-key="ingame.weapons_scale"></label>
-          <label class="f"><span>Отступ по горизонтали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.weapons_x"></label>
-          <label class="f"><span>Отступ по вертикали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.weapons_y"></label>
-          <label class="f"><span>Непрозрачность</span><input type="number" min="0.2" max="1" step="0.05" data-key="ingame.weapons_opacity"></label>
-          <label class="f"><span>Следующих оружий рядом</span><input type="number" min="0" max="3" step="1" data-key="ingame.weapons_next"></label>
-          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="ingame.weapons_names"> Название под силуэтом</label>
-          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="ingame.weapons_enabled"> Включено</label>
-        </div>
-        <div class="row" style="margin-top:10px; align-items:center; gap:14px; flex-wrap:wrap;">
-          <button onclick="ingamePreview('weapons')">Показать поверх игры на 5 с</button>
-          <img id="ingame-prev-weapons" class="ingame-prev" alt="">
-          <span class="hint" id="ingame-note-weapons"></span>
-        </div>
-      </section>
-    </div>
-    <div class="col">
-<section>
-        <h2>Поверх игры: DPI <span class="right"><span class="chip" id="chip-ingame-dpi"><span class="dot"></span><b>—</b></span></span></h2>
-        <div class="form" style="margin-top:8px;">
-          <label class="f"><span>Когда показывать</span><select data-key="ingame.dpi_mode"><option value="change">после смены, на несколько секунд</option><option value="always">всегда</option></select></label>
-          <label class="f"><span>Держать на экране, с</span><input type="number" min="1" max="120" step="1" data-key="ingame.dpi_show_s"></label>
-          <label class="f"><span>Угол экрана</span><select data-key="ingame.dpi_corner"><option value="tl">слева сверху</option><option value="tr">справа сверху</option><option value="bl">слева снизу</option><option value="br">справа снизу</option></select></label>
-          <label class="f"><span>Масштаб</span><input type="number" min="0.5" max="3" step="0.1" data-key="ingame.dpi_scale"></label>
-          <label class="f"><span>Отступ по горизонтали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.dpi_x"></label>
-          <label class="f"><span>Отступ по вертикали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.dpi_y"></label>
-          <label class="f"><span>Непрозрачность</span><input type="number" min="0.2" max="1" step="0.05" data-key="ingame.dpi_opacity"></label>
-          <div></div>
-          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="ingame.dpi_enabled"> Включено</label>
-        </div>
-        <div class="row" style="margin-top:10px; align-items:center; gap:14px; flex-wrap:wrap;">
-          <button onclick="ingamePreview('dpi')">Показать поверх игры на 5 с</button>
-          <img id="ingame-prev-dpi" class="ingame-prev" alt="">
-          <span class="hint" id="ingame-note-dpi"></span>
-        </div>
-      </section>
-
-<section>
-        <h2>Поверх игры: зрительская очередь <span class="right"><span class="chip" id="chip-ingame-queue"><span class="dot"></span><b>—</b></span></span></h2>
-        <div class="form" style="margin-top:8px;">
-          <label class="f"><span>Когда показывать</span><select data-key="ingame.queue_mode"><option value="always">всегда, пока есть заявки</option><option value="change">после изменения, на несколько секунд</option></select></label>
-          <label class="f"><span>Держать на экране, с</span><input type="number" min="1" max="120" step="1" data-key="ingame.queue_show_s"></label>
-          <label class="f"><span>Угол экрана</span><select data-key="ingame.queue_corner"><option value="tl">слева сверху</option><option value="tr">справа сверху</option><option value="bl">слева снизу</option><option value="br">справа снизу</option></select></label>
-          <label class="f"><span>Масштаб</span><input type="number" min="0.5" max="3" step="0.1" data-key="ingame.queue_scale"></label>
-          <label class="f"><span>Отступ по горизонтали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.queue_x"></label>
-          <label class="f"><span>Отступ по вертикали, px</span><input type="number" min="0" max="8000" step="1" data-key="ingame.queue_y"></label>
-          <label class="f"><span>Непрозрачность</span><input type="number" min="0.2" max="1" step="0.05" data-key="ingame.queue_opacity"></label>
-          <label class="f"><span>Заявок в списке</span><input type="number" min="1" max="10" step="1" data-key="ingame.queue_max"></label>
-          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="ingame.queue_names"> Кто заказал</label>
-          <label class="inline" style="align-self:end;"><input type="checkbox" data-key="ingame.queue_enabled"> Включено</label>
-        </div>
-        <div class="row" style="margin-top:10px; align-items:center; gap:14px; flex-wrap:wrap;">
-          <button onclick="ingamePreview('queue')">Показать поверх игры на 5 с</button>
-          <img id="ingame-prev-queue" class="ingame-prev" alt="">
-          <span class="hint" id="ingame-note-queue"></span>
         </div>
       </section>
     </div>
@@ -676,7 +703,7 @@
 <section id="sec-obs">
         <h2>OBS: перезагрузка виджетов <span class="right"><span class="chip" id="chip-obs"><span class="dot"></span><b>выкл</b></span></span></h2>
         <div class="form">
-          <div class="pair port">
+          <div class="pair port setup-part">
             <label class="f"><span>Порт</span><input type="number" min="1" max="65535" step="1" data-key="obs.port"></label>
             <label class="f"><span>Пароль WebSocket-сервера <span id="obs-pass-state" class="muted"></span></span>
               <div class="tokenbox">
@@ -686,8 +713,8 @@
                 <button type="button" onclick="clearSecret('password', 'obs')" title="Удалить сохранённый пароль">Удалить</button>
               </div></label>
           </div>
-          <div class="row full"><button onclick="obsRefresh()">Обновить виджеты в OBS сейчас</button></div>
-          <div class="hint full" id="obs-status"></div>
+          <div class="row full"><button onclick="obsRefresh()">Обновить виджеты в OBS сейчас</button><button id="setup-btn-obs" onclick="setupToggle('obs')" style="display:none;">Настроить</button></div>
+          <div class="hint full setup-part" id="obs-status"></div>
         </div>
       </section>
 
@@ -753,8 +780,8 @@
       <section id="sec-donations">
         <h2>Донаты <span class="right"><span class="chip" id="chip-donations"><span class="dot"></span><b>выкл</b></span></span></h2>
         <label class="inline"><input type="checkbox" data-key="donations.enabled"> Донаты включены</label>
-        <h3>DonationAlerts <span class="chip" id="chip-da" style="margin-left:8px;"><span class="dot"></span><b>—</b></span></h3>
-        <div class="form">
+        <h3>DonationAlerts <span class="chip" id="chip-da" style="margin-left:8px;"><span class="dot"></span><b>—</b></span><button class="setup-btn" id="setup-btn-da" onclick="setupToggle('da')" style="display:none;">Настроить</button></h3>
+        <div class="form" id="setup-da">
           <div class="f full"><span>Адрес возврата (вписать в приложение DonationAlerts)</span>
             <div class="url" style="margin:0;"><code id="da-redirect"></code><button onclick="copyText('da-redirect')">Копировать</button></div></div>
           <label class="f"><span>ID приложения</span><input type="text" data-key="donations.da_client_id" placeholder="например, 12345" autocomplete="off"></label>
@@ -769,8 +796,8 @@
             <button onclick="post('/api/donations/da/disconnect')">Отключить</button>
           </div>
         </div>
-        <h3>DonatePay <span class="chip" id="chip-dp" style="margin-left:8px;"><span class="dot"></span><b>—</b></span></h3>
-        <div class="form">
+        <h3>DonatePay <span class="chip" id="chip-dp" style="margin-left:8px;"><span class="dot"></span><b>—</b></span><button class="setup-btn" id="setup-btn-dp" onclick="setupToggle('dp')" style="display:none;">Настроить</button></h3>
+        <div class="form" id="setup-dp">
           <label class="f full"><span>Ключ API <span id="dp-key-state" class="muted"></span></span>
             <div class="tokenbox">
               <input type="password" id="dp-key" placeholder="вставьте ключ" autocomplete="off" spellcheck="false">
@@ -840,7 +867,8 @@
   <div class="tabpage" id="tab-general">
     <div class="col">
 <section>
-        <h2>Подключение к CS2 (GSI)</h2>
+        <h2>Подключение к CS2 (GSI) <span class="right nowrap"><span class="chip" id="chip-gsi-setup"><span class="dot"></span><b>—</b></span><button class="setup-btn" id="setup-btn-gsi" onclick="setupToggle('gsi')" style="display:none;">Настроить</button></span></h2>
+        <div id="setup-gsi">
         <div class="hint">После установки конфига перезапустите CS2.</div>
         <div class="row" style="margin-top:8px;">
           <button class="primary" onclick="installCfg()">Установить конфиг в CS2</button>
@@ -859,6 +887,7 @@
           </div>
           <div class="hint">Адрес приёма: <code id="gsi-uri"></code><br>Папка CS2: <code id="cs2-dir">ищу…</code><br>Конфиг: <code id="cfg-installed">—</code><br>Токен: <code id="gsi-token"></code></div>
         </details>
+        </div>
       </section>
     </div>
     <div class="col">
@@ -1043,7 +1072,16 @@ function renderIngame() {
     if (kind === 'queue' && g.present && g.present.queue === false && !err && g.queue_enabled && g.available !== false) { chip.className = 'chip'; b.textContent = 'очередь пуста'; }
     if (note) note.textContent = err ? err : (g.present && g.present[kind] === false && g.reason && g.reason[kind]) ? 'сейчас скрыт: ' + g.reason[kind] + ' (на картинке пример)' : '';
     const img = $('ingame-prev-' + kind); if (img && !img.src) schedulePreview(kind);
+    const dot = $('ig-dot-' + kind); if (dot) dot.classList.toggle('on', !!g[kind + '_enabled']);
   }
+}
+let igKind = (() => { try { return localStorage.getItem('cs2r.ingame') || 'weapons'; } catch (e) { return 'weapons'; } })();
+function showIngame(k) {
+  igKind = k;
+  try { localStorage.setItem('cs2r.ingame', k); } catch (e) {}
+  document.querySelectorAll('.ig-pane').forEach(p => p.style.display = p.dataset.k === k ? '' : 'none');
+  document.querySelectorAll('#ig-seg button').forEach(b => b.classList.toggle('active', b.dataset.k === k));
+  schedulePreview(k);
 }
 async function ingamePreview(kind) { const r = await post('/api/ingame/preview', {kind}); if (!r) return; if (r.ok) toast('Показываю поверх игры 5 секунд'); else toast(r.error || 'Недоступно', true); }
 function renderLog(id, entries, cls = e => e.kind) {
@@ -1129,6 +1167,17 @@ function downloadStatsCsv() {
 }
 // ---- viewer weapon queue
 function fmtMoney(a, cur) { const c = ({'': '₽', RUB: '₽', USD: '$', EUR: '€'})[(cur || '').toUpperCase()] ?? cur; return a == null ? '' : `${+a} ${c}`; }
+const setupOpened = {}, setupDone = {};
+function setupBlock(id, done) {
+  setupDone[id] = done;
+  const collapsed = done && !setupOpened[id], btn = $('setup-btn-' + id);
+  const body = $('setup-' + id);
+  if (body) body.style.display = collapsed ? 'none' : '';
+  document.querySelectorAll(`#sec-${id} .setup-part`).forEach(el => el.style.display = collapsed ? 'none' : '');
+  if (btn) { btn.style.display = done ? '' : 'none'; btn.textContent = setupOpened[id] ? 'Свернуть' : 'Настроить'; }
+  if (btn && body && btn.closest('h2')) btn.closest('section').classList.toggle('setup-collapsed', collapsed);
+}
+function setupToggle(id) { setupOpened[id] = !setupOpened[id]; setupBlock(id, !!setupDone[id]); }
 function plural(n, one, few, many) {
   const a = Math.abs(n) % 100, b = a % 10;
   return a > 10 && a < 20 ? many : b === 1 ? one : b >= 2 && b <= 4 ? few : many;
@@ -1284,6 +1333,7 @@ function renderObs() {
   const o = S.obs; if (!o || !$('chip-obs')) return;
   const st = o.settings || {}, last = o.last || {}, os = obsState();
   $('obs-pass-state').textContent = st.password_set ? '— сохранён' : '— не задан';
+  setupBlock('obs', (o.conn || {}).state === 'ok');
   const chip = $('chip-obs');
   chip.className = 'chip' + (os.cls === 'off' ? '' : ' ' + os.cls); chip.querySelector('b').textContent = os.chip;
   $('obs-status').textContent = os.text + (last.t ? ` · ${fmtTime(last.t)} ${last.text}` : '');
@@ -1334,6 +1384,8 @@ function renderDonations() {
   if (st.dp_api_key_set) set('chip-dp', d.dp.error ? 'bad' : (d.dp.verified ? 'ok' : 'warn'), d.dp.error ? 'ошибка: ' + d.dp.error : (d.dp.verified ? 'ключ принят: ' + (d.dp.user || '') : 'ключ не проверен'));
   else set('chip-dp', '', 'нет ключа');
   $('da-secret-state').textContent = st.da_client_secret_set ? '— сохранён' : '— не задан';
+  setupBlock('da', !!(d.da.connected && !d.da.error));
+  setupBlock('dp', !!(st.dp_api_key_set && d.dp.verified && !d.dp.error));
   $('dp-key-state').textContent = st.dp_api_key_set ? '— сохранён' : '— не задан';
   $('da-redirect').textContent = `http://127.0.0.1:${S.port}/donations/da/callback`;
   $('alias-errors').textContent = (d.alias_errors || []).join(' · ');
@@ -1461,6 +1513,10 @@ function renderMisc() {
   $('cfg-installed').textContent = S.cfg_state === 'ok' ? 'установлен: ' + S.cfg_installed : S.cfg_state === 'stale' ? 'устарел (другой токен/порт) — нажмите «Установить конфиг в CS2»: ' + S.cfg_installed : 'не установлен';
   $('cfg-short').textContent = S.cfg_state === 'ok' ? '✓ конфиг установлен' : S.cfg_state === 'stale' ? 'конфиг устарел, установите заново' : (S.cs2_cfg_dir ? 'конфиг ещё не установлен' : 'папка CS2 не найдена: см. «Дополнительно»');
   $('gsi-token').textContent = S.gsi_token;
+  const gs = $('chip-gsi-setup'), cfgOk = S.cfg_state === 'ok';
+  gs.className = 'chip ' + (cfgOk ? 'ok' : 'warn');
+  gs.querySelector('b').textContent = !cfgOk ? (S.cfg_state === 'stale' ? 'конфиг устарел' : 'нет конфига') : (S.gsi && S.gsi.connected ? 'подключено' : 'ждёт CS2');
+  setupBlock('gsi', cfgOk);
   const g = S.gsi; const badTok = g.rejected_auth ? ` · отклонено по токену: ${g.rejected_auth}` : '';
   $('gsi-detail').textContent = g.payloads ? `Пакетов: ${g.payloads} · режим: ${g.mode||'?'} · киллов в раунде: ${g.round_kills??'-'} · за матч: ${g.match_kills??'-'}` + badTok : '';
   $('gsi-player').textContent = g.name || g.rejected_name || '—';
@@ -1652,6 +1708,7 @@ es.addEventListener('twitch_account', e => { if (!S) return; S.twitch_account = 
 es.addEventListener('dpi_spin', e => { const sp = JSON.parse(e.data); toast('DPI-рулетка: ' + sp.value + (sp.reason === 'death' ? ' (смерть)' : '')); schedulePreview('dpi'); });
 es.addEventListener('kill', e => { const k = JSON.parse(e.data); if (k.ambiguous) toast('Килл: возможно граната — не засчитан'); else if (k.counted) toast(k.advanced ? 'Килл засчитан → следующее оружие' : 'Килл засчитан'); else if (S && S.roulette.running) toast('Килл не тем оружием', true); });
 es.onerror = () => { $('chip-sse').className='chip bad'; };
+showIngame(['weapons', 'dpi', 'queue'].includes(igKind) ? igKind : 'weapons');
 </script>
 </body>
 </html>
