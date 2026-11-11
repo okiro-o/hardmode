@@ -14,6 +14,11 @@ CT): 0) what the streamer can fulfil right now — the weapon is in the loadout 
 after the side switch; 2) not in the loadout at all, needs a new loadout. Each tier keeps its stored order. Unrecognised requests stay in place. The stored order is the arrival order (plus manual moves); the
 partition is applied on every read, so a new loadout or a side switch reorders the queue at once (``refresh``).
 
+Side twins (user's rule 0.32.0, «скар и G3 синонимичны и свапаются в зависимости от стороны»): a request for
+G3SG1 or SCAR-20 (or «плётка») is one request for the auto-sniper of the side being played. Ordering, the name
+and silhouette shown, the kill that closes it and the chat answers use that side's variant; the entry keeps
+what was asked and gets the variant actually played when it is closed.
+
 Persisted in data/viewer_queue.json; ``done``/``dismissed`` entries are kept as a short history.
 """
 from __future__ import annotations
@@ -27,6 +32,14 @@ from ... import config, weapons as W
 
 MAX_HISTORY = 30
 MAX_PENDING = 100
+SIDE_TWINS = {"g3sg1": "scar20", "scar20": "g3sg1"}     # same request, the variant of the side being played
+
+
+def for_side(weapon: str | None, side: str | None) -> str | None:
+    """The weapon a request means on ``side``: the other twin when this one belongs to the other side."""
+    if weapon in SIDE_TWINS and side in (W.T, W.CT) and not W.BY_ID[weapon].usable_by(side):
+        return SIDE_TWINS[weapon]
+    return weapon
 
 
 class ViewerQueue:
@@ -85,17 +98,17 @@ class ViewerQueue:
     @staticmethod
     def _tier(e: dict, ctx: dict | None) -> int:
         w = e.get("weapon")
-        if ctx is None or w is None or w in ctx["now"]:
+        if ctx is None or w is None or for_side(w, ctx.get("side")) in ctx["now"]:
             return 0
-        return 1 if w in ctx.get("later", ()) else 2
+        return 1 if for_side(w, ctx.get("other")) in ctx.get("later", ()) else 2
 
     @staticmethod
     def _note(e: dict, ctx: dict | None) -> str | None:
         """None when the request can be fulfilled now, else why it waits at the end."""
-        w = e.get("weapon")
-        if ctx is None or w is None or w in ctx["now"]:
+        tier = ViewerQueue._tier(e, ctx)
+        if tier == 0:
             return None
-        if w in ctx.get("later", ()):
+        if tier == 1:
             return f"в лоадауте {ctx['other']}" if ctx.get("loadout") else f"оружие {ctx['other']}"
         return "не в лоадауте"
 
@@ -117,10 +130,12 @@ class ViewerQueue:
         return {"pending": pend, "history": hist}
 
     def _view(self, e: dict, ctx: dict | None = None) -> dict:
-        w = W.BY_ID.get(e.get("weapon") or "")
+        twin = e.get("weapon") in SIDE_TWINS
+        wid = for_side(e.get("weapon"), ctx.get("side")) if ctx and e["status"] == "pending" else e.get("weapon")
+        w = W.BY_ID.get(wid or "")
         note = self._note(e, ctx)
-        return {**e, "name": w.name if w else None, "icon": w.icon if w else None, "playable": note is None, "note": note,
-                "tier": self._tier(e, ctx)}
+        return {**e, "weapon": wid, "name": w.name if w else None, "icon": w.icon if w else None, "playable": note is None,
+                "note": note, "tier": self._tier(e, ctx), "twin": twin, "by_side": None if twin else e.get("by_side")}
 
     def refresh(self) -> None:
         """The loadout or the side may have changed: republish when what can be played now is different."""
@@ -161,10 +176,13 @@ class ViewerQueue:
         return next((e for e in self.entries if e["id"] == entry_id), None)
 
     def _close(self, entry_id: int, status: str) -> dict | None:
+        ctx = self._context()
         with self._lock:
             e = self._find(entry_id)
             if not e or e["status"] != "pending":
                 return None
+            if status == "done" and ctx:
+                e["weapon"] = for_side(e.get("weapon"), ctx.get("side"))    # history shows what was played
             e["status"] = status
             e["closed_t"] = time.time()
             self._trim()
@@ -248,7 +266,8 @@ class ViewerQueue:
         with self._lock:
             pend = self.pending(ctx)
             mine = [(i + 1, e) for i, e in enumerate(pend) if str(e.get("user", "")).lower() in wanted]
-            label = lambda e: (W.BY_ID[e["weapon"]].name if e.get("weapon") in W.BY_ID else "оружие уточняется")
+            side = ctx.get("side") if ctx else None
+            label = lambda e: (W.BY_ID[for_side(e["weapon"], side)].name if e.get("weapon") in W.BY_ID else "оружие уточняется")
             if mine:
                 return "твои заявки: " + ", ".join(f"{label(e)} — №{n}" for n, e in mine[:5])
             if not pend:
@@ -261,9 +280,11 @@ class ViewerQueue:
         if not weapon:
             return None
         with self._lock:
-            e = next((x for x in self.entries if x["status"] == "pending" and x.get("weapon") == weapon), None)
+            e = next((x for x in self.entries if x["status"] == "pending"
+                      and (x.get("weapon") == weapon or SIDE_TWINS.get(x.get("weapon")) == weapon)), None)
             if e is None:
                 return None
+            e["weapon"] = weapon                                  # a twin: the variant actually played
             e["status"] = "done"
             e["closed_t"] = time.time()
             e["auto"] = True

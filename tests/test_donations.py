@@ -425,6 +425,31 @@ def test_queue_puts_what_cannot_be_played_now_last():
     assert q.on_kill("negev")["user"] == "B"
 
 
+def test_auto_snipers_are_one_request_that_follows_the_side():
+    """User's rule 0.32.0: SCAR-20 and G3SG1 are synonyms, the variant of the side being played counts."""
+    t_side = {**_ctx({"g3sg1", "ak47"}, {"scar20", "m4a1"}, other="CT"), "side": "T"}
+    ct_side = {**_ctx({"scar20", "m4a1"}, {"g3sg1", "ak47"}, other="T"), "side": "CT"}
+    ctx = {"v": t_side}
+    q, _ = _q(ctx)
+    out = q.add("scar20", "дай скар", "A")                          # asked for SCAR while playing T
+    assert (out["weapon"], out["name"], out["playable"], out["twin"]) == ("g3sg1", "G3SG1", True, True)
+    q.add("negev", "", "B")
+    ctx["v"] = ct_side                                              # after the side switch it is the SCAR again
+    snap = q.snapshot()["pending"]
+    assert [(e["weapon"], e["note"]) for e in snap] == [("scar20", None), ("negev", "не в лоадауте")]
+    assert q.describe_for("A") == "твои заявки: SCAR-20 — №1"
+    # only the T loadout has an auto-sniper: playing CT the request waits as «в лоадауте T»
+    ctx["v"] = {**_ctx({"m4a1"}, {"g3sg1", "ak47"}, other="T"), "side": "CT"}
+    assert q.snapshot()["pending"][0]["note"] == "в лоадауте T"
+    # a kill with either variant closes it; the history keeps the gun actually played
+    closed = q.on_kill("g3sg1")
+    assert closed["user"] == "A" and closed["weapon"] == "g3sg1" and closed["status"] == "done"
+    ctx["v"] = ct_side
+    q.add("g3sg1", "", "C")
+    done = q.done(q.snapshot()["pending"][0]["id"])
+    assert done["weapon"] == "scar20" and q.snapshot()["history"][0]["name"] == "SCAR-20"
+
+
 def test_queue_side_switch_moves_requests_and_refresh_republishes():
     ctx = {"v": None}
     q, published = _q(ctx)

@@ -1286,7 +1286,7 @@ function renderRequests() {
   $('requests-pts').innerHTML = `За баллы канала: <b>${pts}</b> ${plural(pts, 'заявка', 'заявки', 'заявок')}`;
   $('requests').innerHTML = n ? q.pending.map((e, i) => `<div class="req ${i === 0 ? 'first' : ''}">
       ${e.icon ? `<div class="icon" style="--mask:url('${e.icon}')"></div>` : '<div class="icon unknown">?</div>'}
-      <div class="body"><div class="l1"><b>${esc(e.name || 'не распознано')}</b>${e.by_side ? `<span class="tag">за ${esc(e.by_side)}</span>` : ''}${e.note ? `<span class="tag out">${esc(e.note)}</span>` : ''}</div>
+      <div class="body"><div class="l1"><b>${esc(e.name || 'не распознано')}</b>${e.by_side ? `<span class="tag">за ${esc(e.by_side)}</span>` : ''}${e.twin && e.status === 'pending' ? '<span class="tag" title="G3SG1 за T, SCAR-20 за CT">по стороне</span>' : ''}${e.note ? `<span class="tag out">${esc(e.note)}</span>` : ''}</div>
         <div class="who">${esc(e.user)}${e.amount != null ? ' · ' + fmtMoney(e.amount, e.currency) : ''}${e.source === 'reward' ? ' · баллы' : ''} · ${fmtTime(e.t).slice(0, 5)}</div>
         ${e.text ? `<div class="txt" title="${esc(e.text)}">«${esc(e.text)}»</div>` : ''}</div>
       <div class="acts">
