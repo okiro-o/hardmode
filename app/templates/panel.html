@@ -131,14 +131,11 @@
   .kgroup .kt { font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); font-weight:700; margin:0 0 6px 2px; }
   .kgroup .kpis { grid-template-columns: repeat(auto-fit, minmax(74px, 1fr)); gap:6px; margin:0; }
   .kgroup .stat.main .v { color:var(--accent); }
-  /* wide screen: the tables go two per row so names stay close to their numbers; narrower: one per row,
-     and the summary puts «Бой» on its own row so the tiles keep readable widths */
-  #tab-stats.active { grid-template-columns: 1fr 1fr; align-items:start; }
-  #tab-stats .stats-sum { grid-column: 1 / -1; }
-  @media (max-width: 1700px) {
-    #tab-stats.active { grid-template-columns: 1fr; }
-    .kgroups { grid-template-columns: 1fr 1fr; } .kgroups .kgroup:first-child { grid-column: 1 / -1; }
-  }
+  /* one table at a time, picked by the switch (0.30.0, like «Поверх игры»); the tab is one centred column
+     no wider than ~1000px so a table name stays close to its numbers; «Бой» gets its own row of tiles */
+  #tab-stats.active { grid-template-columns: minmax(0, 1000px); justify-content:center; align-content:start; }
+  #tab-stats .kgroups { grid-template-columns: 1fr 1fr; }
+  #tab-stats .kgroups .kgroup:first-child { grid-column: 1 / -1; }
   .tblwrap { border:1px solid var(--line); border-radius:10px; overflow:auto; background:var(--panel2); }
   .tbl { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; font-variant-numeric: tabular-nums; }
   .tbl th { position:sticky; top:0; z-index:1; background:#1a1f2a; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.06em; font-weight:600; padding:10px 12px; text-align:right; cursor:pointer; user-select:none; border-bottom:1px solid var(--line); white-space:nowrap; }
@@ -877,21 +874,12 @@
       <h2>Статистика стрима <span class="right"><span class="hint" id="stats-since"></span><button onclick="downloadStatsCsv()" title="Скачать таблицы в CSV">⤓ CSV</button><button class="danger" onclick="resetStats()" title="Обнулить статистику стрима">⟲ Сброс</button></span></h2>
       <div class="kgroups" id="stats-totals"></div>
     </section>
-    <section>
-      <h2>DPI</h2>
-      <div class="tblwrap"><table class="tbl" id="stats-dpi"></table></div>
-    </section>
-    <section>
-      <h2>Карты</h2>
-      <div class="tblwrap"><table class="tbl" id="stats-maps"></table></div>
-    </section>
-    <section>
-      <h2>Оружие</h2>
-      <div class="tblwrap"><table class="tbl" id="stats-weapons"></table></div>
-    </section>
-    <section>
-      <h2>Гранаты</h2>
-      <div class="tblwrap"><table class="tbl" id="stats-grenades"></table></div>
+    <section id="sec-stats-tables">
+      <h2>Таблицы <span class="right"><span class="seg" id="st-seg"><button data-k="dpi" onclick="showStatsTable('dpi')">DPI</button><button data-k="maps" onclick="showStatsTable('maps')">Карты</button><button data-k="weapons" onclick="showStatsTable('weapons')">Оружие</button><button data-k="grenades" onclick="showStatsTable('grenades')">Гранаты</button></span></span></h2>
+      <div class="st-pane tblwrap" data-k="dpi"><table class="tbl" id="stats-dpi"></table></div>
+      <div class="st-pane tblwrap" data-k="maps"><table class="tbl" id="stats-maps"></table></div>
+      <div class="st-pane tblwrap" data-k="weapons"><table class="tbl" id="stats-weapons"></table></div>
+      <div class="st-pane tblwrap" data-k="grenades"><table class="tbl" id="stats-grenades"></table></div>
     </section>
   </div>
 
@@ -1155,6 +1143,14 @@ function sortRows(rows, s) {
     if (typeof x === 'string' || typeof y === 'string') return s.dir * String(x).localeCompare(String(y), 'ru');
     return s.dir * (num(x) - num(y));
   });
+}
+let statsView = (() => { try { return localStorage.getItem('hardmode.statsView') || 'dpi'; } catch (e) { return 'dpi'; } })();
+function showStatsTable(k) {
+  if (!['dpi', 'maps', 'weapons', 'grenades'].includes(k)) k = 'dpi';
+  statsView = k;
+  try { localStorage.setItem('hardmode.statsView', k); } catch (e) {}
+  document.querySelectorAll('.st-pane').forEach(p => p.style.display = p.dataset.k === k ? '' : 'none');
+  document.querySelectorAll('#st-seg button').forEach(b => b.classList.toggle('active', b.dataset.k === k));
 }
 function statTable(id, cols, table, rows, fmt, empty, rowAttr) {
   const s = statsSort[table], gs = cols.map((c, i) => i > 0 && c[2] !== cols[i - 1][2]);
@@ -1777,6 +1773,7 @@ es.addEventListener('dpi_spin', e => { const sp = JSON.parse(e.data); toast('DPI
 es.addEventListener('kill', e => { const k = JSON.parse(e.data); if (k.ambiguous) toast('Килл: возможно граната — не засчитан'); else if (k.counted) toast(k.advanced ? 'Килл засчитан → следующее оружие' : 'Килл засчитан'); else if (S && S.roulette.running) toast('Килл не тем оружием', true); });
 es.onerror = () => { $('chip-sse').className='chip bad'; };
 showIngame(['weapons', 'dpi', 'queue'].includes(igKind) ? igKind : 'weapons');
+showStatsTable(statsView);
 </script>
 </body>
 </html>
