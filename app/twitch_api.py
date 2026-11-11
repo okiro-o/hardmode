@@ -45,7 +45,7 @@ log = logging.getLogger("hardmode.twitch")
 
 ID_BASE = "https://id.twitch.tv/oauth2"
 HELIX = "https://api.twitch.tv/helix"
-SCOPES = ("channel:manage:redemptions", "user:write:chat")
+SCOPES = ("channel:manage:redemptions", "user:write:chat", "channel:manage:predictions")
 DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
 POLL_S = 3.0
 VALIDATE_S = 3600.0

@@ -27,6 +27,7 @@ from .events import Broker
 from .gsi import GsiTracker, build_cfg
 from . import ingame as ingame_mod
 from .obs import ObsService, ObsSettings
+from .predictions import PredictionService, PredictionSettings
 from .twitch_api import TwitchError, TwitchService
 from .ingame import IngameOverlays
 from .chat import ChatNotifier, ChatSettings
@@ -111,6 +112,14 @@ class AppState:
         self.twitch_api = TwitchService(os.path.join(config.data_dir(), "twitch.json"),
                                         publish_threadsafe=self.broker.publish_threadsafe,
                                         call_threadsafe=self.broker.call_threadsafe)
+        try:
+            prediction_settings = PredictionSettings.from_dict(self.settings.predictions)
+        except ValueError:
+            prediction_settings = PredictionSettings()
+        self.settings.predictions = prediction_settings.to_dict()
+        self.predictions = PredictionService(prediction_settings, self.twitch_api,
+                                             os.path.join(config.data_dir(), "predictions.json"),
+                                             publish_threadsafe=self.broker.publish_threadsafe)
         self.twitch_api.on_redemption = self._on_twitch_redemption
         self.twitch_api.on_login = lambda user: self.broker.call_threadsafe(self._on_twitch_login, user)
         self.queue.on_close = self._on_request_closed
@@ -356,6 +365,7 @@ class AppState:
             "donations": self.donations.status(),
             "obs": self.obs.status(),
             "twitch_account": self.twitch_api.status(),
+            "predictions": self.predictions.status(),
             "urls": self.urls(),
             "gsi_token": self.settings.gsi_token,
             "port": self.settings.port,
@@ -373,7 +383,7 @@ class AppState:
                 "ingame": self.ingame_info(),
                 "roulette": self.roulette.settings.to_dict(), "dpi": self.dpi.settings.to_dict(),
                 "chat": self.chat.settings.to_dict(), "donations": self.donations.settings.public_dict(),
-                "obs": self.obs.settings.public_dict(),
+                "obs": self.obs.settings.public_dict(), "predictions": self.predictions.settings.to_dict(),
                 "gsi_token": self.settings.gsi_token, "port": self.settings.port}
 
     def publish_gsi(self, force: bool = False) -> None:
@@ -396,6 +406,11 @@ class AppState:
         # statistics first: a death must be booked at the DPI that was current before the new spin
         if self.stats.handle_events(events, st, self.dpi.current_dpi):
             self.broker.publish("stats", self.stats.snapshot())
+        for ev in events:
+            if ev["type"] == "match_start":
+                self.predictions.on_match_start(ev["map"], ev["mode"])
+            elif ev["type"] == "match_end":
+                self.predictions.on_match_end(ev["result"])
         if any(ev["type"] == "kill" for ev in events):
             self.dpi.on_kill()
         for ev in events:
@@ -670,6 +685,7 @@ def create_app() -> FastAPI:
         d["chat"] = state.chat.settings.to_dict()
         d["donations"] = state.donations.settings.public_dict()   # nor the DA secret / DonatePay key
         d["obs"] = state.obs.settings.public_dict()               # nor the obs-websocket password
+        d["predictions"] = state.predictions.settings.to_dict()
         return d
 
     @app.post("/api/settings")
@@ -677,14 +693,15 @@ def create_app() -> FastAPI:
         body = await _json(request)
         s = state.settings
         rejected: list[str] = []
-        for section in ("roulette", "overlay", "dpi", "chat", "ingame", "donations", "obs"):
+        for section in ("roulette", "overlay", "dpi", "chat", "ingame", "donations", "obs", "predictions"):
             if section in body and body[section] is not None and not isinstance(body[section], dict):
                 raise HTTPException(400, f"{section}: нужен объект")
         # the app's switches of the channel-points features also switch Hardmode's rewards in Twitch
         was_on = {"weapon": state.donations.settings.reward_enabled, "dpi": state.dpi.settings.viewer_enabled}
         # sections validated by their own module: the module keeps the typed settings, AppSettings the dict copy
         for section, owner, label in (("chat", state.chat, "чата"), ("dpi", state.dpi, "DPI"), ("roulette", state.roulette, "рулетки"),
-                                      ("donations", state.donations, "донатов"), ("obs", state.obs, "OBS")):
+                                      ("donations", state.donations, "донатов"), ("obs", state.obs, "OBS"),
+                                      ("predictions", state.predictions, "прогнозов")):
             if section in body:
                 try:
                     owner.update_settings(body[section] or {})
@@ -824,6 +841,31 @@ def create_app() -> FastAPI:
         except TwitchError as e:
             return {"ok": False, "error": str(e)}
         return {"ok": True, **flow}
+
+    @app.get("/api/predictions")
+    async def predictions_status() -> dict:
+        return state.predictions.status()
+
+    @app.post("/api/predictions/start")
+    async def predictions_start() -> dict:
+        """By hand: when the app missed the start of the match (opened mid-match) or for a match it skips."""
+        try:
+            await asyncio.get_running_loop().run_in_executor(None, state.predictions.start, state.gsi.status.map_name)
+        except (TwitchError, ValueError) as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True}
+
+    @app.post("/api/predictions/finish")
+    async def predictions_finish(request: Request) -> dict:
+        result = str((await _json(request)).get("result") or "")
+        if result not in ("win", "loss", "cancel"):
+            raise HTTPException(400, "result: win, loss или cancel")
+        fn = state.predictions.cancel if result == "cancel" else (lambda: state.predictions.finish(result))
+        try:
+            await asyncio.get_running_loop().run_in_executor(None, fn)
+        except (TwitchError, ValueError) as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True}
 
     @app.post("/api/twitch/logout")
     async def twitch_logout() -> dict:

@@ -160,6 +160,7 @@ class GsiTracker:
            "ambiguous": grenade_name|None, "index": i, "count": n}``
         ``{"type": "side", "side": "T"|"CT"}``
         ``{"type": "death"}`` (our player just died in a live round / live DM)
+        ``{"type": "match_start", "map": name, "mode": mode}`` (first live round of a match: Twitch predictions)
         ``{"type": "match_end", "result": "win"|"loss"|"draw"|None}`` (map phase turned "gameover";
           None when there is no team score to judge by, e.g. deathmatch)
         ``{"type": "status"}`` (always last, status object updated)
@@ -204,6 +205,10 @@ class GsiTracker:
         # screen the player block often follows a teammate. Our side is the last one seen in own payloads.
         if st.map_phase == "gameover" and self._phase[0] == st.map_name and self._phase[1] not in (None, "gameover"):
             events.append({"type": "match_end", "result": self._match_result(map_, st.team, st.mode)})
+        # start of a match: the phase turns "live" in its first round (after warmup, or straight away after
+        # loading); half-time and later rounds never qualify
+        if st.map_phase == "live" and self._phase[1] != "live" and (st.round or 0) <= 1 and st.map_name:
+            events.append({"type": "match_start", "map": st.map_name, "mode": st.mode})
         self._phase = (st.map_name, st.map_phase)
 
         if not player or not map_:

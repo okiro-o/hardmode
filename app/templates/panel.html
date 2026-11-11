@@ -379,6 +379,9 @@
   .twr-fields { display:grid; grid-template-columns: 130px 1fr; gap:10px 12px; align-items:start; }
   .twr-fields textarea { resize:vertical; min-height:64px; line-height:1.4; font: inherit; font-size:13.5px; }
   @media (max-width: 520px) { .twr-fields { grid-template-columns: 1fr; } }
+  #pred-now:not(:empty) { margin-top:12px; }
+  #pred-now .twr-card .s { font-size:12.5px; color:var(--muted); }
+  #pred-now .row { gap:8px; flex-wrap:wrap; align-items:center; }
   .twr-actions { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
   button.danger-outline { background:transparent; border:1px solid var(--bad); color:var(--bad); font-weight:600; }
   button.danger-outline:hover { background:rgba(255,94,94,.12); border-color:var(--bad); }
@@ -909,6 +912,22 @@
         </details>
         </div>
       </section>
+
+<section id="sec-pred">
+        <h2>Прогнозы на матч <span class="right"><span class="chip" id="chip-pred"><span class="dot"></span><b>выкл</b></span></span></h2>
+        <div class="form">
+          <label class="inline full"><input type="checkbox" data-key="predictions.enabled"> Прогноз на каждый матч</label>
+          <label class="f"><span>Вопрос</span><input type="text" maxlength="60" data-key="predictions.title" placeholder="Победа на {map}?" title="{map} заменяется названием карты"></label>
+          <label class="f"><span>Приём ставок, мин</span><input type="number" min="1" max="30" step="1" data-key="predictions.window_min"></label>
+        </div>
+        <details style="margin-top:6px;"><summary>Дополнительно</summary>
+          <div class="form" style="margin-top:8px;">
+            <label class="f"><span>Ответ «победа»</span><input type="text" maxlength="25" data-key="predictions.win"></label>
+            <label class="f"><span>Ответ «поражение»</span><input type="text" maxlength="25" data-key="predictions.loss"></label>
+          </div>
+        </details>
+        <div id="pred-now"></div>
+      </section>
     </div>
     <div class="col">
 <section id="sec-chat">
@@ -1220,6 +1239,34 @@ function setupBlock(id, done) {
   const sum = $('setup-sum-' + id); if (sum) sum.style.display = collapsed ? '' : 'none';
 }
 function setupToggle(id) { setupOpened[id] = !setupOpened[id]; setupBlock(id, !!setupDone[id]); }
+// ---- Twitch predictions on the match result
+function renderPredictions() {
+  const p = S.predictions; if (!p || !$('chip-pred')) return;
+  const st = p.settings || {}, cur = p.current, chip = $('chip-pred');
+  const [cls, text] = cur ? ['ok', 'идёт'] : !st.enabled ? ['', 'выкл'] : !p.logged_in ? ['warn', 'нет входа в Twitch']
+    : !p.allowed ? ['warn', 'нужно разрешение'] : ['ok', 'ждёт матча'];
+  chip.className = 'chip ' + cls; chip.querySelector('b').textContent = text;
+  let html = '';
+  if (p.logged_in && !p.allowed) {
+    html = `<div class="row"><button class="primary" onclick="twitchLogin()">Разрешить прогнозы в Twitch</button></div>`;
+  } else if (cur) {
+    const open = Date.now() / 1000 < cur.locks_at, n = cur.names || {};
+    html = `<div class="twr-card"><div class="twr-head"><b>«${esc(cur.title)}»</b><span class="tag ${open ? 'ok' : 'warn'}">${open ? 'ставки до ' + fmtTime(cur.locks_at).slice(0, 5) : 'ставки закрыты'}</span></div>
+      <div class="twr-actions"><span class="row"><button onclick="predFinish('win')" ${p.busy ? 'disabled' : ''}>${esc(n.win || 'Победа')}</button><button onclick="predFinish('loss')" ${p.busy ? 'disabled' : ''}>${esc(n.loss || 'Поражение')}</button></span>
+      <button class="danger-outline" onclick="predFinish('cancel')" ${p.busy ? 'disabled' : ''}>Отменить</button></div></div>`;
+  } else if (p.logged_in) {
+    const last = p.last ? `<span class="hint">Прошлый: «${esc(p.last.title)}», ${esc(p.last.text)}</span>` : '';
+    html = `<div class="row"><button onclick="predStart()" ${p.busy ? 'disabled' : ''}>Запустить сейчас</button>${last}</div>`;
+  }
+  if (p.error) html += `<div class="hint bad" style="margin-top:8px;">${esc(p.error)}</div>`;
+  $('pred-now').innerHTML = html;
+}
+async function predStart() { const r = await post('/api/predictions/start', {}); if (r) toast(r.ok ? 'Прогноз открыт' : r.error, !r.ok); }
+async function predFinish(result) {
+  if (result === 'cancel' && !confirm('Отменить прогноз? Баллы вернутся зрителям.')) return;
+  const r = await post('/api/predictions/finish', {result}); if (r) toast(r.ok ? (result === 'cancel' ? 'Прогноз отменён' : 'Итог отправлен') : r.error, !r.ok);
+}
+setInterval(() => { if (S && S.predictions && S.predictions.current) renderPredictions(); }, 10000);   // «ставки до» → «закрыты»
 function plural(n, one, few, many) {
   const a = Math.abs(n) % 100, b = a % 10;
   return a > 10 && a < 20 ? many : b === 1 ? one : b >= 2 && b <= 4 ? few : many;
@@ -1547,7 +1594,7 @@ function renderFolded() {
 function renderSettings() {
   renderFolded();
   const r = S.roulette.settings, o = S.overlay;
-  const src = { roulette: r, overlay: o, dpi: (S.dpi && S.dpi.settings) || {}, chat: (S.chat && S.chat.settings) || {}, ingame: S.ingame || {}, donations: (S.donations && S.donations.settings) || {}, obs: (S.obs && S.obs.settings) || {} };
+  const src = { roulette: r, overlay: o, dpi: (S.dpi && S.dpi.settings) || {}, chat: (S.chat && S.chat.settings) || {}, ingame: S.ingame || {}, donations: (S.donations && S.donations.settings) || {}, obs: (S.obs && S.obs.settings) || {}, predictions: (S.predictions && S.predictions.settings) || {} };
   document.querySelectorAll('[data-key]').forEach(el => {
     if (document.activeElement === el) return;
     const [grp, key] = el.dataset.key.split('.'); const v = src[grp] ? src[grp][key] : undefined; if (v === undefined) return;
@@ -1718,6 +1765,11 @@ function renderChecks() {
   rewardItem(ds.viewer_enabled, 'dpi', 'Зрители: DPI за баллы канала', 'зрители добавляют значения на колесо', `<button onclick="showMainTab('dpi'); $('sec-viewers').scrollIntoView({block: 'start'})">Настроить</button>`);
   const wr = (S.donations && S.donations.settings) || {};
   rewardItem(wr.reward_enabled, 'weapon', 'Зрители: оружие за баллы канала', 'награда кладёт оружие в зрительскую очередь', `<button onclick="showMainTab('weapons'); $('wreward-box').open = true; $('wreward-box').scrollIntoView({block: 'center'})">Настроить</button>`);
+  const pr = S.predictions || {}, prs = pr.settings || {};
+  const openPred = `<button onclick="showMainTab('general'); $('sec-pred').scrollIntoView({block: 'start'})">Настроить</button>`;
+  if (prs.enabled) opt.push(item(pr.allowed && !pr.error ? 'ok' : 'warn', 'Twitch: прогнозы на матч', !pr.logged_in ? 'войдите через Twitch: кнопка справа сверху'
+    : !pr.allowed ? 'войдите через Twitch заново и разрешите прогнозы' : pr.error ? esc(pr.error) : pr.current ? `идёт «${esc(pr.current.title)}»` : 'откроется сам в первом раунде матча', openPred));
+  else opt.push(item('off', 'Twitch: прогнозы на матч', 'прогноз «победа или поражение» на каждый матч', openPred));
   const a = S.autostart || {};
   const dn = S.donations || {}, dns = dn.settings || {};
   if (dns.enabled) opt.push(item((dn.da && dn.da.connected) || (dn.dp && dn.dp.verified) ? 'ok' : 'warn', 'Донаты', [dn.da && dn.da.connected ? 'DonationAlerts подключён' : '', dn.dp && dn.dp.verified ? 'DonatePay: ключ принят' : ''].filter(Boolean).join(' · ') || 'не подключён ни один сервис', `<button onclick="showMainTab('donations')">Открыть</button>`));
@@ -1730,7 +1782,7 @@ function renderChecks() {
   if (!window.__tabChosen && bad && !window.__autoStartup) { window.__autoStartup = true; showMainTab('startup'); }
 }
 
-function renderAll() { if (!S) return; renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); renderChat(); renderWheel(); renderChecks(); renderIngame(); renderStats(); renderRequests(); renderDonations(); renderObs(); renderTwitch(); }
+function renderAll() { if (!S) return; renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); renderChat(); renderWheel(); renderChecks(); renderIngame(); renderStats(); renderRequests(); renderDonations(); renderObs(); renderTwitch(); renderPredictions(); }
 
 // ------------------------------------------------------------------ settings form
 document.querySelectorAll('[data-key]').forEach(el => {
@@ -1767,8 +1819,11 @@ es.addEventListener('chat', e => { if (!S) return; S.chat = JSON.parse(e.data); 
 es.addEventListener('stats', e => { if (!S) return; S.stats = JSON.parse(e.data); renderStats(); });
 es.addEventListener('queue', e => { if (!S) return; S.queue = JSON.parse(e.data); renderRequests(); schedulePreview('queue'); });
 es.addEventListener('donations', e => { if (!S) return; S.donations = JSON.parse(e.data); renderDonations(); renderSettings(); renderChecks(); });
+es.addEventListener('predictions', e => { if (!S) return; S.predictions = JSON.parse(e.data); renderPredictions(); renderSettings(); renderChecks(); });
 es.addEventListener('obs', e => { if (!S) return; S.obs = JSON.parse(e.data); renderObs(); renderSettings(); renderChecks(); });
-es.addEventListener('twitch_account', e => { if (!S) return; S.twitch_account = JSON.parse(e.data); renderTwitch(); renderChat(); renderWheel(); renderWeaponReward(); renderSettings(); renderChecks(); });
+es.addEventListener('twitch_account', e => { if (!S) return; S.twitch_account = JSON.parse(e.data);
+  /* sign-in changes the predictions permission */ fetch('/api/predictions').then(r => r.json()).then(d => { S.predictions = d; renderPredictions(); renderChecks(); }).catch(() => {});
+  renderTwitch(); renderChat(); renderWheel(); renderWeaponReward(); renderSettings(); renderChecks(); });
 es.addEventListener('dpi_spin', e => { const sp = JSON.parse(e.data); toast('DPI-рулетка: ' + sp.value + (sp.reason === 'death' ? ' (смерть)' : '')); schedulePreview('dpi'); });
 es.addEventListener('kill', e => { const k = JSON.parse(e.data); if (k.ambiguous) toast('Килл: возможно граната — не засчитан'); else if (k.counted) toast(k.advanced ? 'Килл засчитан → следующее оружие' : 'Килл засчитан'); else if (S && S.roulette.running) toast('Килл не тем оружием', true); });
 es.onerror = () => { $('chip-sse').className='chip bad'; };
