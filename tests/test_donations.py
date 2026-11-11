@@ -366,6 +366,26 @@ def test_weapon_reward_side_alias(client, monkeypatch):
     assert (e["weapon"], e["by_side"]) == ("scar20", "CT")
 
 
+def test_loadout_only_refuses_weapons_outside_the_loadout(client, monkeypatch):
+    """User's switch 0.33.0: on lazy days only weapons of the loadout (either side) are taken."""
+    from app import weapons as W
+    st, said, rejected = _reward_setup(client, monkeypatch)
+    client.post("/api/settings", json={"donations": {"reward_enabled": True, "loadout_only": True}})
+    assert st.loadout_has("negev")                                      # no loadout yet: nothing to compare
+    client.post("/api/loadout/generate", json={"sides": ["T", "CT"]})
+    names = {w.id: w.name for w in W.CATALOG}
+    inside = next(w for w in names if st.loadout_has(w) and st.donations.aliases.match(names[w]))
+    outside = next(w for w in names if not st.loadout_has(w) and st.donations.aliases.match(names[w]))
+    assert _redeem(st, "weapon", "A", names[outside], "r1") == "cancel"
+    assert "нет в лоадауте" in rejected[-1][1] and "Баллы возвращены" in rejected[-1][1]
+    assert _redeem(st, "weapon", "B", names[inside], "r2") == "keep"
+    # G3SG1 and SCAR-20 are one request: either counts when the other one is in the loadout
+    lo_ids = {w for w in names if st.loadout_has(w)}
+    assert ("g3sg1" in lo_ids) == ("scar20" in lo_ids)
+    client.post("/api/settings", json={"donations": {"loadout_only": False}})
+    assert _redeem(st, "weapon", "C", names[outside], "r3") == "keep"   # switched off: anything goes again
+
+
 def test_dpi_reward_fulfils_or_refunds(client, monkeypatch):
     st, said, rejected = _reward_setup(client, monkeypatch)
     assert _redeem(st, "dpi", "A", "1600") == "cancel"                         # viewer values are off
@@ -440,7 +460,8 @@ def test_auto_snipers_are_one_request_that_follows_the_side():
     assert q.describe_for("A") == "твои заявки: SCAR-20 — №1"
     # only the T loadout has an auto-sniper: playing CT the request waits as «в лоадауте T»
     ctx["v"] = {**_ctx({"m4a1"}, {"g3sg1", "ak47"}, other="T"), "side": "CT"}
-    assert q.snapshot()["pending"][0]["note"] == "в лоадауте T"
+    e = q.snapshot()["pending"][0]
+    assert (e["note"], e["name"]) == ("в лоадауте T", "G3SG1")          # shown as the variant that is in the loadout
     # a kill with either variant closes it; the history keeps the gun actually played
     closed = q.on_kill("g3sg1")
     assert closed["user"] == "A" and closed["weapon"] == "g3sg1" and closed["status"] == "done"

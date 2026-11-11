@@ -33,7 +33,7 @@ from .ingame import IngameOverlays
 from .chat import ChatNotifier, ChatSettings
 from .modules import dpi
 from .modules.donations import routes as donation_routes
-from .modules.donations.queue import ViewerQueue
+from .modules.donations.queue import SIDE_TWINS, ViewerQueue
 from .modules.donations.service import DonationService, DonationSettings
 from .modules.dpi import DpiService, DpiSettings
 from .roulette import Roulette
@@ -129,6 +129,7 @@ class AppState:
         self.donations.queue_weapon = lambda w, text, user, amount, cur, by_side=None, source="donation", redemption=None: \
             self.queue.add(w, text, user, amount, cur, source=source, by_side=by_side, redemption=redemption)
         self.donations.current_side = lambda: self.gsi.status.team or self.roulette.side
+        self.donations.in_loadout = self.loadout_has
         self.donations.chat_result = lambda user, text: self.chat.notify_donation(user, text, ok=True)
         self.donations.chat_reject = lambda user, text: self.chat.notify_donation(user, text, ok=False)
         self._save_lock = threading.Lock()
@@ -169,6 +170,18 @@ class AppState:
             now = {w.id for w in W.CATALOG if w.usable_by(side)}
             later = {w.id for w in W.CATALOG if w.usable_by(other)}
         return {"side": side, "other": other, "now": now, "later": later, "loadout": bool(lo)}
+
+    def loadout_has(self, weapon: str) -> bool:
+        """«Только оружие из лоадаута»: the weapon (or its side twin, G3SG1/SCAR-20) is in the loadout of either
+        side, knife and Zeus when they are in the race. Without a loadout there is nothing to compare: allowed."""
+        lo, rs = self.roulette.loadout, self.roulette.settings
+        if not lo:
+            return True
+        ids: set[str] = set()
+        for side in L.SIDES:
+            ids |= set(L.side_pool_ids(lo, side, include_starting=True, include_knife=rs.include_knife,
+                                       include_zeus=rs.include_zeus))
+        return weapon in ids or SIDE_TWINS.get(weapon) in ids
 
     def queue_refusal(self, weapon: str) -> str | None:
         """Knife and Zeus go into the viewer queue only while they take part in the race (user's rule)."""

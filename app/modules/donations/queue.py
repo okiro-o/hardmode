@@ -130,12 +130,14 @@ class ViewerQueue:
         return {"pending": pend, "history": hist}
 
     def _view(self, e: dict, ctx: dict | None = None) -> dict:
-        twin = e.get("weapon") in SIDE_TWINS
-        wid = for_side(e.get("weapon"), ctx.get("side")) if ctx and e["status"] == "pending" else e.get("weapon")
+        twin, tier = e.get("weapon") in SIDE_TWINS, self._tier(e, ctx)
+        wid = e.get("weapon")
+        if ctx and e["status"] == "pending":       # a twin shows the variant that is playable (now or after the switch)
+            wid = for_side(wid, ctx.get("other") if tier == 1 else ctx.get("side"))
         w = W.BY_ID.get(wid or "")
         note = self._note(e, ctx)
         return {**e, "weapon": wid, "name": w.name if w else None, "icon": w.icon if w else None, "playable": note is None,
-                "note": note, "tier": self._tier(e, ctx), "twin": twin, "by_side": None if twin else e.get("by_side")}
+                "note": note, "tier": tier, "twin": twin, "by_side": None if twin else e.get("by_side")}
 
     def refresh(self) -> None:
         """The loadout or the side may have changed: republish when what can be played now is different."""

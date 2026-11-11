@@ -80,6 +80,7 @@ class DonationSettings:
     aliases_extra: str = ""             # user additions, «алиас = оружие» per line
     queue_command: str = "!очередь"     # chat command: the bot answers with the viewer's place in the queue
     reward_enabled: bool = False        # a channel-points reward puts a weapon into the queue
+    loadout_only: bool = False          # viewers' weapons outside the loadout are refused (0.33.0, user's «лень шаффлить»)
     da_poll_s: float = 5.0
     dp_poll_s: float = 20.0
 
@@ -87,7 +88,7 @@ class DonationSettings:
     def from_dict(cls, d: dict | None) -> "DonationSettings":
         s = cls()
         config.assign_fields(s, d, "donations")
-        for b in ("enabled", "reward_enabled"):
+        for b in ("enabled", "reward_enabled", "loadout_only"):
             setattr(s, b, config.to_bool(getattr(s, b)))
         for k in ("da_client_id", "da_client_secret", "dp_api_key"):
             v = getattr(s, k)
@@ -134,6 +135,7 @@ class DonationService:
         self.add_wheel: Callable[[int, str], dict] = lambda v, u: {"ok": False, "error": "колесо недоступно"}
         self.queue_weapon: Callable[..., dict] = lambda *a, **k: {}
         self.current_side: Callable[[], str | None] = lambda: None   # T/CT: picks «плётка» = G3SG1 or SCAR-20
+        self.in_loadout: Callable[[str], bool] = lambda weapon: True   # weapon in the loadout of either side
         self.chat_result: Callable[[str, str], None] = lambda user, text: None
         self.chat_reject: Callable[[str, str], None] = lambda user, reason: None
         self.aliases = A.AliasIndex()
@@ -409,6 +411,8 @@ class DonationService:
         """Queue a request; several candidates («плётка») — the one of the side being played."""
         side = self.current_side()
         wid = next((w for w in candidates if side and W.BY_ID[w].usable_by(side)), candidates[0] if candidates else None)
+        if wid and self.settings.loadout_only and not self.in_loadout(wid):
+            return {"ok": False, "text": f"{W.BY_ID[wid].name} нет в лоадауте, сейчас беру только оружие из лоадаута"}
         try:
             e = self.queue_weapon(wid, text, user, amount, currency,
                                   by_side=side if len(candidates) > 1 else None, source=source, redemption=redemption)
