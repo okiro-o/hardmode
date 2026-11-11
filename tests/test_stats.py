@@ -118,6 +118,21 @@ def test_wins_per_map_and_a_rematch_on_the_same_map(tmp_path):
     assert (m["matches"], m["wins"], m["losses"], m["draws"]) == (3, 1, 1, 0)
 
 
+def test_mvps_and_no_rounds_in_deathmatch(tmp_path):
+    s = StatsTracker(str(tmp_path / "stats.json"))
+    comp = types.SimpleNamespace(map_phase="live", map_name="de_mirage", mode="competitive")
+    s.handle_events([{"type": "round_start", "round": 1}], comp, 800, now=1.0)
+    s.handle_events([{"type": "kill", "weapon": "ak47", "raw": "weapon_ak47"}] * 3, comp, 800, now=2.0)
+    s.handle_events([{"type": "round_end", "round": 1}, {"type": "mvp", "count": 1}], comp, 800, now=3.0)
+    dm = types.SimpleNamespace(map_phase="live", map_name="de_dust2", mode="deathmatch")
+    s.handle_events([{"type": "round_start", "round": 0}], dm, 800, now=10.0)        # the whole DM match
+    s.handle_events([{"type": "kill", "weapon": "ak47", "raw": "weapon_ak47"}] * 25, dm, 800, now=11.0)
+    s.handle_events([{"type": "round_end", "round": 0}], dm, 800, now=12.0)
+    t = s.snapshot()["totals"]
+    assert (t["mvps"], t["best_round_kills"], t["rounds"], t["kills"]) == (1, 3, 1, 28)
+    assert {r["name"]: r["rounds"] for r in s.snapshot()["maps"]} == {"de_mirage": 1, "de_dust2": 0}
+
+
 def test_grenades_are_listed_separately_with_throws(tmp_path):
     s = StatsTracker(str(tmp_path / "stats.json"))
     s.handle_events([{"type": "pickup", "raw": "weapon_flashbang", "weapon": None, "bought": True, "spawn": False},

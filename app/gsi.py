@@ -100,6 +100,7 @@ class _OwnSnapshot:
     names: tuple[str, ...] = ()   # gsi names of everything in the inventory
     money: int | None = None
     assists: int | None = None    # player.match_stats.assists
+    mvps: int | None = None       # player.match_stats.mvps (round MVP stars, as on the scoreboard)
 
 
 @dataclass
@@ -256,6 +257,7 @@ class GsiTracker:
         match_stats = _obj(player.get("match_stats"))
         match_kills = _int(match_stats.get("kills"))
         assists = _int(match_stats.get("assists"))
+        mvps = _int(match_stats.get("mvps"))
         st.round_kills = round_kills
         st.match_kills = match_kills
         grenades = self._grenades(entries)
@@ -350,6 +352,10 @@ class GsiTracker:
         if prev is not None and same_map and st.map_phase in ACTIVE_PHASES:
             if assists is not None and prev.assists is not None and assists > prev.assists:
                 events.append({"type": "assist", "count": assists - prev.assists})
+            # MVP stars (0.34.0): given at the end of a round, often while we watch a teammate; the next own
+            # payload of the same match carries the new count
+            if mvps is not None and prev.mvps is not None and mvps > prev.mvps:
+                events.append({"type": "mvp", "count": mvps - prev.mvps})
 
         self._prev = _OwnSnapshot(
             map_name=st.map_name,
@@ -363,6 +369,7 @@ class GsiTracker:
             names=names,
             money=money,
             assists=assists,
+            mvps=mvps,
         )
         events.append({"type": "status"})
         return events

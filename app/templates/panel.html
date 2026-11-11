@@ -1196,8 +1196,8 @@ function renderStats() {
     `<div class="stat ${cls || ''}"${tip ? ` title="${tip}"` : ''}><div class="v">${v ?? 0}</div><div class="l">${l}</div></div>`).join('')}</div></div>`;
   const dur = sec => { const m = Math.round((sec || 0) / 60); return m >= 60 ? `${Math.floor(m / 60)} ч ${m % 60} м` : `${m} мин`; };
   $('stats-totals').innerHTML =
-    group('Бой', [['K/D', f2(ratio(t.kills, t.deaths)), 'main'], ['киллов', t.kills], ['смертей', t.deaths], ['ассистов', t.assists], ['HS', pct(share(t.hs, t.kills)), '', 'доля киллов в голову']])
-    + group('Игра', [['матчей', (st.maps || []).reduce((n, m) => n + (m.matches || 0), 0)], ['раундов', t.rounds], ['MVP', t.best_round_kills, '', 'больше всего киллов за один раунд']])
+    group('Бой', [['K/D', f2(ratio(t.kills, t.deaths)), 'main'], ['киллов', t.kills], ['смертей', t.deaths], ['ассистов', t.assists], ['HS', pct(share(t.hs, t.kills)), '', 'доля киллов в голову'], ['MVP', t.mvps || 0, '', 'звёзды MVP за раунды, как в табе']])
+    + group('Игра', [['матчей', (st.maps || []).reduce((n, m) => n + (m.matches || 0), 0)], ['раундов', t.rounds], ['лучший раунд', t.best_round_kills ? t.best_round_kills + 'k' : '—', '', 'больше всего киллов за один раунд; Deathmatch и гонка вооружений не в счёт']])
     + group('DPI-рулетка', [['кручений', t.rolls], ['лучший DPI', best ? best.value : '—', best ? 'main' : '', 'больше всего киллов за выпадение (из выпавших хотя бы 3 раза)'], ['время в игре', dur(dpis.reduce((n, r) => n + (r.seconds || 0), 0))]]);
   $('stats-since').textContent = st.started_at ? 'с ' + new Date(st.started_at * 1000).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
   const home = +((S.dpi && S.dpi.settings && S.dpi.settings.home_dpi) || 0), homeColor = (S.dpi && S.dpi.settings && S.dpi.settings.home_color) || '#ff6b6b';
@@ -1222,7 +1222,7 @@ function downloadStatsCsv() {
   (st.grenades || []).forEach(r => lines.push([q(r.name), r.bought, r.picked, r.thrown || 0, r.kills].join(';')));
   lines.push('', 'Карта;матчей;раундов;побед;поражений;ничьих;K;D;A;в голову');
   (st.maps || []).forEach(r => lines.push([q(r.title), r.matches, r.rounds, r.wins || 0, r.losses || 0, r.draws || 0, r.kills, r.deaths, r.assists, r.hs].join(';')));
-  const t = st.totals || {}; lines.push('', 'Итого;раундов;киллов;смертей;ассистов;в голову;MVP (киллов за раунд);кручений DPI', ['', t.rounds, t.kills, t.deaths, t.assists, t.hs, t.best_round_kills, t.rolls].join(';'));
+  const t = st.totals || {}; lines.push('', 'Итого;раундов;киллов;смертей;ассистов;в голову;MVP;лучший раунд (киллов);кручений DPI', ['', t.rounds, t.kills, t.deaths, t.assists, t.hs, t.mvps || 0, t.best_round_kills, t.rolls].join(';'));
   const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'hardmode-stats-' + new Date().toISOString().slice(0, 10) + '.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }

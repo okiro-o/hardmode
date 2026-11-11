@@ -333,6 +333,18 @@ def test_match_end_without_a_team_score():
     assert not [e for e in fresh.handle(_end(payload(), 3, 13), now=1.0) if e["type"] == "match_end"]
 
 
+def test_mvp_stars_arrive_with_the_next_own_payload():
+    t = GsiTracker()
+    p = payload(); p["player"]["match_stats"]["mvps"] = 1
+    t.handle(p, now=1.0)
+    mate = payload(steamid="765611980000000099"); mate["player"]["match_stats"]["mvps"] = 0
+    t.handle(mate, now=2.0)                                  # round end while watching a teammate
+    p = payload(round_=4); p["player"]["match_stats"]["mvps"] = 2
+    assert [e for e in t.handle(p, now=3.0) if e["type"] == "mvp"] == [{"type": "mvp", "count": 1}]
+    p = payload(round_=4); p["player"]["match_stats"]["mvps"] = 2
+    assert not [e for e in t.handle(p, now=4.0) if e["type"] == "mvp"]
+
+
 def test_throw_events_for_any_grenade():
     t = GsiTracker()
     a = payload(rk=0, grenades={"weapon_flashbang": 2, "weapon_smokegrenade": 1}); t.handle(a, now=1.0)

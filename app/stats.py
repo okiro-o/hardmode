@@ -35,8 +35,13 @@ def weapon_name(key: str) -> str:
 
 def _fresh() -> dict:
     return {"started_at": time.time(), "dpi": {}, "weapons": {}, "maps": {},
-            "totals": {"kills": 0, "hs": 0, "deaths": 0, "assists": 0, "rounds": 0, "rolls": 0,
+            "totals": {"kills": 0, "hs": 0, "deaths": 0, "assists": 0, "mvps": 0, "rounds": 0, "rolls": 0,
                        "best_round_kills": 0, "bought": 0, "picked": 0}}
+
+
+# modes without real rounds: the whole match is one «round» for the game (deathmatch, arms race), so the best
+# round would be the match total and every match one round (0.34.0)
+ROUNDLESS_MODES = ("deathmatch", "gungameprogressive", "training")
 
 
 def map_title(name: str) -> str:
@@ -185,6 +190,9 @@ class StatsTracker:
                     if key:
                         self._weapon(key)["thrown"] += 1
                         changed = True
+                elif kind == "mvp":
+                    t["mvps"] += int(ev.get("count") or 1)
+                    changed = True
                 elif kind == "assist":
                     n = int(ev.get("count") or 1)
                     t["assists"] += n
@@ -208,7 +216,8 @@ class StatsTracker:
                         m[res] += 1
                         changed = True
                 elif kind == "round_start":
-                    self._round = {"no": ev.get("round"), "dpi": self.cur_dpi, "changed": False, "kills": 0}
+                    roundless = getattr(status, "mode", None) in ROUNDLESS_MODES
+                    self._round = None if roundless else {"no": ev.get("round"), "dpi": self.cur_dpi, "changed": False, "kills": 0}
                 elif kind == "round_end":
                     if self._round is not None:
                         t["rounds"] += 1
