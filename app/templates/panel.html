@@ -126,6 +126,19 @@
   .logtoggle:hover { color:var(--text); }
   .kpis { display:grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap:8px; margin-top:6px; }
   .kpis .stat .v { font-size:24px; }
+  /* stream summary in three groups by meaning (0.29.0): gaps between groups are wider than inside one */
+  .kgroups { display:grid; grid-template-columns: 5fr 3fr 3fr; gap:14px 28px; margin-top:4px; }
+  .kgroup .kt { font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); font-weight:700; margin:0 0 6px 2px; }
+  .kgroup .kpis { grid-template-columns: repeat(auto-fit, minmax(74px, 1fr)); gap:6px; margin:0; }
+  .kgroup .stat.main .v { color:var(--accent); }
+  /* wide screen: the tables go two per row so names stay close to their numbers; narrower: one per row,
+     and the summary puts «Бой» on its own row so the tiles keep readable widths */
+  #tab-stats.active { grid-template-columns: 1fr 1fr; align-items:start; }
+  #tab-stats .stats-sum { grid-column: 1 / -1; }
+  @media (max-width: 1700px) {
+    #tab-stats.active { grid-template-columns: 1fr; }
+    .kgroups { grid-template-columns: 1fr 1fr; } .kgroups .kgroup:first-child { grid-column: 1 / -1; }
+  }
   .tblwrap { border:1px solid var(--line); border-radius:10px; overflow:auto; background:var(--panel2); }
   .tbl { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; font-variant-numeric: tabular-nums; }
   .tbl th { position:sticky; top:0; z-index:1; background:#1a1f2a; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.06em; font-weight:600; padding:10px 12px; text-align:right; cursor:pointer; user-select:none; border-bottom:1px solid var(--line); white-space:nowrap; }
@@ -139,6 +152,11 @@
   .tbl th:first-child, .tbl td:first-child { text-align:left; font-weight:600; }
   .tbl td.muted { color:var(--muted); text-align:left; font-weight:400; }
   .tbl td.sortedcol { color:var(--text); }
+  /* columns grouped by meaning (0.29.0): numbers shrink to their content, the name column takes the rest,
+     a group starts with a divider and a wider gap; the group title sits in its own header row */
+  .tbl th:not(:first-child), .tbl td:not(:first-child) { width:1%; padding-left:10px; padding-right:10px; }
+  .tbl .gs.gs { padding-left:24px; border-left:1px solid var(--line); }
+  .tbl tr.grp th { position:static; cursor:default; padding:9px 10px 2px; border-bottom:0; text-align:left; font-size:10.5px; letter-spacing:.1em; color:var(--muted); opacity:.8; }
   textarea { width:100%; background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 10px;
     font: 13px/1.45 ui-monospace, Consolas, monospace; resize:vertical; }
   textarea:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(255,209,102,.14); }
@@ -854,14 +872,18 @@
   </div>
 
   <!-- ================= TAB: STATS ================= -->
-  <div class="tabpage" id="tab-stats" style="grid-template-columns: 1fr;">
-    <section>
+  <div class="tabpage" id="tab-stats">
+    <section class="stats-sum">
       <h2>Статистика стрима <span class="right"><span class="hint" id="stats-since"></span><button onclick="downloadStatsCsv()" title="Скачать таблицы в CSV">⤓ CSV</button><button class="danger" onclick="resetStats()" title="Обнулить статистику стрима">⟲ Сброс</button></span></h2>
-      <div class="kpis" id="stats-totals"></div>
+      <div class="kgroups" id="stats-totals"></div>
     </section>
     <section>
-      <h2>DPI <span class="right hint">клик по заголовку сортирует, второй клик меняет направление</span></h2>
+      <h2>DPI</h2>
       <div class="tblwrap"><table class="tbl" id="stats-dpi"></table></div>
+    </section>
+    <section>
+      <h2>Карты</h2>
+      <div class="tblwrap"><table class="tbl" id="stats-maps"></table></div>
     </section>
     <section>
       <h2>Оружие</h2>
@@ -870,10 +892,6 @@
     <section>
       <h2>Гранаты</h2>
       <div class="tblwrap"><table class="tbl" id="stats-grenades"></table></div>
-    </section>
-    <section>
-      <h2>Карты</h2>
-      <div class="tblwrap"><table class="tbl" id="stats-maps"></table></div>
     </section>
   </div>
 
@@ -1111,11 +1129,18 @@ function renderLog(id, entries, cls = e => e.kind) {
 function toggleLog(btn) { const log = btn.previousElementSibling; const compact = log.classList.toggle('compact'); btn.textContent = compact ? 'развернуть' : 'свернуть'; }
 // ---- statistics tab
 function fmtDur(sec) { sec = Math.round(sec || 0); const m = Math.floor(sec / 60); return m >= 60 ? `${Math.floor(m / 60)} ч ${m % 60} мин` : m ? `${m} мин` : `${sec} с`; }
-const DPI_COLS = [['value', 'DPI'], ['rolls', 'выпал'], ['kpr', 'киллов за выпадение'], ['kills', 'киллов'], ['deaths', 'смертей'], ['damage', 'урон'], ['rounds', 'раундов целиком'], ['seconds', 'время']];
-const W_COLS = [['name', 'Оружие'], ['bought', 'куплено'], ['picked', 'подобрано'], ['kills', 'киллов'], ['hs', 'HS'], ['deaths', 'смертей с ним']];
-const G_COLS = [['name', 'Граната'], ['bought', 'куплено'], ['picked', 'подобрано'], ['thrown', 'брошено'], ['kills', 'киллов']];
-const M_COLS = [['title', 'Карта'], ['matches', 'матчей'], ['rounds', 'раундов'], ['kills', 'K'], ['deaths', 'D'], ['assists', 'A'], ['kd', 'K/D'], ['damage', 'урон'], ['adr', 'ADR'], ['hsp', 'HS %']];
-let statsSort = { dpi: { key: 'value', dir: 1 }, weapons: { key: 'kills', dir: -1 }, grenades: { key: 'thrown', dir: -1 }, maps: { key: 'rounds', dir: -1 } };
+// [key, header, group, tooltip]: neighbouring columns of one group share a title row and stand apart from other groups
+const DPI_COLS = [['value', 'DPI'], ['rolls', 'раз', 'выпадения', 'сколько раз выпал'], ['rounds', 'раундов', 'выпадения', 'раундов, сыгранных на этом DPI целиком'], ['seconds', 'время', 'выпадения', 'время в раундах на этом DPI'],
+  ['kills', 'киллов', 'результат'], ['deaths', 'смертей', 'результат'], ['kd', 'K/D', 'результат', 'киллы / смерти'], ['kpr', 'за выпадение', 'результат', 'киллов за одно выпадение']];
+const W_COLS = [['name', 'Оружие'], ['bought', 'куплено', 'откуда'], ['picked', 'подобрано', 'откуда'],
+  ['kills', 'киллов', 'с ним в руках'], ['hsp', 'HS', 'с ним в руках', 'доля киллов в голову'], ['deaths', 'смертей', 'с ним в руках']];
+const G_COLS = [['name', 'Граната'], ['bought', 'куплено', 'откуда'], ['picked', 'подобрано', 'откуда'],
+  ['thrown', 'брошено', 'в бою'], ['kills', 'киллов', 'в бою']];
+const M_COLS = [['title', 'Карта'], ['matches', 'матчей', 'сыграно'], ['rounds', 'раундов', 'сыграно'],
+  ['wins', 'побед', 'результат', 'доигранные матчи, где счёт твоей команды больше'], ['wr', 'винрейт', 'результат', 'доля побед среди доигранных матчей; ничья — не победа'],
+  ['kills', 'K', 'бой', 'киллы'], ['deaths', 'D', 'бой', 'смерти'], ['assists', 'A', 'бой', 'ассисты'], ['kd', 'K/D', 'бой', 'киллы / смерти'], ['hsp', 'HS', 'бой', 'доля киллов в голову']];
+const STATS_SORT = { dpi: { key: 'value', dir: 1 }, weapons: { key: 'kills', dir: -1 }, grenades: { key: 'thrown', dir: -1 }, maps: { key: 'rounds', dir: -1 } };
+let statsSort = JSON.parse(JSON.stringify(STATS_SORT));
 try { statsSort = { ...statsSort, ...JSON.parse(localStorage.getItem('hardmode.statsSort') || '{}') }; } catch (e) {}
 function sortStats(table, key) {
   const s = statsSort[table];
@@ -1131,53 +1156,57 @@ function sortRows(rows, s) {
     return s.dir * (num(x) - num(y));
   });
 }
-function thead(cols, s, table) {
-  return '<thead><tr>' + cols.map(([k, l]) => `<th class="${s.key === k ? 'sorted' : ''}" onclick="sortStats('${table}','${k}')">${l}<span class="arr">${s.key === k ? (s.dir > 0 ? '▲' : '▼') : ''}</span></th>`).join('') + '</tr></thead>';
+function statTable(id, cols, table, rows, fmt, empty, rowAttr) {
+  const s = statsSort[table], gs = cols.map((c, i) => i > 0 && c[2] !== cols[i - 1][2]);
+  if (!cols.some(c => c[0] === s.key)) Object.assign(s, STATS_SORT[table]);   // a saved sort by a removed column
+  let grp = '';
+  for (let i = 0; i < cols.length;) {
+    let j = i; while (j + 1 < cols.length && cols[j + 1][2] === cols[i][2]) j++;
+    grp += `<th colspan="${j - i + 1}" class="${gs[i] ? 'gs' : ''}">${cols[i][2] || ''}</th>`; i = j + 1;
+  }
+  const head = '<thead><tr class="grp">' + grp + '</tr><tr>' + cols.map(([k, l, , tip], i) => `<th class="${gs[i] ? 'gs ' : ''}${s.key === k ? 'sorted' : ''}" title="${tip ? tip + ' · ' : ''}клик сортирует, второй клик меняет направление" onclick="sortStats('${table}','${k}')">${l}<span class="arr">${s.key === k ? (s.dir > 0 ? '▲' : '▼') : ''}</span></th>`).join('') + '</tr></thead>';
+  const body = sortRows(rows, s).map(r => `<tr${rowAttr ? rowAttr(r) : ''}>` + cols.map(([k], i) =>
+    `<td class="${gs[i] ? 'gs ' : ''}${s.key === k ? 'sortedcol' : ''}">${fmt[k] ? fmt[k](r) : (r[k] ?? 0)}</td>`).join('') + '</tr>').join('');
+  $(id).innerHTML = head + '<tbody>' + (body || `<tr><td class="muted" colspan="${cols.length}">${empty}</td></tr>`) + '</tbody>';
 }
 function renderStats() {
   const st = S.stats; if (!st || !$('stats-totals')) return;
-  const t = st.totals || {};
-  const kd = t.deaths ? (t.kills / t.deaths).toFixed(2) : (t.kills ? '∞' : '—');
-  const hs = t.kills ? Math.round(100 * t.hs / t.kills) + '%' : '—';
-  const adr = t.rounds ? Math.round((t.damage || 0) / t.rounds) : '—';
-  $('stats-totals').innerHTML = [['раундов', t.rounds], ['киллов', t.kills], ['смертей', t.deaths], ['ассистов', t.assists], ['K/D', kd], ['HS', hs], ['урон', t.damage], ['ADR', adr], ['лучший раунд', t.best_round_kills], ['кручений DPI', t.rolls], ['куплено', t.bought], ['подобрано', t.picked]]
-    .map(([l, v]) => `<div class="stat"><div class="v">${v ?? 0}</div><div class="l">${l}</div></div>`).join('');
+  const t = st.totals || {}, f2 = v => v == null ? '—' : v === Infinity ? '∞' : v.toFixed(2);
+  const pct = v => v == null ? '—' : Math.round(v) + '%', share = (a, b) => b ? 100 * a / b : null;
+  const ratio = (a, b) => b ? a / b : (a ? Infinity : null);
+  const dpis = (st.dpi || []).map(r => ({ ...r, kd: ratio(r.kills, r.deaths), kpr: r.rolls ? r.kills / r.rolls : null }));
+  const best = dpis.filter(r => r.rolls >= 3).sort((a, b) => b.kpr - a.kpr)[0];
+  const group = (title, items) => `<div class="kgroup"><div class="kt">${title}</div><div class="kpis">${items.map(([l, v, cls, tip]) =>
+    `<div class="stat ${cls || ''}"${tip ? ` title="${tip}"` : ''}><div class="v">${v ?? 0}</div><div class="l">${l}</div></div>`).join('')}</div></div>`;
+  const dur = sec => { const m = Math.round((sec || 0) / 60); return m >= 60 ? `${Math.floor(m / 60)} ч ${m % 60} м` : `${m} мин`; };
+  $('stats-totals').innerHTML =
+    group('Бой', [['K/D', f2(ratio(t.kills, t.deaths)), 'main'], ['киллов', t.kills], ['смертей', t.deaths], ['ассистов', t.assists], ['HS', pct(share(t.hs, t.kills)), '', 'доля киллов в голову']])
+    + group('Игра', [['матчей', (st.maps || []).reduce((n, m) => n + (m.matches || 0), 0)], ['раундов', t.rounds], ['MVP', t.best_round_kills, '', 'больше всего киллов за один раунд']])
+    + group('DPI-рулетка', [['кручений', t.rolls], ['лучший DPI', best ? best.value : '—', best ? 'main' : '', 'больше всего киллов за выпадение (из выпавших хотя бы 3 раза)'], ['время в игре', dur(dpis.reduce((n, r) => n + (r.seconds || 0), 0))]]);
   $('stats-since').textContent = st.started_at ? 'с ' + new Date(st.started_at * 1000).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
   const home = +((S.dpi && S.dpi.settings && S.dpi.settings.home_dpi) || 0), homeColor = (S.dpi && S.dpi.settings && S.dpi.settings.home_color) || '#ff6b6b';
-  const sd = statsSort.dpi, sw = statsSort.weapons, sg = statsSort.grenades, sm = statsSort.maps;
-  const dpiRows = sortRows((st.dpi || []).map(r => ({ ...r, kpr: r.rolls ? r.kills / r.rolls : null })), sd);
-  const cell = (k, v, s) => `<td class="${s.key === k ? 'sortedcol' : ''}">${v}</td>`;
-  $('stats-dpi').innerHTML = thead(DPI_COLS, sd, 'dpi') + '<tbody>' + (dpiRows.map(r =>
-    `<tr${r.value === home ? ` style="box-shadow: inset 3px 0 0 ${homeColor}"` : ''}>` + cell('value', r.value, sd) + cell('rolls', r.rolls, sd) + cell('kpr', r.kpr == null ? '—' : r.kpr.toFixed(2), sd)
-    + cell('kills', r.kills, sd) + cell('deaths', r.deaths, sd) + cell('damage', r.damage || 0, sd) + cell('rounds', r.rounds, sd) + cell('seconds', fmtDur(r.seconds), sd) + '</tr>').join('')
-    || '<tr><td class="muted" colspan="8">пока пусто: данные появятся с первого раунда</td></tr>') + '</tbody>';
-  const wRows = sortRows(st.weapons || [], sw);
-  $('stats-weapons').innerHTML = thead(W_COLS, sw, 'weapons') + '<tbody>' + (wRows.map(r =>
-    '<tr>' + cell('name', esc(r.name), sw) + cell('bought', r.bought, sw) + cell('picked', r.picked, sw) + cell('kills', r.kills, sw) + cell('hs', r.hs, sw) + cell('deaths', r.deaths, sw) + '</tr>').join('')
-    || '<tr><td class="muted" colspan="7">пока пусто: данные появятся с первой покупки или килла</td></tr>') + '</tbody>';
-  const gRows = sortRows(st.grenades || [], sg);
-  $('stats-grenades').innerHTML = thead(G_COLS, sg, 'grenades') + '<tbody>' + (gRows.map(r =>
-    '<tr>' + cell('name', esc(r.name), sg) + cell('bought', r.bought, sg) + cell('picked', r.picked, sg) + cell('thrown', r.thrown || 0, sg) + cell('kills', r.kills, sg) + '</tr>').join('')
-    || '<tr><td class="muted" colspan="6">пока пусто: данные появятся с первой гранаты</td></tr>') + '</tbody>';
-  const mRows = sortRows((st.maps || []).map(r => ({ ...r, kd: r.deaths ? r.kills / r.deaths : (r.kills ? Infinity : null), adr: r.rounds ? r.damage / r.rounds : null, hsp: r.kills ? 100 * r.hs / r.kills : null })), sm);
-  const f2 = v => v == null ? '—' : v === Infinity ? '∞' : v.toFixed(2);
-  $('stats-maps').innerHTML = thead(M_COLS, sm, 'maps') + '<tbody>' + (mRows.map(r =>
-    '<tr>' + cell('title', esc(r.title), sm) + cell('matches', r.matches, sm) + cell('rounds', r.rounds, sm) + cell('kills', r.kills, sm) + cell('deaths', r.deaths, sm) + cell('assists', r.assists, sm)
-    + cell('kd', f2(r.kd), sm) + cell('damage', r.damage, sm) + cell('adr', r.adr == null ? '—' : Math.round(r.adr), sm) + cell('hsp', r.hsp == null ? '—' : Math.round(r.hsp) + '%', sm) + '</tr>').join('')
-    || '<tr><td class="muted" colspan="10">пока пусто: данные появятся с первого раунда на карте</td></tr>') + '</tbody>';
+  statTable('stats-dpi', DPI_COLS, 'dpi', dpis, { seconds: r => fmtDur(r.seconds), kd: r => f2(r.kd), kpr: r => f2(r.kpr) },
+    'пока пусто: данные появятся с первого раунда', r => r.value === home ? ` style="box-shadow: inset 3px 0 0 ${homeColor}"` : '');
+  statTable('stats-weapons', W_COLS, 'weapons', (st.weapons || []).map(r => ({ ...r, hsp: share(r.hs, r.kills) })), { name: r => esc(r.name), hsp: r => pct(r.hsp) },
+    'пока пусто: данные появятся с первой покупки или килла');
+  statTable('stats-grenades', G_COLS, 'grenades', st.grenades || [], { name: r => esc(r.name), thrown: r => r.thrown || 0 }, 'пока пусто: данные появятся с первой гранаты');
+  const maps = (st.maps || []).map(r => ({ ...r, wins: r.wins || 0, kd: ratio(r.kills, r.deaths), hsp: share(r.hs, r.kills),
+    wr: share(r.wins || 0, (r.wins || 0) + (r.losses || 0) + (r.draws || 0)) }));
+  statTable('stats-maps', M_COLS, 'maps', maps, { title: r => esc(r.title), kd: r => f2(r.kd), hsp: r => pct(r.hsp), wr: r => pct(r.wr) },
+    'пока пусто: данные появятся с первого раунда на карте');
 }
 async function resetStats() { if (!confirm('Обнулить статистику стрима?')) return; const r = await post('/api/stats/reset', {}); if (r) toast('Статистика обнулена'); }
 function downloadStatsCsv() {
   const st = S.stats || {}; const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
-  const lines = ['DPI;выпал;киллов за выпадение;киллов;смертей;урон;раундов целиком;секунд'];
-  (st.dpi || []).forEach(r => lines.push([r.value, r.rolls, r.rolls ? (r.kills / r.rolls).toFixed(2).replace('.', ',') : '', r.kills, r.deaths, r.damage || 0, r.rounds, Math.round(r.seconds || 0)].join(';')));
-  lines.push('', 'Оружие;куплено;подобрано;киллов;HS;смертей с ним');
+  const lines = ['DPI;выпал;целых раундов;секунд;киллов;смертей;киллов за выпадение'];
+  (st.dpi || []).forEach(r => lines.push([r.value, r.rolls, r.rounds, Math.round(r.seconds || 0), r.kills, r.deaths, r.rolls ? (r.kills / r.rolls).toFixed(2).replace('.', ',') : ''].join(';')));
+  lines.push('', 'Оружие;куплено;подобрано;киллов;в голову;смертей с ним');
   (st.weapons || []).forEach(r => lines.push([q(r.name), r.bought, r.picked, r.kills, r.hs, r.deaths].join(';')));
   lines.push('', 'Граната;куплено;подобрано;брошено;киллов');
   (st.grenades || []).forEach(r => lines.push([q(r.name), r.bought, r.picked, r.thrown || 0, r.kills].join(';')));
-  lines.push('', 'Карта;матчей;раундов;K;D;A;урон');
-  (st.maps || []).forEach(r => lines.push([q(r.title), r.matches, r.rounds, r.kills, r.deaths, r.assists, r.damage].join(';')));
-  const t = st.totals || {}; lines.push('', 'Итого;раундов;киллов;смертей;ассистов;урон;HS;лучший раунд;кручений DPI', ['', t.rounds, t.kills, t.deaths, t.assists, t.damage, t.hs, t.best_round_kills, t.rolls].join(';'));
+  lines.push('', 'Карта;матчей;раундов;побед;поражений;ничьих;K;D;A;в голову');
+  (st.maps || []).forEach(r => lines.push([q(r.title), r.matches, r.rounds, r.wins || 0, r.losses || 0, r.draws || 0, r.kills, r.deaths, r.assists, r.hs].join(';')));
+  const t = st.totals || {}; lines.push('', 'Итого;раундов;киллов;смертей;ассистов;в голову;MVP (киллов за раунд);кручений DPI', ['', t.rounds, t.kills, t.deaths, t.assists, t.hs, t.best_round_kills, t.rolls].join(';'));
   const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'hardmode-stats-' + new Date().toISOString().slice(0, 10) + '.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }

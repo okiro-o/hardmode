@@ -35,7 +35,7 @@ def weapon_name(key: str) -> str:
 
 def _fresh() -> dict:
     return {"started_at": time.time(), "dpi": {}, "weapons": {}, "maps": {},
-            "totals": {"kills": 0, "hs": 0, "deaths": 0, "assists": 0, "damage": 0, "rounds": 0, "rolls": 0,
+            "totals": {"kills": 0, "hs": 0, "deaths": 0, "assists": 0, "rounds": 0, "rolls": 0,
                        "best_round_kills": 0, "bought": 0, "picked": 0}}
 
 
@@ -52,6 +52,7 @@ class StatsTracker:
         self.cur_dpi: int | None = None
         self._round: dict | None = None     # {"no", "dpi", "changed", "kills"}
         self._map: str | None = None        # map the current counters go to
+        self._over = False                  # the match on self._map reached its final screen
         self._last_t: float | None = None
         self._last_save = 0.0
         self._dirty = False          # countable events not yet written
@@ -67,11 +68,14 @@ class StatsTracker:
                 base = _fresh()
                 base.update({k: d[k] for k in ("started_at", "dpi", "weapons", "maps") if k in d})
                 base["totals"].update(d["totals"])
-                for row in base["dpi"].values():
-                    row.setdefault("damage", 0)        # files written before 0.17.0
+                # damage dropped (per weapon in 0.21.4, everywhere in 0.29.0: CS2 never sent it)
+                for row in [base["totals"], *base["dpi"].values(), *base["maps"].values(), *base["weapons"].values()]:
+                    row.pop("damage", None)
                 for row in base["weapons"].values():
                     row.setdefault("thrown", 0)        # files written before 0.17.1
-                    row.pop("damage", None)            # per-weapon damage dropped in 0.21.4
+                for row in base["maps"].values():
+                    for k in ("wins", "losses", "draws"):
+                        row.setdefault(k, 0)           # match results since 0.29.0
                 for key in [k for k in base["weapons"] if W.is_non_weapon("weapon_" + k)]:
                     del base["weapons"][key]      # entries booked before the non-weapon filter existed
                 self.data = base
@@ -98,7 +102,7 @@ class StatsTracker:
 
     def _dpi(self, value: int) -> dict:
         return self.data["dpi"].setdefault(str(int(value)), {"rolls": 0, "kills": 0, "deaths": 0, "rounds": 0,
-                                                             "seconds": 0.0, "damage": 0})
+                                                             "seconds": 0.0})
 
     def _weapon(self, key: str) -> dict:
         return self.data["weapons"].setdefault(key, {"name": weapon_name(key), "bought": 0, "picked": 0,
@@ -108,7 +112,7 @@ class StatsTracker:
         if not self._map:
             return None
         return self.data["maps"].setdefault(self._map, {"matches": 0, "rounds": 0, "kills": 0, "hs": 0,
-                                                        "deaths": 0, "assists": 0, "damage": 0})
+                                                        "deaths": 0, "assists": 0, "wins": 0, "losses": 0, "draws": 0})
 
     # ------------------------------------------------------------------ hooks
     def on_dpi_roll(self, value: int, reason: str = "") -> None:
@@ -139,9 +143,9 @@ class StatsTracker:
             self._last_t = now
             t = self.data["totals"]
             map_name = getattr(status, "map_name", None)
-            if map_name and map_name != self._map and getattr(status, "map_phase", None) in ("live", "intermission", "warmup"):
-                self._map = map_name
-                self._mapstat()["matches"] += 1      # a new map = a new match for the per-map table
+            if map_name and (map_name != self._map or self._over) and getattr(status, "map_phase", None) in ("live", "intermission", "warmup"):
+                self._map, self._over = map_name, False
+                self._mapstat()["matches"] += 1      # a new map, or the same map after a final screen = a new match
                 changed = True
             m = self._mapstat()
             for ev in events:
@@ -176,18 +180,6 @@ class StatsTracker:
                     if m is not None:
                         m["deaths"] += 1
                     changed = True
-                elif kind == "damage":
-                    amount = int(ev.get("amount") or 0)
-                    if amount <= 0:
-                        continue
-                    # not per weapon (0.21.4): GSI gives only the round total, not who dealt it, so a grenade's
-                    # damage landed on the gun in hand and the weapon tables showed nonsense (user's report)
-                    if self.cur_dpi is not None:
-                        self._dpi(self.cur_dpi)["damage"] += amount
-                    t["damage"] += amount
-                    if m is not None:
-                        m["damage"] += amount
-                    changed = True
                 elif kind == "throw":
                     key = weapon_key(ev.get("raw"), ev.get("weapon"))
                     if key:
@@ -209,6 +201,12 @@ class StatsTracker:
                     self._weapon(key)[field] += 1
                     t[field] += 1
                     changed = True
+                elif kind == "match_end":
+                    self._over = True
+                    res = {"win": "wins", "loss": "losses", "draw": "draws"}.get(ev.get("result"))
+                    if m is not None and res:
+                        m[res] += 1
+                        changed = True
                 elif kind == "round_start":
                     self._round = {"no": ev.get("round"), "dpi": self.cur_dpi, "changed": False, "kills": 0}
                 elif kind == "round_end":
@@ -231,7 +229,7 @@ class StatsTracker:
         with self._lock:
             self.data = _fresh()
             self._round = None
-            if self._map:                    # the match in progress keeps counting after a reset
+            if self._map and not self._over:     # the match in progress keeps counting after a reset
                 self._mapstat()["matches"] = 1
             self._save(force=True)
 

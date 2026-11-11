@@ -80,31 +80,42 @@ def test_non_weapons_are_not_booked(tmp_path):
     assert "healthshot" not in StatsTracker(str(tmp_path / "stats.json")).data["weapons"]
 
 
-def test_damage_assists_and_maps(tmp_path):
+def test_assists_and_maps(tmp_path):
     s = StatsTracker(str(tmp_path / "stats.json"))
     mir = types.SimpleNamespace(map_phase="live", map_name="de_mirage")
     s.handle_events([{"type": "round_start", "round": 1}], mir, 800, now=1.0)
-    s.handle_events([{"type": "damage", "amount": 73, "weapon": "ak47", "raw": "weapon_ak47"},
-                     {"type": "kill", "weapon": "ak47", "raw": "weapon_ak47", "headshot": True},
+    s.handle_events([{"type": "kill", "weapon": "ak47", "raw": "weapon_ak47", "headshot": True},
                      {"type": "assist", "count": 1}], mir, 800, now=2.0)
     s.handle_events([{"type": "round_end", "round": 1}], mir, 800, now=3.0)
     inf = types.SimpleNamespace(map_phase="live", map_name="de_inferno")
     s.handle_events([{"type": "round_start", "round": 1}], inf, 800, now=10.0)
-    s.handle_events([{"type": "death", "weapon": "awp", "raw": "weapon_awp"}, {"type": "damage", "amount": 10, "weapon": None, "raw": "weapon_hegrenade"}], inf, 800, now=11.0)
+    s.handle_events([{"type": "death", "weapon": "awp", "raw": "weapon_awp"}], inf, 800, now=11.0)
     snap = s.snapshot()
     t = snap["totals"]
-    assert (t["damage"], t["assists"], t["kills"], t["deaths"]) == (83, 1, 1, 1)
-    w = {r["key"]: r for r in snap["weapons"]}
-    g = {r["key"]: r for r in snap["grenades"]}
-    assert "damage" not in w["ak47"] and "damage" not in g.get("hegrenade", {})   # not per weapon since 0.21.4
-    assert {r["value"]: r["damage"] for r in snap["dpi"]} == {800: 83}
+    assert (t["assists"], t["kills"], t["deaths"]) == (1, 1, 1) and "damage" not in t     # no damage since 0.29.0
+    assert "damage" not in snap["dpi"][0]
     maps = {r["name"]: r for r in snap["maps"]}
     assert maps["de_mirage"]["title"] == "Mirage" and maps["de_mirage"]["matches"] == 1
-    assert (maps["de_mirage"]["rounds"], maps["de_mirage"]["kills"], maps["de_mirage"]["assists"], maps["de_mirage"]["damage"]) == (1, 1, 1, 73)
-    assert (maps["de_inferno"]["deaths"], maps["de_inferno"]["damage"], maps["de_inferno"]["rounds"]) == (1, 10, 0)
+    assert (maps["de_mirage"]["rounds"], maps["de_mirage"]["kills"], maps["de_mirage"]["assists"]) == (1, 1, 1)
+    assert (maps["de_inferno"]["deaths"], maps["de_inferno"]["rounds"]) == (1, 0) and "damage" not in maps["de_inferno"]
     assert snap["maps"][0]["name"] == "de_mirage"        # sorted by rounds
     s.reset()
     assert s.snapshot()["maps"][0]["matches"] == 1 and s.snapshot()["maps"][0]["name"] == "de_inferno"
+
+
+def test_wins_per_map_and_a_rematch_on_the_same_map(tmp_path):
+    s = StatsTracker(str(tmp_path / "stats.json"))
+    live = types.SimpleNamespace(map_phase="live", map_name="de_mirage")
+    over = types.SimpleNamespace(map_phase="gameover", map_name="de_mirage")
+    s.handle_events([{"type": "round_start", "round": 1}], live, 800, now=1.0)
+    s.handle_events([{"type": "match_end", "result": "win"}], over, 800, now=2.0)
+    s.handle_events([], over, 800, now=3.0)
+    s.handle_events([], types.SimpleNamespace(map_phase="warmup", map_name="de_mirage"), 800, now=4.0)   # requeued
+    s.handle_events([{"type": "match_end", "result": "loss"}], over, 800, now=5.0)
+    s.handle_events([], live, 800, now=6.0)
+    s.handle_events([{"type": "match_end", "result": None}], over, 800, now=7.0)     # deathmatch: no result
+    m = s.snapshot()["maps"][0]
+    assert (m["matches"], m["wins"], m["losses"], m["draws"]) == (3, 1, 1, 0)
 
 
 def test_grenades_are_listed_separately_with_throws(tmp_path):
@@ -112,22 +123,23 @@ def test_grenades_are_listed_separately_with_throws(tmp_path):
     s.handle_events([{"type": "pickup", "raw": "weapon_flashbang", "weapon": None, "bought": True, "spawn": False},
                      {"type": "throw", "raw": "weapon_flashbang", "weapon": None},
                      {"type": "throw", "raw": "weapon_flashbang", "weapon": None},
-                     {"type": "pickup", "raw": "weapon_ak47", "weapon": "ak47", "bought": True, "spawn": False},
-                     {"type": "damage", "amount": 40, "weapon": None, "raw": "weapon_hegrenade"}], status(), 800, now=1.0)
+                     {"type": "pickup", "raw": "weapon_ak47", "weapon": "ak47", "bought": True, "spawn": False}], status(), 800, now=1.0)
     snap = s.snapshot()
     assert [r["key"] for r in snap["weapons"]] == ["ak47"]
     g = {r["key"]: r for r in snap["grenades"]}
-    assert g["flashbang"]["thrown"] == 2 and g["flashbang"]["bought"] == 1 and "damage" not in g.get("hegrenade", {})
+    assert g["flashbang"]["thrown"] == 2 and g["flashbang"]["bought"] == 1
     assert snap["grenades"][0]["key"] == "flashbang"      # sorted by throws
 
 
-def test_old_stats_file_loses_per_weapon_damage(tmp_path):
+def test_old_stats_file_loses_damage(tmp_path):
     import json
     p = tmp_path / "stats.json"
     row = {"name": "AK-47", "bought": 1, "picked": 0, "kills": 3, "hs": 1, "deaths": 0, "damage": 250}   # 0.17.0 file
     p.write_text(json.dumps({"totals": {"kills": 3, "damage": 250},
-                             "dpi": {"800": {"rolls": 1, "kills": 3, "deaths": 0, "rounds": 0, "seconds": 0}},
+                             "dpi": {"800": {"rolls": 1, "kills": 3, "deaths": 0, "rounds": 0, "seconds": 0, "damage": 250}},
+                             "maps": {"de_mirage": {"matches": 1, "rounds": 2, "kills": 3, "damage": 250}},
                              "weapons": {"ak47": row}}), encoding="utf-8")
     snap = StatsTracker(str(p)).snapshot()
-    assert snap["totals"]["damage"] == 250 and snap["dpi"][0]["damage"] == 0
+    assert "damage" not in snap["totals"] and "damage" not in snap["dpi"][0] and "damage" not in snap["maps"][0]
+    assert snap["totals"]["kills"] == 3 and snap["maps"][0]["rounds"] == 2 and snap["maps"][0]["wins"] == 0
     assert "damage" not in snap["weapons"][0] and snap["weapons"][0]["kills"] == 3

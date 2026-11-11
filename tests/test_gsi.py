@@ -286,22 +286,51 @@ def test_healthshot_and_c4_are_not_pickups():
     assert not [e for e in ev if e["type"] == "pickup"]
 
 
-def test_damage_and_assist_events():
+def test_assist_events_and_no_damage():
     t = GsiTracker()
     p = payload(rk=0, active="weapon_ak47"); p["player"]["state"]["round_totaldmg"] = 0; p["player"]["match_stats"]["assists"] = 2
     t.handle(p, now=1.0)
-    p = payload(rk=0, active="weapon_ak47"); p["player"]["state"]["round_totaldmg"] = 27; p["player"]["match_stats"]["assists"] = 2
-    ev = t.handle(p, now=1.1)
-    assert [e for e in ev if e["type"] == "damage"] == [{"type": "damage", "amount": 27, "weapon": "ak47", "raw": "weapon_ak47"}]
-    # quick switch after the hit: the weapon of the previous packet gets the damage
     p = payload(rk=0, active="weapon_glock"); p["player"]["state"]["round_totaldmg"] = 60; p["player"]["match_stats"]["assists"] = 3
     ev = t.handle(p, now=1.2)
-    d = [e for e in ev if e["type"] == "damage"]; a = [e for e in ev if e["type"] == "assist"]
-    assert d[0]["amount"] == 33 and d[0]["weapon"] == "ak47" and a == [{"type": "assist", "count": 1}]
-    # new round resets round_totaldmg: no damage event, a match reset never produces a negative assist
-    p = payload(rk=0, round_=4, rphase="freezetime", active="weapon_glock"); p["player"]["state"]["round_totaldmg"] = 0; p["player"]["match_stats"]["assists"] = 0
+    assert [e for e in ev if e["type"] == "assist"] == [{"type": "assist", "count": 1}]
+    assert not [e for e in ev if e["type"] == "damage"]          # damage is not counted since 0.29.0
+    # a match reset never produces a negative assist
+    p = payload(rk=0, round_=4, rphase="freezetime", active="weapon_glock"); p["player"]["match_stats"]["assists"] = 0
     ev = t.handle(p, now=5.0)
-    assert not [e for e in ev if e["type"] in ("damage", "assist")]
+    assert not [e for e in ev if e["type"] == "assist"]
+
+
+def _end(p, ct, t, phase="gameover"):
+    p["map"]["phase"] = phase
+    p["map"]["team_ct"] = {"score": ct}
+    p["map"]["team_t"] = {"score": t}
+    return p
+
+
+def test_match_end_result_from_team_scores():
+    t = GsiTracker()
+    t.handle(_end(payload(team="T"), 5, 7, phase="live"), now=1.0)
+    ev = t.handle(_end(payload(team="T"), 6, 13), now=2.0)
+    assert [e for e in ev if e["type"] == "match_end"] == [{"type": "match_end", "result": "win"}]
+    assert not [e for e in t.handle(_end(payload(team="T"), 6, 13), now=3.0) if e["type"] == "match_end"]   # once
+    # the final screen often shows a teammate: our side is the last one seen in our own payloads
+    t2 = GsiTracker()
+    t2.handle(_end(payload(team="CT"), 10, 12, phase="live"), now=1.0)
+    ev = t2.handle(_end(payload(steamid="765611980000000099", team="T"), 11, 13), now=2.0)
+    assert [e["result"] for e in ev if e["type"] == "match_end"] == ["loss"]
+    t3 = GsiTracker()
+    t3.handle(_end(payload(team="CT"), 12, 12, phase="live"), now=1.0)
+    assert [e["result"] for e in t3.handle(_end(payload(team="CT"), 12, 12), now=2.0) if e["type"] == "match_end"] == ["draw"]
+
+
+def test_match_end_without_a_team_score():
+    t = GsiTracker()
+    p = payload(); p["map"]["mode"] = "deathmatch"
+    t.handle(p, now=1.0)
+    p = _end(payload(), 0, 0); p["map"]["mode"] = "deathmatch"
+    assert [e["result"] for e in t.handle(p, now=2.0) if e["type"] == "match_end"] == [None]
+    fresh = GsiTracker()                                   # app started on the final screen: nothing to book
+    assert not [e for e in fresh.handle(_end(payload(), 3, 13), now=1.0) if e["type"] == "match_end"]
 
 
 def test_throw_events_for_any_grenade():

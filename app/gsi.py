@@ -44,6 +44,8 @@ def _str(v: Any) -> str | None:
 # map.phase values in which kills and deaths are real: "intermission" is the half-time screen and the
 # last kill/death of a half arrives with it already set; "gameover" likewise for the final round.
 ACTIVE_PHASES = ("live", "intermission", "gameover")
+# modes without a team score that decides the match: no win/loss is booked there
+NO_TEAM_RESULT = ("deathmatch", "gungameprogressive", "gungametrbomb", "training")
 
 
 @dataclass
@@ -97,7 +99,6 @@ class _OwnSnapshot:
     round_phase: str | None = None
     names: tuple[str, ...] = ()   # gsi names of everything in the inventory
     money: int | None = None
-    dmg: int = 0                  # player.state.round_totaldmg
     assists: int | None = None    # player.match_stats.assists
 
 
@@ -108,6 +109,7 @@ class GsiTracker:
     _prev: _OwnSnapshot | None = None
     _thrown: list[tuple[str, float]] = field(default_factory=list)
     _was_alive: bool = False   # last own payload had health > 0 (death detection)
+    _phase: tuple[str | None, str | None] = (None, None)   # (map name, map phase) of the previous payload
 
     # ------------------------------------------------------------------ parsing
     @staticmethod
@@ -158,6 +160,8 @@ class GsiTracker:
            "ambiguous": grenade_name|None, "index": i, "count": n}``
         ``{"type": "side", "side": "T"|"CT"}``
         ``{"type": "death"}`` (our player just died in a live round / live DM)
+        ``{"type": "match_end", "result": "win"|"loss"|"draw"|None}`` (map phase turned "gameover";
+          None when there is no team score to judge by, e.g. deathmatch)
         ``{"type": "status"}`` (always last, status object updated)
         """
         now = time.time() if now is None else now
@@ -195,6 +199,12 @@ class GsiTracker:
         st.round_phase = _str(round_.get("phase"))
         if own and _str(player.get("name")):
             st.name = _str(player.get("name"))
+
+        # end of a match (statistics: wins per map). Checked before the own-player test: at the final
+        # screen the player block often follows a teammate. Our side is the last one seen in own payloads.
+        if st.map_phase == "gameover" and self._phase[0] == st.map_name and self._phase[1] not in (None, "gameover"):
+            events.append({"type": "match_end", "result": self._match_result(map_, st.team, st.mode)})
+        self._phase = (st.map_name, st.map_phase)
 
         if not player or not map_:
             # main menu / loading: nothing to track, reset per-round memory and stale fields
@@ -238,7 +248,6 @@ class GsiTracker:
 
         round_kills = _int(state.get("round_kills"), 0) or 0
         round_killhs = _int(state.get("round_killhs"), 0) or 0
-        round_dmg = _int(state.get("round_totaldmg"), 0) or 0
         match_stats = _obj(player.get("match_stats"))
         match_kills = _int(match_stats.get("kills"))
         assists = _int(match_stats.get("assists"))
@@ -331,14 +340,9 @@ class GsiTracker:
                     "count": delta,
                 })
 
-        # damage dealt (statistics): round_totaldmg grows within a round; attributed like kills to the
-        # weapon that was in hand in the previous packet. Assists come from match_stats (per match).
+        # assists (statistics) come from match_stats (per match). Damage is not counted since 0.29.0:
+        # CS2 does not fill player.state.round_totaldmg for the player (the user's stats stayed at 0)
         if prev is not None and same_map and st.map_phase in ACTIVE_PHASES:
-            if same_round and round_dmg > prev.dmg:
-                dmg_raw = prev.active_raw or active_raw
-                dw = W.from_gsi_name(dmg_raw)
-                events.append({"type": "damage", "amount": round_dmg - prev.dmg,
-                               "weapon": dw.id if dw else None, "raw": dmg_raw})
             if assists is not None and prev.assists is not None and assists > prev.assists:
                 events.append({"type": "assist", "count": assists - prev.assists})
 
@@ -353,11 +357,21 @@ class GsiTracker:
             round_phase=st.round_phase,
             names=names,
             money=money,
-            dmg=round_dmg,
             assists=assists,
         )
         events.append({"type": "status"})
         return events
+
+    @staticmethod
+    def _match_result(map_: dict, team: str | None, mode: str | None) -> str | None:
+        if team not in (W.T, W.CT) or mode in NO_TEAM_RESULT:
+            return None
+        ct = _int(_obj(map_.get("team_ct")).get("score"))
+        t = _int(_obj(map_.get("team_t")).get("score"))
+        if ct is None or t is None or ct == t == 0:
+            return None
+        mine, theirs = (t, ct) if team == W.T else (ct, t)
+        return "win" if mine > theirs else "loss" if mine < theirs else "draw"
 
     @staticmethod
     def _death_event(raw: str | None) -> dict:
@@ -374,6 +388,7 @@ class GsiTracker:
             st.clear_player()
             self._prev = None
             self._was_alive = False
+            self._phase = (None, None)
             return True
         return False
 
