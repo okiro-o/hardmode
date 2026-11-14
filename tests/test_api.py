@@ -289,3 +289,22 @@ def test_sse_clients_tracked_with_obs_detection(client):
         _t.sleep(0.05)
     assert cl.get("weapons", {}).get("obs") == 1 and cl.get("panel", {}).get("browser") == 1
     stop.set()
+
+
+def test_stream_start_and_end_split_the_statistics(client):
+    st = client.app.state.app
+    import types
+    live = types.SimpleNamespace(map_phase="live", map_name="de_mirage", mode="competitive")
+    st.stats.handle_events([{"type": "kill", "weapon": "ak47", "raw": "weapon_ak47"}], live, 800)
+    st._on_stream({"live": True, "id": "s1", "title": "Стрим", "started_at": 1000.0})
+    snap = client.get("/api/stats").json()
+    assert snap["session"]["kind"] == "stream" and snap["totals"]["kills"] == 0
+    st._on_stream({"live": True, "id": "s1", "title": "Стрим", "started_at": 1000.0})   # same broadcast: nothing
+    st.stats.handle_events([{"type": "kill", "weapon": "awp", "raw": "weapon_awp"}], live, 800)
+    st._on_stream({"live": False})
+    hist = client.get("/api/stats/history").json()["sessions"]
+    assert [h["kind"] for h in hist] == ["stream", "offstream"] and hist[0]["totals"]["kills"] == 1
+    assert client.get("/api/stats/history/" + hist[0]["id"]).json()["totals"]["kills"] == 1
+    assert client.get("/api/stats/history/bad-id").status_code == 404
+    st._on_stream({"live": False})                                                    # already outside: nothing
+    assert len(client.get("/api/stats/history").json()["sessions"]) == 2

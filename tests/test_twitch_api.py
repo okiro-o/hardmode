@@ -88,6 +88,9 @@ class FakeTwitch:
             assert method == "PATCH" and body["status"] in ("FULFILLED", "CANCELED")
             self.statuses[q["id"]] = body["status"]
             return {"data": [{"id": q["id"], "status": body["status"]}]}
+        if path == "/helix/streams":
+            assert q["user_id"] == "42"
+            return {"data": [dict(self.live)] if getattr(self, "live", None) else []}
         if path == "/helix/chat/messages":
             assert body["broadcaster_id"] == body["sender_id"] == "42"
             self.chat.append(body["message"])
@@ -433,3 +436,29 @@ def test_refund_all_points_requests_at_the_end_of_a_stream(client, app_twitch):
     res = client.post("/api/queue/refund")
     assert res.status_code == 400 and "Twitch" in res.text
     assert any(e["user"] == "Dan" for e in st.queue.pending())
+
+
+def test_stream_start_and_end_with_a_grace_for_dropped_connections(tmp_path):
+    fake = FakeTwitch()
+    svc, _ = _service(tmp_path, fake)
+    _signed_in(svc)
+    seen = []
+    svc.on_stream = seen.append
+    svc.poll_stream(now=0)                                             # first answer: offline, said once
+    svc.poll_stream(now=60)
+    assert seen == [{"live": False}]
+    fake.live = {"id": "s1", "title": "Хардмод", "started_at": "2026-11-14T18:00:00Z", "type": "live"}
+    svc.poll_stream(now=120)
+    assert seen[-1]["live"] and seen[-1]["id"] == "s1" and seen[-1]["title"] == "Хардмод" and seen[-1]["started_at"] > 0
+    fake.live = None                                                   # the connection dropped
+    svc.poll_stream(now=180)
+    fake.live = {"id": "s1", "title": "Хардмод", "started_at": "2026-11-14T18:00:00Z"}
+    svc.poll_stream(now=300)                                           # back within the grace: the same stream
+    assert len(seen) == 2
+    fake.live = None
+    svc.poll_stream(now=400)
+    svc.poll_stream(now=400 + T.OFFLINE_GRACE_S - 1)
+    assert len(seen) == 2
+    svc.poll_stream(now=400 + T.OFFLINE_GRACE_S)
+    assert seen[-1] == {"live": False} and len(seen) == 3
+    svc._stop.set()

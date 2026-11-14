@@ -158,3 +158,33 @@ def test_old_stats_file_loses_damage(tmp_path):
     assert "damage" not in snap["totals"] and "damage" not in snap["dpi"][0] and "damage" not in snap["maps"][0]
     assert snap["totals"]["kills"] == 3 and snap["maps"][0]["rounds"] == 2 and snap["maps"][0]["wins"] == 0
     assert "damage" not in snap["weapons"][0] and snap["weapons"][0]["kills"] == 3
+
+
+def test_stream_and_offstream_parts_are_archived_apart(tmp_path):
+    s = StatsTracker(str(tmp_path / "stats.json"))
+    live = types.SimpleNamespace(map_phase="live", map_name="de_mirage", mode="competitive")
+    assert s.start_session("stream", {"id": "s1", "title": "Хардмод", "started_at": 1000.0}) is None   # nothing yet
+    s.handle_events([{"type": "kill", "weapon": "ak47", "raw": "weapon_ak47"}] * 3, live, 800, now=2000.0)
+    assert s.session["kind"] == "stream" and s.session["last_event_at"] == 2000.0
+    sid = s.start_session("offstream", now=3000.0)                     # the stream ended
+    assert sid and sid.endswith("-stream") and s.snapshot()["totals"]["kills"] == 0
+    s.handle_events([{"type": "kill", "weapon": "awp", "raw": "weapon_awp"}], live, 800, now=4000.0)
+    s.start_session("stream", {"id": "s2", "title": "Второй", "started_at": 5000.0}, now=5000.0)
+    hist = s.history()
+    assert [h["kind"] for h in hist] == ["offstream", "stream"]          # newest first
+    old = next(h for h in hist if h["kind"] == "stream")
+    assert old["title"] == "Хардмод" and old["started_at"] == 1000.0 and old["ended_at"] == 2000.0 and old["totals"]["kills"] == 3
+    item = s.history_item(old["id"])
+    assert item["totals"]["kills"] == 3 and item["weapons"][0]["key"] == "ak47" and item["session"]["kind"] == "stream"
+    assert s.history_item("../stats") is None and s.history_item("nope") is None
+    # the current part survives a restart with its kind
+    again = StatsTracker(str(tmp_path / "stats.json"))
+    assert again.session["kind"] == "stream" and again.session["stream_id"] == "s2"
+
+
+def test_file_without_parts_loads_as_play_outside_a_stream(tmp_path):
+    import json
+    p = tmp_path / "stats.json"
+    p.write_text(json.dumps({"started_at": 123.0, "totals": {"kills": 2}}), encoding="utf-8")
+    s = StatsTracker(str(p))
+    assert s.session["kind"] == "offstream" and s.session["started_at"] == 123.0 and s.has_data()

@@ -48,6 +48,8 @@ HELIX = "https://api.twitch.tv/helix"
 SCOPES = ("channel:manage:redemptions", "user:write:chat", "channel:manage:predictions")
 DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
 POLL_S = 3.0
+STREAM_S = 60.0          # how often the broadcast state is read (statistics parts, 0.37.0)
+OFFLINE_GRACE_S = 600.0  # offline this long = the broadcast ended (a dropped connection comes back sooner)
 VALIDATE_S = 3600.0
 SYNC_S = 30.0            # how often our rewards are re-read from Twitch (deleted? paused? guarded settings changed?)
 SYNC_ON_VIEW_S = 5.0     # the panel asks for a fresh read when the streamer looks; at most this often
@@ -135,6 +137,11 @@ class TwitchService:
         # wired by app.main, called on the event-loop thread: (kind, redemption) -> "fulfill" | "cancel" | "keep"
         self.on_redemption: Callable[[str, dict], str] = lambda kind, r: "cancel"
         self.on_login: Callable[[dict], None] = lambda user: None     # called from the sign-in thread
+        # the broadcast went live / ended (statistics parts, 0.37.0), on the event-loop thread:
+        # {"live": True, "id", "title", "started_at"} or {"live": False}
+        self.on_stream: Callable[[dict], None] = lambda info: None
+        self.stream: dict | None = None          # last reported state, None until the first answer
+        self._offline_since: float | None = None
         self._http = _http                       # tests replace it
         self._load()
 
@@ -557,6 +564,37 @@ class TwitchService:
                 # 400/404: already handled in the Twitch dashboard; anything else is logged and dropped
                 log.warning("twitch: redemption %s → %s failed: %s", rid, status, e)
 
+    # ------------------------------------------------------------------ stream
+    def poll_stream(self, now: float | None = None) -> dict | None:
+        """Blocking (Helix «Get Streams», no scope needed). Reports a change through ``on_stream``. The end of a
+        broadcast counts only after ``OFFLINE_GRACE_S`` without it: a dropped connection that comes back is
+        the same stream. The very first answer is reported as it is."""
+        if not self.logged_in:
+            return None
+        now = time.monotonic() if now is None else now
+        data = self.helix("GET", "streams", {"user_id": self.state["user"]["id"], "type": "live"}).get("data") or []
+        live = data[0] if data else None
+        if live:
+            self._offline_since = None
+            info = {"live": True, "id": str(live.get("id") or ""), "title": live.get("title"),
+                    "started_at": _ts(live.get("started_at"))}
+            if not (self.stream and self.stream.get("live") and self.stream.get("id") == info["id"]):
+                self._report(info)
+        elif self.stream is None:
+            self._report({"live": False})
+        elif self.stream.get("live"):
+            if self._offline_since is None:
+                self._offline_since = now
+            if now - self._offline_since >= OFFLINE_GRACE_S:
+                self._offline_since = None
+                self._report({"live": False})
+        return self.stream
+
+    def _report(self, info: dict) -> None:
+        self.stream = info
+        log.info("twitch: stream %s", f"live «{info.get('title')}»" if info["live"] else "offline")
+        self._call(self.on_stream, dict(info))
+
     # ------------------------------------------------------------------ worker
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -569,7 +607,7 @@ class TwitchService:
         self._stop.set()
 
     def _run(self) -> None:
-        next_poll = next_sync = 0.0
+        next_poll = next_sync = next_stream = 0.0
         fails = 0
         while not self._stop.wait(0.5):
             if not self.logged_in:
@@ -583,6 +621,9 @@ class TwitchService:
                     next_sync = time.monotonic() + SYNC_S
                     self._sync_rewards()
                 self.flush_actions()
+                if time.monotonic() >= next_stream:
+                    next_stream = time.monotonic() + STREAM_S
+                    self.poll_stream()
                 if time.monotonic() >= next_poll:
                     self.poll_once()
                     next_poll = time.monotonic() + POLL_S * min(2 ** fails, 10)

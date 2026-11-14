@@ -26,7 +26,8 @@
   /* main tabs */
   .maintabs { display:flex; flex-direction:column; gap:2px; }
   .navsep { height:1px; background:var(--line); margin:6px 10px; flex:0 0 auto; }   /* groups of sections */
-  .quitbtn { margin-top:auto; width:100%; padding:8px 6px; font-size:12.5px; white-space:nowrap; background:transparent;
+  .sidefoot { margin-top:auto; display:flex; flex-direction:column; gap:8px; }
+  .quitbtn { width:100%; padding:8px 6px; font-size:12.5px; white-space:nowrap; background:transparent;
              border:1px solid var(--bad); color:var(--bad); font-weight:600; }
   .quitbtn:hover { background:rgba(255,94,94,.12); border-color:var(--bad); }
   .maintabs button { display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:transparent; border:0;
@@ -41,7 +42,9 @@
     .brand { display:none; }
     .maintabs { flex-direction:row; }
     .navsep { width:1px; height:22px; margin:0 6px; align-self:center; }
-    .quitbtn { margin-top:0; width:auto; flex:0 0 auto; white-space:nowrap; }
+    .sidefoot { margin-top:0; flex-direction:row; flex:0 0 auto; }
+    .quitbtn { width:auto; flex:0 0 auto; white-space:nowrap; }
+    .updbtn { width:auto; }
     .maintabs button { border-left:0; border-bottom:2px solid transparent; border-radius:8px 8px 0 0; padding:8px 12px; }
     .maintabs button.active { border-bottom-color:var(--accent); }
     header { position:static; }
@@ -131,6 +134,13 @@
   .kgroup .kt { font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); font-weight:700; margin:0 0 6px 2px; }
   .kgroup .kpis { grid-template-columns: repeat(auto-fit, minmax(74px, 1fr)); gap:6px; margin:0; }
   .kgroup .stat.main .v { color:var(--accent); }
+  /* which part is shown: now, or an archived stream / play outside a stream (0.37.0) */
+  #st-sess { min-width:240px; max-width:340px; }
+  #st-sess .dd-btn { height:32px; font-weight:600; letter-spacing:normal; text-transform:none; }
+  #st-sess .dd-menu { left:auto; right:0; min-width:100%; width:max-content; max-width:420px; text-transform:none; letter-spacing:normal; font-weight:500; }
+  #st-sess .dd-opt { display:block; position:relative; padding-right:28px; }
+  #st-sess .dd-opt.sel::after { position:absolute; right:10px; top:8px; }
+  #st-sess .dd-opt .sub { display:block; margin-top:2px; font-size:11.5px; color:var(--muted); font-weight:400; }
   /* one table at a time, picked by the switch (0.30.0, like «Поверх игры»); the tab is one centred column
      no wider than ~1000px so a table name stays close to its numbers; «Бой» gets its own row of tiles */
   #tab-stats.active { grid-template-columns: minmax(0, 1000px); justify-content:center; align-content:start; }
@@ -339,12 +349,12 @@
   @media (max-width: 520px) { .form .pair, .form .pair.port { grid-template-columns: 1fr; } }
   /* Twitch sign-in: always visible at the top right (user's request) */
   .twbox { margin-left:auto; position:relative; }
-  /* update from the panel (0.36.0): shown only when GitHub has a newer version */
-  .updbox { position:relative; margin-left:auto; }
-  .updbox + .twbox { margin-left:0; }
-  .updbtn { background:transparent; border:1px solid rgba(255,209,102,.6); color:var(--accent); font-weight:700; padding:6px 12px; border-radius:999px; font-size:13px; }
+  /* update from the panel (0.36.0): above «Завершить приложение», shown only when GitHub has a newer version;
+     the list opens next to the button (fixed: the sidebar scrolls and would clip it) */
+  .updbtn { width:100%; padding:8px 6px; font-size:12.5px; white-space:nowrap; background:transparent;
+            border:1px solid rgba(255,209,102,.6); color:var(--accent); font-weight:700; }
   .updbtn:hover { background:rgba(255,209,102,.1); }
-  .updpop { min-width:300px; max-width:380px; }
+  .updpop { position:fixed; right:auto; min-width:300px; max-width:380px; }
   .updpop ul { margin:0; padding-left:18px; font-size:13px; line-height:1.45; max-height:240px; overflow:auto; }
   .updpop .t { font-size:14px; } .updpop .t b { color:var(--accent); }
   #chip-sse:not(.bad) { display:none; }      /* shown only when the panel lost the app (0.27.0) */
@@ -418,8 +428,14 @@
     <div class="navsep"></div>
     <button data-tab="help" onclick="showMainTab('help')"><span class="i">📖</span>Справка</button>
   </nav>
-  <button class="quitbtn" onclick="quitApp()">Завершить приложение</button>
+  <div class="sidefoot">
+    <div class="updbox" id="updbox" style="display:none;">
+      <button class="updbtn" id="upd-btn" onclick="updButton(event)">↑ <span id="upd-btn-label">Обновление</span></button>
+    </div>
+    <button class="quitbtn" onclick="quitApp()">Завершить приложение</button>
+  </div>
 </aside>
+<div class="twpop updpop" id="upd-pop"></div>
 <div class="content">
 <header>
   <div class="hrow">
@@ -429,10 +445,6 @@
     <span class="chip" id="chip-mouse"><span class="dot"></span><b>мышь: ?</b></span>
     <span class="chip" id="chip-sse"><span class="dot"></span><b>нет связи с приложением</b></span>
     <span class="chip warn" id="chip-rec" style="display:none;" title="Запущено через run-gsi-record.bat: пакеты CS2 пишутся в data\gsi-record.jsonl"><span class="dot"></span><b>запись пакетов CS2</b></span>
-    <div class="updbox" id="updbox" style="display:none;">
-      <button class="updbtn" id="upd-btn" onclick="updButton(event)">↑ <span id="upd-btn-label">Обновление</span></button>
-      <div class="twpop updpop" id="upd-pop"></div>
-    </div>
     <div class="twbox" id="twbox">
       <button class="twbtn" id="tw-btn" onclick="twitchButton(event)"><span class="twdot"></span><span id="tw-btn-label">Войти через Twitch</span></button>
       <div class="twpop" id="tw-pop"></div>
@@ -888,7 +900,7 @@
   <!-- ================= TAB: STATS ================= -->
   <div class="tabpage" id="tab-stats">
     <section class="stats-sum">
-      <h2>Статистика стрима <span class="right"><span class="hint" id="stats-since"></span><button onclick="downloadStatsCsv()" title="Скачать таблицы в CSV">⤓ CSV</button><button class="danger" onclick="resetStats()" title="Обнулить статистику стрима">⟲ Сброс</button></span></h2>
+      <h2>Статистика <span class="right"><div class="dd" id="st-sess"><button type="button" class="dd-btn" onclick="statsSessToggle(event)"><span id="st-sess-label">Сейчас</span></button><div class="dd-menu" id="st-sess-menu"></div></div><button onclick="downloadStatsCsv()" title="Скачать таблицы в CSV">⤓ CSV</button><button class="danger" id="stats-reset" onclick="resetStats()" title="Обнулить текущую статистику">⟲ Сброс</button></span></h2>
       <div class="kgroups" id="stats-totals"></div>
     </section>
     <section id="sec-stats-tables">
@@ -1198,8 +1210,44 @@ function statTable(id, cols, table, rows, fmt, empty, rowAttr) {
     `<td class="${gs[i] ? 'gs ' : ''}${s.key === k ? 'sortedcol' : ''}">${fmt[k] ? fmt[k](r) : (r[k] ?? 0)}</td>`).join('') + '</tr>').join('');
   $(id).innerHTML = head + '<tbody>' + (body || `<tr><td class="muted" colspan="${cols.length}">${empty}</td></tr>`) + '</tbody>';
 }
+// ---- statistics parts: now / archived streams and play outside them (0.37.0)
+let statsSess = null, statsArchived = null, statsHistory = [];
+const fmtDay = t => new Date(t * 1000).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit' });
+const fmtHm = t => new Date(t * 1000).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+function sessLabel(x, now) {
+  const kind = x.kind === 'stream' ? 'стрим' : 'вне эфира';
+  if (now) return `Сейчас: ${kind} с ${fmtHm(x.started_at)}`;
+  return `${x.kind === 'stream' ? 'Стрим' : 'Вне эфира'} ${fmtDay(x.started_at)}, ${fmtHm(x.started_at)}–${x.ended_at ? fmtHm(x.ended_at) : '?'}`;
+}
+async function loadStatsHistory() {
+  try { statsHistory = (await (await fetch('/api/stats/history')).json()).sessions || []; } catch (e) { statsHistory = []; }
+  renderStatsSessions();
+}
+function renderStatsSessions() {
+  if (!$('st-sess') || !S || !S.stats) return;
+  const cur = S.stats.session || {kind: 'offstream', started_at: S.stats.started_at};
+  const shown = statsSess ? statsHistory.find(h => h.id === statsSess) : null;
+  $('st-sess-label').textContent = shown ? sessLabel(shown) : sessLabel(cur, true);
+  const opt = (id, label, sub) => `<div class="dd-opt ${id === statsSess ? 'sel' : ''}" onclick="pickStatsSess(${id ? `'${id}'` : 'null'})">${esc(label)}${sub ? `<span class="sub">${esc(sub)}</span>` : ''}</div>`;
+  const kd = t => `${t.kills || 0} киллов · K/D ${t.deaths ? ((t.kills || 0) / t.deaths).toFixed(2) : '—'}`;
+  $('st-sess-menu').innerHTML = opt(null, sessLabel(cur, true), cur.title ? '«' + cur.title + '»' : '')
+    + statsHistory.map(h => opt(h.id, sessLabel(h), (h.title ? '«' + h.title.slice(0, 40) + '» · ' : '') + kd(h.totals || {}))).join('');
+  $('stats-reset').style.display = statsSess ? 'none' : '';
+}
+function statsSessToggle(ev) { ev.stopPropagation(); const dd = $('st-sess'), open = dd.classList.contains('open'); closeAllDd(); if (!open) { dd.classList.add('open'); loadStatsHistory(); } }
+async function pickStatsSess(id) {
+  closeAllDd();
+  if (id) {
+    try { statsArchived = await (await fetch('/api/stats/history/' + encodeURIComponent(id))).json(); } catch (e) { return toast('Не удалось открыть', true); }
+    if (!statsArchived || !statsArchived.totals) return toast('Не удалось открыть', true);
+  }
+  statsSess = id; if (!id) statsArchived = null;
+  renderStats();
+}
 function renderStats() {
-  const st = S.stats; if (!st || !$('stats-totals')) return;
+  if (!S || !S.stats || !$('stats-totals')) return;
+  const st = statsSess && statsArchived ? statsArchived : S.stats;
+  renderStatsSessions();
   const t = st.totals || {}, f2 = v => v == null ? '—' : v === Infinity ? '∞' : v.toFixed(2);
   const pct = v => v == null ? '—' : Math.round(v) + '%', share = (a, b) => b ? 100 * a / b : null;
   const ratio = (a, b) => b ? a / b : (a ? Infinity : null);
@@ -1212,7 +1260,6 @@ function renderStats() {
     group('Бой', [['K/D', f2(ratio(t.kills, t.deaths)), 'main'], ['киллов', t.kills], ['смертей', t.deaths], ['ассистов', t.assists], ['HS', pct(share(t.hs, t.kills)), '', 'доля киллов в голову'], ['MVP', t.mvps || 0, '', 'звёзды MVP за раунды, как в табе']])
     + group('Игра', [['матчей', (st.maps || []).reduce((n, m) => n + (m.matches || 0), 0)], ['раундов', t.rounds], ['лучший раунд', t.best_round_kills ? t.best_round_kills + 'k' : '—', '', 'больше всего киллов за один раунд; Deathmatch и гонка вооружений не в счёт']])
     + group('DPI-рулетка', [['кручений', t.rolls], ['лучший DPI', best ? best.value : '—', best ? 'main' : '', 'больше всего киллов за выпадение (из выпавших хотя бы 3 раза)'], ['время в игре', dur(dpis.reduce((n, r) => n + (r.seconds || 0), 0))]]);
-  $('stats-since').textContent = st.started_at ? 'с ' + new Date(st.started_at * 1000).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
   const home = +((S.dpi && S.dpi.settings && S.dpi.settings.home_dpi) || 0), homeColor = (S.dpi && S.dpi.settings && S.dpi.settings.home_color) || '#ff6b6b';
   statTable('stats-dpi', DPI_COLS, 'dpi', dpis, { seconds: r => fmtDur(r.seconds), kd: r => f2(r.kd), kpr: r => f2(r.kpr) },
     'пока пусто: данные появятся с первого раунда', r => r.value === home ? ` style="box-shadow: inset 3px 0 0 ${homeColor}"` : '');
@@ -1226,7 +1273,7 @@ function renderStats() {
 }
 async function resetStats() { if (!confirm('Обнулить статистику стрима?')) return; const r = await post('/api/stats/reset', {}); if (r) toast('Статистика обнулена'); }
 function downloadStatsCsv() {
-  const st = S.stats || {}; const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const st = (statsSess && statsArchived) || S.stats || {}; const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
   const lines = ['DPI;выпал;целых раундов;секунд;киллов;смертей;киллов за выпадение'];
   (st.dpi || []).forEach(r => lines.push([r.value, r.rolls, r.rounds, Math.round(r.seconds || 0), r.kills, r.deaths, r.rolls ? (r.kills / r.rolls).toFixed(2).replace('.', ',') : ''].join(';')));
   lines.push('', 'Оружие;куплено;подобрано;киллов;в голову;смертей с ним');
@@ -1296,12 +1343,20 @@ function renderUpdate() {
     + (u.error ? `<div class="err">${esc(u.error)}</div>` : '')
     + (u.behind > 0 ? `<button class="primary" onclick="updApply()" ${u.busy ? 'disabled' : ''}>${u.restart_self ? 'Обновить и перезапустить' : 'Обновить'}</button>` : '');
 }
-function updButton(ev) { ev.stopPropagation(); $('upd-pop').classList.toggle('open'); }
+function updButton(ev) {
+  ev.stopPropagation();
+  const pop = $('upd-pop'), r = $('upd-btn').getBoundingClientRect();
+  if (pop.classList.toggle('open')) {
+    const up = r.top > innerHeight / 2;           // bottom of the sidebar: open upwards; narrow window (menu on top): down
+    Object.assign(pop.style, {left: Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8)) + 'px',
+      top: up ? 'auto' : (r.bottom + 8) + 'px', bottom: up ? (innerHeight - r.top + 8) + 'px' : 'auto'});
+  }
+}
 async function updApply() {
   const r = await post('/api/update/apply', {});
   if (r && !r.ok) toast(r.error, true); else if (r) toast(r.text || 'Обновлено');
 }
-document.addEventListener('click', e => { if (!e.target.closest('#updbox')) $('upd-pop').classList.remove('open'); });
+document.addEventListener('click', e => { if (!e.target.closest('#updbox') && !e.target.closest('#upd-pop')) $('upd-pop').classList.remove('open'); });
 function plural(n, one, few, many) {
   const a = Math.abs(n) % 100, b = a % 10;
   return a > 10 && a < 20 ? many : b === 1 ? one : b >= 2 && b <= 4 ? few : many;
@@ -1851,6 +1906,7 @@ es.addEventListener('snapshot', e => {
   loadedVersion = S.version;
   renderAll(); $('chip-sse').className='chip ok';
 });
+es.addEventListener('stats_history', () => { loadStatsHistory(); });
 es.addEventListener('update', e => { if (!S) return; S.update = JSON.parse(e.data); renderUpdate(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { schedulePreview('dpi'); schedulePreview('weapons'); schedulePreview('queue'); twitchSyncSoon(); } });
 es.addEventListener('roulette', e => { if (!S) return; S.roulette = JSON.parse(e.data); renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderChecks(); schedulePreview('weapons'); });
@@ -1873,6 +1929,7 @@ es.addEventListener('kill', e => { const k = JSON.parse(e.data); if (k.ambiguous
 es.onerror = () => { $('chip-sse').className='chip bad'; };
 showIngame(['weapons', 'dpi', 'queue'].includes(igKind) ? igKind : 'weapons');
 showStatsTable(statsView);
+loadStatsHistory();
 </script>
 </body>
 </html>

@@ -1,10 +1,17 @@
 """Per-stream statistics: DPI values vs kills/deaths/rounds/time and per-weapon buys, pickups,
 kills, deaths. Fed by GSI events (gsi.py) and DPI hooks (service.py); persisted to data/stats.json
-so a restart does not lose the stream; "Новый стрим" resets everything."""
+so a restart does not lose the stream; «Сброс» clears the current part.
+
+Parts (0.37.0, user: «я играю с приложением и вне стрима»): the current statistics belong to a session,
+``stream`` (a Twitch broadcast, id/title from Helix) or ``offstream``. When the broadcast starts or ends
+(``start_session``), the session so far is archived to data/stats-history/*.json and counting starts again,
+so play before and after a stream never mixes into it. The panel can open any archived session."""
 from __future__ import annotations
 
 import json
 import logging
+import os
+import re
 import threading
 import time
 from typing import Any
@@ -33,10 +40,35 @@ def weapon_name(key: str) -> str:
     return GRENADE_NAMES.get(key, key)
 
 
-def _fresh() -> dict:
-    return {"started_at": time.time(), "dpi": {}, "weapons": {}, "maps": {},
+MAX_HISTORY = 200                    # archived sessions kept in data/stats-history
+
+
+def _session(kind: str = "offstream", stream: dict | None = None, now: float | None = None) -> dict:
+    now = time.time() if now is None else now
+    stream = stream or {}
+    return {"kind": kind, "stream_id": stream.get("id"), "title": stream.get("title"),
+            "started_at": stream.get("started_at") or now, "last_event_at": None}
+
+
+def _fresh(session: dict | None = None) -> dict:
+    return {"started_at": time.time(), "dpi": {}, "weapons": {}, "maps": {}, "session": session or _session(),
             "totals": {"kills": 0, "hs": 0, "deaths": 0, "assists": 0, "mvps": 0, "rounds": 0, "rolls": 0,
                        "best_round_kills": 0, "bought": 0, "picked": 0}}
+
+
+def snapshot_of(data: dict, current_dpi: int | None = None) -> dict:
+    """The panel's view of a statistics dict (the current one or an archived session)."""
+    dpi = [{"value": int(k), **v} for k, v in data["dpi"].items()]
+    dpi.sort(key=lambda r: r["value"])
+    rows = [{"key": k, **v} for k, v in data["weapons"].items()]
+    weapons = [r for r in rows if r["key"] not in GRENADE_NAMES]
+    grenades = [r for r in rows if r["key"] in GRENADE_NAMES]
+    weapons.sort(key=lambda r: (-r["kills"], -r["bought"], -r["picked"], r["name"]))
+    grenades.sort(key=lambda r: (-r.get("thrown", 0), -r["bought"], r["name"]))
+    maps = [{"name": k, "title": map_title(k), **v} for k, v in data["maps"].items()]
+    maps.sort(key=lambda r: (-r["rounds"], r["name"]))
+    return {"started_at": data["started_at"], "totals": dict(data["totals"]), "session": dict(data.get("session") or {}),
+            "dpi": dpi, "weapons": weapons, "grenades": grenades, "maps": maps, "current_dpi": current_dpi}
 
 
 # modes without real rounds: the whole match is one «round» for the game (deathmatch, arms race), so the best
@@ -52,6 +84,7 @@ def map_title(name: str) -> str:
 class StatsTracker:
     def __init__(self, path: str) -> None:
         self.path = path
+        self.history_dir = os.path.join(os.path.dirname(path) or ".", "stats-history")
         self._lock = threading.Lock()
         self.data = _fresh()
         self.cur_dpi: int | None = None
@@ -72,6 +105,10 @@ class StatsTracker:
             if isinstance(d, dict) and isinstance(d.get("totals"), dict):
                 base = _fresh()
                 base.update({k: d[k] for k in ("started_at", "dpi", "weapons", "maps") if k in d})
+                if isinstance(d.get("session"), dict):
+                    base["session"].update(d["session"])
+                else:                                  # files written before 0.37.0: play outside a stream
+                    base["session"]["started_at"] = base["started_at"]
                 base["totals"].update(d["totals"])
                 # damage dropped (per weapon in 0.21.4, everywhere in 0.29.0: CS2 never sent it)
                 for row in [base["totals"], *base["dpi"].values(), *base["maps"].values(), *base["weapons"].values()]:
@@ -124,6 +161,7 @@ class StatsTracker:
         with self._lock:
             self._dpi(value)["rolls"] += 1
             self.data["totals"]["rolls"] += 1
+            self.data["session"]["last_event_at"] = time.time()
             self._save()
 
     def on_dpi_applied(self, value: int) -> None:
@@ -227,6 +265,8 @@ class StatsTracker:
                             self._dpi(self._round["dpi"])["rounds"] += 1
                         self._round = None
                         changed = True
+            if changed:
+                self.data["session"]["last_event_at"] = now
             if changed or self._dirty:
                 self._save()
             elif self._time_dirty and now - self._last_save > 30:
@@ -234,9 +274,87 @@ class StatsTracker:
         return changed
 
     # ---------------------------------------------------------------- control
+    @property
+    def session(self) -> dict:
+        return dict(self.data["session"])
+
+    def has_data(self) -> bool:
+        t = self.data["totals"]
+        return any(t.get(k) for k in ("kills", "deaths", "rounds", "rolls", "bought", "picked")) or bool(self.data["maps"])
+
+    def start_session(self, kind: str, stream: dict | None = None, now: float | None = None) -> str | None:
+        """The broadcast started or ended: archive the session so far (when something was counted) and
+        start counting again. Returns the archived session id."""
+        now = time.time() if now is None else now
+        with self._lock:
+            archived = self._archive(now) if self.has_data() else None
+            self.data = _fresh(_session(kind, stream, now))
+            self._round = None
+            if self._map and not self._over:          # a match in progress keeps counting in the new part
+                self._mapstat()["matches"] = 1
+            self._save(force=True)
+        log.info("statistics: new %s session%s", kind, f", archived {archived}" if archived else "")
+        return archived
+
+    def _archive(self, now: float) -> str | None:
+        sess = self.data["session"]
+        sess["ended_at"] = sess.get("last_event_at") or now
+        sid = time.strftime("%Y%m%d-%H%M%S", time.localtime(sess.get("started_at") or self.data["started_at"])) + "-" + sess["kind"]
+        try:
+            os.makedirs(self.history_dir, exist_ok=True)
+            path = os.path.join(self.history_dir, sid + ".json")
+            n = 2
+            while os.path.exists(path):                # two parts started in the same second
+                path = os.path.join(self.history_dir, f"{sid}-{n}.json")
+                n += 1
+            config.write_json_atomic(path, self.data)
+            files = [os.path.join(self.history_dir, f) for f in os.listdir(self.history_dir) if f.endswith(".json")]
+            for f in sorted(files, key=os.path.getmtime)[:-MAX_HISTORY]:      # the oldest archived go first
+                os.remove(f)
+            return os.path.basename(path)[:-5]
+        except OSError:
+            log.warning("cannot archive statistics", exc_info=True)
+            return None
+
+    def history(self) -> list[dict]:
+        """Archived sessions, the last finished first: {id, kind, title, started_at, ended_at, totals}."""
+        out: list[dict] = []
+        try:
+            names = [f for f in os.listdir(self.history_dir) if f.endswith(".json")]
+        except OSError:
+            return out
+        for f in names:
+            try:
+                with open(os.path.join(self.history_dir, f), encoding="utf-8") as fh:
+                    d = json.load(fh)
+                sess = d.get("session") or {}
+                out.append({"id": f[:-5], "kind": sess.get("kind", "offstream"), "title": sess.get("title"),
+                            "started_at": sess.get("started_at") or d.get("started_at"), "ended_at": sess.get("ended_at"),
+                            "totals": d.get("totals") or {}})
+            except (OSError, ValueError):
+                continue
+        out.sort(key=lambda h: h.get("ended_at") or h.get("started_at") or 0, reverse=True)
+        return out
+
+    def history_item(self, sid: str) -> dict | None:
+        if not re.fullmatch(r"[0-9]{8}-[0-9]{6}-(stream|offstream)(-[0-9]+)?", sid or ""):
+            return None                                  # an id from the list, never a path
+        try:
+            with open(os.path.join(self.history_dir, sid + ".json"), encoding="utf-8") as f:
+                d = json.load(f)
+        except (OSError, ValueError):
+            return None
+        base = _fresh(_session())
+        base.update({k: d[k] for k in ("started_at", "dpi", "weapons", "maps", "session") if k in d})
+        base["totals"].update(d.get("totals") or {})
+        for row in base["maps"].values():
+            for k in ("wins", "losses", "draws"):
+                row.setdefault(k, 0)
+        return {**snapshot_of(base), "id": sid}
+
     def reset(self) -> None:
         with self._lock:
-            self.data = _fresh()
+            self.data = _fresh({**self.data["session"], "started_at": time.time(), "last_event_at": None})
             self._round = None
             if self._map and not self._over:     # the match in progress keeps counting after a reset
                 self._mapstat()["matches"] = 1
@@ -244,14 +362,4 @@ class StatsTracker:
 
     def snapshot(self) -> dict:
         with self._lock:
-            dpi = [{"value": int(k), **v} for k, v in self.data["dpi"].items()]
-            dpi.sort(key=lambda r: r["value"])
-            rows = [{"key": k, **v} for k, v in self.data["weapons"].items()]
-            weapons = [r for r in rows if r["key"] not in GRENADE_NAMES]
-            grenades = [r for r in rows if r["key"] in GRENADE_NAMES]
-            weapons.sort(key=lambda r: (-r["kills"], -r["bought"], -r["picked"], r["name"]))
-            grenades.sort(key=lambda r: (-r.get("thrown", 0), -r["bought"], r["name"]))
-            maps = [{"name": k, "title": map_title(k), **v} for k, v in self.data["maps"].items()]
-            maps.sort(key=lambda r: (-r["rounds"], r["name"]))
-            return {"started_at": self.data["started_at"], "totals": dict(self.data["totals"]),
-                    "dpi": dpi, "weapons": weapons, "grenades": grenades, "maps": maps, "current_dpi": self.cur_dpi}
+            return snapshot_of(self.data, self.cur_dpi)

@@ -124,6 +124,7 @@ class AppState:
                                              publish_threadsafe=self.broker.publish_threadsafe)
         self.twitch_api.on_redemption = self._on_twitch_redemption
         self.twitch_api.on_login = lambda user: self.broker.call_threadsafe(self._on_twitch_login, user)
+        self.twitch_api.on_stream = self._on_stream
         self.queue.on_close = self._on_request_closed
         self.chat.twitch_send = self.twitch_api.send_chat
         self.chat.twitch_ready = lambda: self.twitch_api.can_chat
@@ -349,6 +350,21 @@ class AppState:
             self.dpi.update_settings({"viewer_enabled": True})
         self.persist_dpi_settings()
         self.sync_twitch()
+
+    def _on_stream(self, info: dict) -> None:
+        """The broadcast started or ended (Twitch, 0.37.0): play outside a stream and the stream itself are
+        counted apart. Event-loop thread."""
+        sess = self.stats.session
+        if info.get("live"):
+            if sess["kind"] == "stream" and sess.get("stream_id") == info.get("id"):
+                return                                   # the same broadcast (app restarted during it)
+            self.stats.start_session("stream", stream=info)
+        elif sess["kind"] == "stream":
+            self.stats.start_session("offstream")
+        else:
+            return
+        self.broker.publish("stats", self.stats.snapshot())
+        self.broker.publish("stats_history", {"changed": True})
 
     def _on_twitch_login(self, user: dict) -> None:
         """Signed in: the chat commands can be read from the streamer's channel now."""
@@ -832,6 +848,18 @@ def create_app() -> FastAPI:
     @app.get("/api/stats")
     async def api_stats() -> dict:
         return state.stats.snapshot()
+
+    @app.get("/api/stats/history")
+    async def api_stats_history() -> dict:
+        """Archived parts (streams and play outside them), newest first."""
+        return {"sessions": await asyncio.get_running_loop().run_in_executor(None, state.stats.history)}
+
+    @app.get("/api/stats/history/{sid}")
+    async def api_stats_history_item(sid: str) -> dict:
+        item = state.stats.history_item(sid)
+        if item is None:
+            raise HTTPException(404, "нет такой записи")
+        return item
 
     @app.post("/api/stats/reset")
     async def api_stats_reset() -> dict:
