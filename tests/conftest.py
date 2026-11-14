@@ -8,6 +8,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("CS2R_DATA", str(tmp_path))
     monkeypatch.setenv("CS2R_DPI_BACKEND", "fake")
     monkeypatch.setenv("CS2R_NO_BROWSER", "1")
+    monkeypatch.setenv("CS2R_NO_UPDATE", "1")               # never git fetch from the tests
     from app import main as m
 
     with TestClient(m.create_app(), base_url="http://127.0.0.1") as c:

@@ -339,6 +339,14 @@
   @media (max-width: 520px) { .form .pair, .form .pair.port { grid-template-columns: 1fr; } }
   /* Twitch sign-in: always visible at the top right (user's request) */
   .twbox { margin-left:auto; position:relative; }
+  /* update from the panel (0.36.0): shown only when GitHub has a newer version */
+  .updbox { position:relative; margin-left:auto; }
+  .updbox + .twbox { margin-left:0; }
+  .updbtn { background:transparent; border:1px solid rgba(255,209,102,.6); color:var(--accent); font-weight:700; padding:6px 12px; border-radius:999px; font-size:13px; }
+  .updbtn:hover { background:rgba(255,209,102,.1); }
+  .updpop { min-width:300px; max-width:380px; }
+  .updpop ul { margin:0; padding-left:18px; font-size:13px; line-height:1.45; max-height:240px; overflow:auto; }
+  .updpop .t { font-size:14px; } .updpop .t b { color:var(--accent); }
   #chip-sse:not(.bad) { display:none; }      /* shown only when the panel lost the app (0.27.0) */
   .twbtn { display:flex; align-items:center; gap:8px; padding:6px 12px; border-radius:999px; font-size:12.5px; font-weight:700;
            background:#9146ff; border-color:#9146ff; color:#fff; }
@@ -421,6 +429,10 @@
     <span class="chip" id="chip-mouse"><span class="dot"></span><b>мышь: ?</b></span>
     <span class="chip" id="chip-sse"><span class="dot"></span><b>нет связи с приложением</b></span>
     <span class="chip warn" id="chip-rec" style="display:none;" title="Запущено через run-gsi-record.bat: пакеты CS2 пишутся в data\gsi-record.jsonl"><span class="dot"></span><b>запись пакетов CS2</b></span>
+    <div class="updbox" id="updbox" style="display:none;">
+      <button class="updbtn" id="upd-btn" onclick="updButton(event)">↑ <span id="upd-btn-label">Обновление</span></button>
+      <div class="twpop updpop" id="upd-pop"></div>
+    </div>
     <div class="twbox" id="twbox">
       <button class="twbtn" id="tw-btn" onclick="twitchButton(event)"><span class="twdot"></span><span id="tw-btn-label">Войти через Twitch</span></button>
       <div class="twpop" id="tw-pop"></div>
@@ -1269,6 +1281,27 @@ async function predFinish(result) {
   const r = await post('/api/predictions/finish', {result}); if (r) toast(r.ok ? (result === 'cancel' ? 'Прогноз отменён' : 'Итог отправлен') : r.error, !r.ok);
 }
 setInterval(() => { if (S && S.predictions && S.predictions.current) renderPredictions(); }, 10000);   // «ставки до» → «закрыты»
+// ---- update from the panel
+function renderUpdate() {
+  const u = S.update || {}, box = $('updbox'); if (!box) return;
+  const show = u.available && (u.behind > 0 || u.busy || u.text);
+  box.style.display = show ? '' : 'none';
+  if (!show) { $('upd-pop').classList.remove('open'); return; }
+  $('upd-btn-label').textContent = u.busy ? 'Обновляю…' : u.latest ? `Обновить до v${u.latest}` : 'Обновление';
+  const items = (u.changes || []).map(c => { const m = c.match(/^(v\d+\.\d+\.\d+):\s*(.*)$/);
+    return `<li>${m ? `<b>${esc(m[1])}</b> ${esc(m[2])}` : esc(c)}</li>`; }).join('');
+  $('upd-pop').innerHTML = `<div class="t">Сейчас <b>v${esc(u.current)}</b>${u.latest ? `, вышла <b>v${esc(u.latest)}</b>` : ''}</div>`
+    + (items ? `<ul>${items}</ul>` : '')
+    + (u.text ? `<div class="hint">${esc(u.text)}</div>` : '')
+    + (u.error ? `<div class="err">${esc(u.error)}</div>` : '')
+    + (u.behind > 0 ? `<button class="primary" onclick="updApply()" ${u.busy ? 'disabled' : ''}>${u.restart_self ? 'Обновить и перезапустить' : 'Обновить'}</button>` : '');
+}
+function updButton(ev) { ev.stopPropagation(); $('upd-pop').classList.toggle('open'); }
+async function updApply() {
+  const r = await post('/api/update/apply', {});
+  if (r && !r.ok) toast(r.error, true); else if (r) toast(r.text || 'Обновлено');
+}
+document.addEventListener('click', e => { if (!e.target.closest('#updbox')) $('upd-pop').classList.remove('open'); });
 function plural(n, one, few, many) {
   const a = Math.abs(n) % 100, b = a % 10;
   return a > 10 && a < 20 ? many : b === 1 ? one : b >= 2 && b <= 4 ? few : many;
@@ -1785,7 +1818,7 @@ function renderChecks() {
   if (!window.__tabChosen && bad && !window.__autoStartup) { window.__autoStartup = true; showMainTab('startup'); }
 }
 
-function renderAll() { if (!S) return; renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); renderChat(); renderWheel(); renderChecks(); renderIngame(); renderStats(); renderRequests(); renderDonations(); renderObs(); renderTwitch(); renderPredictions(); }
+function renderAll() { if (!S) return; renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderMisc(); renderDpi(); renderSizes(); renderChat(); renderWheel(); renderChecks(); renderIngame(); renderStats(); renderRequests(); renderDonations(); renderObs(); renderTwitch(); renderPredictions(); renderUpdate(); }
 
 // ------------------------------------------------------------------ settings form
 document.querySelectorAll('[data-key]').forEach(el => {
@@ -1810,7 +1843,15 @@ async function refreshState() { S = await (await fetch('/api/state')).json(); re
 fetch('/api/weapons').then(r=>r.json()).then(d => { d.weapons.forEach(w => weapons[w.id]=w); renderAll(); });
 
 const es = new EventSource('/events');
-es.addEventListener('snapshot', e => { S = JSON.parse(e.data); renderAll(); $('chip-sse').className='chip ok'; });
+let loadedVersion = null;
+es.addEventListener('snapshot', e => {
+  S = JSON.parse(e.data);
+  // the app was updated and restarted while this page stayed open: load the new panel
+  if (loadedVersion && S.version !== loadedVersion) { location.reload(); return; }
+  loadedVersion = S.version;
+  renderAll(); $('chip-sse').className='chip ok';
+});
+es.addEventListener('update', e => { if (!S) return; S.update = JSON.parse(e.data); renderUpdate(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { schedulePreview('dpi'); schedulePreview('weapons'); schedulePreview('queue'); twitchSyncSoon(); } });
 es.addEventListener('roulette', e => { if (!S) return; S.roulette = JSON.parse(e.data); renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderChecks(); schedulePreview('weapons'); });
 es.addEventListener('gsi', e => { if (!S) return; const prev = S.gsi || {}; S.gsi = JSON.parse(e.data); renderHeader(); renderMisc(); renderChecks(); if (S.gsi.held !== prev.held || S.gsi.connected !== prev.connected) schedulePreview('weapons'); });

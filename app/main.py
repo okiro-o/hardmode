@@ -29,6 +29,7 @@ from . import ingame as ingame_mod
 from .obs import ObsService, ObsSettings
 from .predictions import PredictionService, PredictionSettings
 from .gsi_record import GsiRecorder
+from .updater import Updater
 from .twitch_api import TwitchError, TwitchService
 from .ingame import IngameOverlays
 from .chat import ChatNotifier, ChatSettings
@@ -134,6 +135,9 @@ class AppState:
         self.donations.chat_result = lambda user, text: self.chat.notify_donation(user, text, ok=True)
         self.donations.chat_reject = lambda user, text: self.chat.notify_donation(user, text, ok=False)
         self._save_lock = threading.Lock()
+        # update from the panel: git pull + run.bat in the app folder (a git checkout)
+        self.updater = Updater(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), VERSION,
+                               publish_threadsafe=self.broker.publish_threadsafe)
         # run-gsi-record.bat: real payloads for the developer, never switched on from the panel
         self.gsi_recorder = (GsiRecorder(os.path.join(config.data_dir(), "gsi-record.jsonl"))
                              if os.environ.get("CS2R_GSI_RECORD") == "1" else None)
@@ -384,6 +388,7 @@ class AppState:
             "twitch_account": self.twitch_api.status(),
             "predictions": self.predictions.status(),
             "gsi_record": bool(self.gsi_recorder and self.gsi_recorder.enabled),
+            "update": self.updater.status(),
             "urls": self.urls(),
             "gsi_token": self.settings.gsi_token,
             "port": self.settings.port,
@@ -510,6 +515,7 @@ def create_app() -> FastAPI:
         state.obs.start()         # OBS may have been started first: reload its widget sources
         state.twitch_api.start()
         state.sync_twitch()
+        state.updater.start()
         stop = asyncio.Event()
 
         async def housekeeping() -> None:
@@ -539,6 +545,7 @@ def create_app() -> FastAPI:
             state.chat.stop()
             state.donations.stop()
             state.twitch_api.stop()
+            state.updater.stop()
             state.twitch.stop()
             state.stats.flush()
             state.save_state()
@@ -861,6 +868,22 @@ def create_app() -> FastAPI:
         except TwitchError as e:
             return {"ok": False, "error": str(e)}
         return {"ok": True, **flow}
+
+    @app.get("/api/update")
+    async def update_status() -> dict:
+        return state.updater.status()
+
+    @app.post("/api/update/check")
+    async def update_check() -> dict:
+        return await asyncio.get_running_loop().run_in_executor(None, state.updater.check)
+
+    @app.post("/api/update/apply")
+    async def update_apply() -> dict:
+        """git pull; in tray mode run.bat starts the new version, which asks this one to quit."""
+        try:
+            return {"ok": True, **await asyncio.get_running_loop().run_in_executor(None, state.updater.update)}
+        except RuntimeError as e:
+            return {"ok": False, "error": str(e)}
 
     @app.get("/api/predictions")
     async def predictions_status() -> dict:
