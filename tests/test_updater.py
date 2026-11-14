@@ -34,7 +34,7 @@ def _up(tmp_path, monkeypatch, git, mode="tray", platform="win32"):
     monkeypatch.setattr(U.sys, "platform", platform)
     published, spawned = [], []
     u = U.Updater(str(tmp_path), "0.35.0", publish_threadsafe=lambda ev, d: published.append((ev, d)),
-                  run=git, spawn=lambda root: spawned.append(root))
+                  run=git, spawn=lambda root, console: spawned.append((root, console)))
     return u, published, spawned
 
 
@@ -55,14 +55,18 @@ def test_update_pulls_and_restarts_in_tray_mode(tmp_path, monkeypatch):
     u, _, spawned = _up(tmp_path, monkeypatch, git)
     u.check()
     st = u.update()
-    assert ["pull", "--ff-only", "--quiet"] in git.calls and spawned == [str(tmp_path)]
+    assert ["pull", "--ff-only", "--quiet"] in git.calls and spawned == [(str(tmp_path), False)]
     assert st["behind"] == 0 and "перезапускаюсь" in st["text"] and not st["busy"]
 
 
-def test_console_mode_updates_without_restarting(tmp_path, monkeypatch):
+def test_console_mode_restarts_through_run_console(tmp_path, monkeypatch):
+    """0.37.1: the user runs run-console.bat, and «Обновить» said «перезапустите вручную»."""
     u, _, spawned = _up(tmp_path, monkeypatch, FakeGit(), mode="console")
     st = u.update()
-    assert spawned == [] and "run-console.bat" in st["text"]
+    assert spawned == [(str(tmp_path), True)] and "новое окно консоли" in st["text"]
+    (tmp_path / "x").mkdir()
+    other, _, none = _up(tmp_path / "x", monkeypatch, FakeGit(), platform="darwin")
+    assert "перезапустите" in other.update()["text"] and none == []           # not Windows: by hand
 
 
 def test_changed_files_or_a_failed_pull_are_reported(tmp_path, monkeypatch):

@@ -3,8 +3,9 @@ updated with ``git pull``. The updater fetches the remote every few hours, shows
 commit subjects, and on «Обновить» pulls (fast-forward only) and starts ``run.bat`` again: the new
 instance asks this one to quit through ``/api/quit`` (the launcher's port take-over) and takes the port.
 
-Disabled in the PyInstaller build (no git checkout) and when ``git`` is not installed. Restarting by
-itself only in tray mode (``run.bat``); in console mode the panel asks to restart ``run-console.bat``.
+Disabled in the PyInstaller build (no git checkout) and when ``git`` is not installed. The restart starts the
+same launcher the app runs from: ``run.bat`` (tray) or ``run-console.bat`` (console, 0.37.1 — the user runs it
+that way; the old console window closes when its instance quits on the take-over).
 Windows process flags cannot be exercised on macOS: tests replace ``run``/``spawn``."""
 from __future__ import annotations
 
@@ -37,15 +38,16 @@ def default_run(args: list[str], cwd: str, timeout: float) -> tuple[int, str]:
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
 
-def default_spawn(root: str) -> None:
+def default_spawn(root: str, console: bool) -> None:
     env = {**os.environ, "CS2R_NO_BROWSER": "1"}      # the open panel reconnects by itself, no new tab
-    subprocess.Popen(["cmd.exe", "/c", "run.bat"], cwd=root, env=env, creationflags=NEW_CONSOLE, close_fds=True)
+    bat = "run-console.bat" if console else "run.bat"
+    subprocess.Popen(["cmd.exe", "/c", bat], cwd=root, env=env, creationflags=NEW_CONSOLE, close_fds=True)
 
 
 class Updater:
     def __init__(self, root: str, current: str, publish_threadsafe: Callable[[str, dict], None],
                  run: Callable[[list[str], str, float], tuple[int, str]] = default_run,
-                 spawn: Callable[[str], None] = default_spawn) -> None:
+                 spawn: Callable[[str, bool], None] = default_spawn) -> None:
         self.root = root
         self.current = current
         self._publish = publish_threadsafe
@@ -61,8 +63,8 @@ class Updater:
 
     # ------------------------------------------------------------------ status
     def status(self) -> dict:
-        tray = os.environ.get("CS2R_MODE") == "tray"
-        return {"available": self.available, "current": self.current, "restart_self": tray and sys.platform.startswith("win"),
+        return {"available": self.available, "current": self.current, "restart_self": sys.platform.startswith("win"),
+                "console": os.environ.get("CS2R_MODE") != "tray",
                 **{k: (list(v) if isinstance(v, list) else v) for k, v in self.state.items()}}
 
     def _changed(self) -> None:
@@ -117,12 +119,14 @@ class Updater:
             if dirty:
                 raise RuntimeError("в папке приложения изменены файлы, git не может обновить их сам: " + ", ".join(dirty[:3]))
             self._git("pull", "--ff-only", "--quiet", timeout=180)
-            restart = self.status()["restart_self"]
-            self.state.update(busy=False, behind=0, changes=[], text="обновлено, перезапускаюсь…" if restart else
-                              "обновлено: закройте окно консоли и запустите run-console.bat снова")
+            st = self.status()
+            restart, console = st["restart_self"], st["console"]
+            self.state.update(busy=False, behind=0, changes=[],
+                              text=("обновлено, перезапускаюсь: откроется новое окно консоли" if console else
+                                    "обновлено, перезапускаюсь…") if restart else "обновлено: перезапустите приложение")
             self._changed()
             if restart:
-                self._spawn(self.root)
+                self._spawn(self.root, console)
             log.info("updated by git pull%s", ", restarting" if restart else "")
             return self.status()
         except (RuntimeError, OSError, subprocess.SubprocessError) as e:
