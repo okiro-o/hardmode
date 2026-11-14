@@ -24,7 +24,8 @@ echo.
 echo Python не найден. Установите Python 3.11-3.13 с https://www.python.org/downloads/windows/
 echo (при установке отметьте "Add python.exe to PATH"), затем запустите run.bat снова.
 pause
-goto :eof
+exit /b 1
 :fail
 echo Не удалось установить зависимости. Проверьте интернет и запустите run.bat снова.
 pause
+exit /b 1

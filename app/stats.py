@@ -121,6 +121,8 @@ class StatsTracker:
                 for key in [k for k in base["weapons"] if W.is_non_weapon("weapon_" + k)]:
                     del base["weapons"][key]      # entries booked before the non-weapon filter existed
                 self.data = base
+                match = d.get("match") if isinstance(d.get("match"), dict) else {}
+                self._set_match(match.get("map") if isinstance(match.get("map"), str) else None, bool(match.get("over")))
         except (OSError, ValueError):
             pass
 
@@ -137,9 +139,15 @@ class StatsTracker:
         except OSError:
             log.warning("cannot save stats", exc_info=True)
 
+    def _set_match(self, map_name: str | None, over: bool) -> None:
+        """The match the counters go to, kept in stats.json (0.38.0): a restart in the middle of a match (the
+        update button restarts the app) must not count it a second time."""
+        self._map, self._over = map_name, over
+        self.data["match"] = {"map": map_name, "over": over}
+
     def flush(self) -> None:
         with self._lock:
-            if self._dirty:
+            if self._dirty or self._time_dirty:      # time alone is saved twice a minute: never lose it at exit
                 self._save(force=True)
 
     def _dpi(self, value: int) -> dict:
@@ -187,7 +195,7 @@ class StatsTracker:
             t = self.data["totals"]
             map_name = getattr(status, "map_name", None)
             if map_name and (map_name != self._map or self._over) and getattr(status, "map_phase", None) in ("live", "intermission", "warmup"):
-                self._map, self._over = map_name, False
+                self._set_match(map_name, False)
                 self._mapstat()["matches"] += 1      # a new map, or the same map after a final screen = a new match
                 changed = True
             m = self._mapstat()
@@ -248,11 +256,11 @@ class StatsTracker:
                     t[field] += 1
                     changed = True
                 elif kind == "match_end":
-                    self._over = True
+                    self._set_match(self._map, True)
+                    changed = True                           # the finished match is saved even without a result
                     res = {"win": "wins", "loss": "losses", "draw": "draws"}.get(ev.get("result"))
                     if m is not None and res:
                         m[res] += 1
-                        changed = True
                 elif kind == "round_start":
                     roundless = getattr(status, "mode", None) in ROUNDLESS_MODES
                     self._round = None if roundless else {"no": ev.get("round"), "dpi": self.cur_dpi, "changed": False, "kills": 0}
@@ -289,6 +297,7 @@ class StatsTracker:
         with self._lock:
             archived = self._archive(now) if self.has_data() else None
             self.data = _fresh(_session(kind, stream, now))
+            self._set_match(self._map, self._over)
             self._round = None
             if self._map and not self._over:          # a match in progress keeps counting in the new part
                 self._mapstat()["matches"] = 1
@@ -355,6 +364,7 @@ class StatsTracker:
     def reset(self) -> None:
         with self._lock:
             self.data = _fresh({**self.data["session"], "started_at": time.time(), "last_event_at": None})
+            self._set_match(self._map, self._over)
             self._round = None
             if self._map and not self._over:     # the match in progress keeps counting after a reset
                 self._mapstat()["matches"] = 1

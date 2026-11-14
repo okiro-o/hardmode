@@ -1,12 +1,11 @@
 """Anonymous read-only Twitch chat reader (IRC over TLS).
 
-Twitch lets anyone read a public chat without a token by logging in as ``justinfanNNNNN``.
-With the ``twitch.tv/tags`` capability every PRIVMSG carries IRCv3 tags, including
-``custom-reward-id`` when the message is the text a viewer typed while redeeming a channel
-points reward. That is enough to turn "redeem *Добавить DPI* and type 1600" into an event,
-with no Twitch application, OAuth or EventSub.
+Twitch lets anyone read a public chat without a token by logging in as ``justinfanNNNNN``. The app uses it
+for the chat commands (``!очередь``, ``!dpi``) of the signed-in channel; channel-point rewards are read through
+the Twitch API (twitch_api.py), reward lines in chat are ignored.
 
-The reader runs in a daemon thread, reconnects with backoff and never writes to chat.
+The reader runs in a daemon thread, reconnects with backoff and never writes to chat. Each thread gets its own
+stop flag and channel (0.38.0): an old thread still connecting after a channel change cannot join it twice.
 """
 from __future__ import annotations
 
@@ -18,6 +17,10 @@ from dataclasses import dataclass
 from typing import Callable
 
 HOST, PORT = "irc.chat.twitch.tv", 6697
+
+
+class _Reconnect(ConnectionError):
+    """Twitch asked to reconnect (server restart): not a failure, reconnect at once."""
 
 
 @dataclass
@@ -91,8 +94,9 @@ class TwitchChatReader:
         self.last_error: str | None = None
         self.messages = 0
         self._thread: threading.Thread | None = None
-        self._stop = threading.Event()
+        self._stop = threading.Event()          # of the current thread; a new thread gets a new one
         self._sock: ssl.SSLSocket | None = None
+        self._joined = False
         self._lock = threading.Lock()
 
     # ----------------------------------------------------------------- control
@@ -110,11 +114,12 @@ class TwitchChatReader:
             if not channel:
                 return
             self.channel = channel
-            self._stop.clear()
-            self._thread = threading.Thread(target=self._run, name="twitch-irc", daemon=True)
+            self._stop = threading.Event()
+            self._thread = threading.Thread(target=self._run, args=(self._stop, channel), name="twitch-irc", daemon=True)
             self._thread.start()
 
     def stop(self) -> None:
+        """Never blocks (it runs on the event loop): the old thread sees its own flag and ends by itself."""
         self._stop.set()
         sock = self._sock
         if sock:
@@ -122,9 +127,6 @@ class TwitchChatReader:
                 sock.close()
             except OSError:
                 pass
-        t = self._thread
-        if t and t.is_alive() and t is not threading.current_thread():
-            t.join(timeout=2.0)
         self._thread = None
         self.connected = False
         self._notify()
@@ -137,33 +139,40 @@ class TwitchChatReader:
                 pass
 
     # ------------------------------------------------------------------- loop
-    def _run(self) -> None:
+    def _run(self, stop: threading.Event, channel: str) -> None:
         backoff = 3.0
-        while not self._stop.is_set():
+        while not stop.is_set():
+            self._joined = False
             try:
-                self._session()
-                backoff = 3.0
+                self._session(stop, channel)
+            except _Reconnect:
+                backoff = 1.0                     # Twitch restarts a server: come back right away
             except Exception as e:  # noqa: BLE001 - network errors of all kinds
-                self.last_error = str(e) or e.__class__.__name__
-                self.connected = False
-                self._notify()
-            if self._stop.is_set():
+                if self._joined:                  # it worked for a while: a fresh drop, not a long outage
+                    backoff = 3.0
+                if not stop.is_set():
+                    self.last_error = str(e) or e.__class__.__name__
+                    self.connected = False
+                    self._notify()
+            if stop.wait(backoff):
                 break
-            self._stop.wait(backoff)
-            backoff = min(60.0, backoff * 2)
+            backoff = min(60.0, max(3.0, backoff * 2))
 
-    def _session(self) -> None:
+    def _session(self, stop: threading.Event, channel: str) -> None:
         ctx = ssl.create_default_context()
         raw = socket.create_connection((HOST, PORT), timeout=20)
         sock = ctx.wrap_socket(raw, server_hostname=HOST)
         sock.settimeout(300)  # Twitch pings every ~5 minutes; a silent socket means we are gone
+        if stop.is_set():                         # stopped while connecting: this thread is not wanted any more
+            sock.close()
+            return
         self._sock = sock
         nick = f"justinfan{random.randint(10000, 99999)}"
         sock.sendall(b"CAP REQ :twitch.tv/tags twitch.tv/commands\r\n")
-        sock.sendall(f"PASS SCHMOOPIIE\r\nNICK {nick}\r\nJOIN #{self.channel}\r\n".encode())
+        sock.sendall(f"PASS SCHMOOPIIE\r\nNICK {nick}\r\nJOIN #{channel}\r\n".encode())
         buf = b""
         try:
-            while not self._stop.is_set():
+            while not stop.is_set():
                 data = sock.recv(4096)
                 if not data:
                     raise ConnectionError("соединение с чатом закрыто")
@@ -188,10 +197,11 @@ class TwitchChatReader:
             sock.sendall(f"PONG :{msg.trailing or 'tmi.twitch.tv'}\r\n".encode())
             return
         if msg.command == "RECONNECT":
-            raise ConnectionError("Twitch попросил переподключиться")
+            raise _Reconnect("Twitch попросил переподключиться")
         if msg.command == "NOTICE" and "authentication failed" in msg.trailing.lower():
             raise ConnectionError(f"Twitch: {msg.trailing}")
         if msg.command == "JOIN" and msg.user.startswith("justinfan"):
+            self._joined = True
             self.connected = True
             self.last_error = None
             self._notify()

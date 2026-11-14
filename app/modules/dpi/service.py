@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 import random
 import re
@@ -20,6 +21,8 @@ from typing import Any, Callable
 from ... import config
 from . import grid
 from .backends import DpiBackend, make_backend
+
+log = logging.getLogger("hardmode.dpi")
 
 MAX_LOG = 40
 _UNSET = object()   # "compute allowed_values() yourself" sentinel (None is a legitimate value)
@@ -510,48 +513,58 @@ class DpiService:
             return fn()
 
     # ---------------------------------------------------------------- guard
+    def _publish_from_thread(self) -> None:
+        """The snapshot is built on the event loop: it reads (and the wheel segments update) state the loop owns."""
+        if self._loop is not None:
+            self._loop.call_soon_threadsafe(lambda: self._publish("dpi", self.snapshot()))
+
     def _guard_loop(self) -> None:
         """Re-apply the target DPI if the mouse reports something else (G HUB fought back)."""
-        last_reapply = 0.0
-        strikes = 0
-        failures = 0          # consecutive reads without an answer (mouse asleep/unplugged) -> back off
-        while not self._guard_stop.wait(3.0 if failures < 3 else min(60.0, 3.0 * 2 ** (failures - 2))):
-            if not (self.settings.enabled and self.settings.guard) or self.target_dpi is None or self.busy:
-                continue
-            if self._pending_apply is not None:
-                continue   # a spin is still animating: do not touch the mouse until it rests
-            if self.backend.name == "none":
-                continue
+        g = {"last_reapply": 0.0, "strikes": 0, "failures": 0}
+        while not self._guard_stop.wait(3.0 if g["failures"] < 3 else min(60.0, 3.0 * 2 ** (g["failures"] - 2))):
+            try:
+                self._guard_tick(g)
+            except Exception:  # noqa: BLE001 - the guard must outlive any bug (0.38.0)
+                log.exception("dpi guard tick failed")
+
+    def _guard_tick(self, g: dict) -> None:
+        """One guard check (worker thread). ``g`` keeps the counters between checks."""
+        if not (self.settings.enabled and self.settings.guard) or self.target_dpi is None or self.busy:
+            return
+        if self._pending_apply is not None:
+            return   # a spin is still animating: do not touch the mouse until it rests
+        if self.backend.name == "none":
+            return
+        try:
+            with self._apply_lock:
+                current = self.backend.get_dpi()
+        except Exception:
+            g["failures"] += 1
+            return
+        if current is None:
+            g["failures"] += 1
+            return
+        g["failures"] = 0
+        if current != self.current_dpi and current == self.target_dpi:
+            self.current_dpi = current
+            self._publish_from_thread()
+        if current != self.target_dpi:
+            now = time.monotonic()
+            if now - g["last_reapply"] < 5.0 or g["strikes"] >= 20:
+                return
+            g["last_reapply"] = now
             try:
                 with self._apply_lock:
-                    current = self.backend.get_dpi()
-            except Exception:
-                failures += 1
-                continue
-            if current is None:
-                failures += 1
-                continue
-            failures = 0
-            if current != self.current_dpi and current == self.target_dpi:
-                self.current_dpi = current
-                self._publish_threadsafe("dpi", self.snapshot())
-            if current != self.target_dpi:
-                now = time.monotonic()
-                if now - last_reapply < 5.0 or strikes >= 20:
-                    continue
-                last_reapply = now
-                try:
-                    with self._apply_lock:
-                        actual = self.backend.set_dpi(self.target_dpi)
-                    self.current_dpi = actual
-                    self.guard_reapplies += 1
-                    strikes += 1
-                    self._log("guard", f"G HUB вернул {current} DPI — снова применил {actual}")
-                    self._publish_threadsafe("dpi", self.snapshot())
-                except Exception as e:
-                    self.last_error = str(e)
-            else:
-                strikes = 0
+                    actual = self.backend.set_dpi(self.target_dpi)
+                self.current_dpi = actual
+                self.guard_reapplies += 1
+                g["strikes"] += 1
+                self._log("guard", f"G HUB вернул {current} DPI — снова применил {actual}")
+                self._publish_from_thread()
+            except Exception as e:
+                self.last_error = str(e)
+        else:
+            g["strikes"] = 0
 
     # ------------------------------------------------------------- settings
     def update_settings(self, patch: dict) -> None:

@@ -3,7 +3,7 @@
 Viewers may ask for any weapon, also one outside the current loadout, so requests never touch the
 roulette. The streamer fulfils them when possible (picks the gun up in a round, or sets the loadout for
 the next match) and closes them in the panel; a kill with the requested weapon closes the oldest open
-request for it automatically (``autocomplete``). Requests whose weapon was not recognised keep the raw
+request for it automatically. Requests whose weapon was not recognised keep the raw
 text and wait until the streamer picks the weapon by hand.
 
 Knife and Zeus can be requested only while they are in the race (``allowed``, user's rule 0.21.1).

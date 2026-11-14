@@ -173,6 +173,60 @@ def test_dpi_ranges_parsing(monkeypatch):
     assert 2010 not in vals
 
 
+def test_open_failure_is_a_hidpp_error_and_closes_what_was_opened(monkeypatch):
+    """0.38.0: hidapi raises OSError('open failed') when the path vanished; it skipped every HidppError handler."""
+    import app.modules.dpi.hidpp as H
+    opened = []
+
+    class Handle:
+        def __init__(self):
+            self.closed = False
+            opened.append(self)
+
+        def open_path(self, path):
+            if path == b"long":
+                raise OSError("open failed")
+
+        def set_nonblocking(self, v):
+            pass
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setattr(H, "_hid", lambda: type("FakeHid", (), {"device": staticmethod(Handle)}))
+    dev = HidppDevice(Candidate(0x046D, 0xC54D, "Lightspeed receiver", paths={1: b"short", 2: b"long"}), device_index=1)
+    with pytest.raises(HidppError):
+        dev.open()
+    assert opened[0].closed and dev._handles == []
+
+
+def test_grid_is_served_from_the_cache_and_read_again_after_a_drop():
+    """0.38.0: the event loop asks for the grid on every snapshot; HID traffic belongs to worker threads."""
+    from app.modules.dpi.backends import HidppBackend
+
+    class Dev:
+        is_open = True
+        reads = 0
+
+        def dpi_ranges(self):
+            Dev.reads += 1
+            return [400, 800, 1600]
+
+        def dpi_parameters(self):
+            return {"dpi_x": 800}
+
+        def close(self):
+            self.is_open = False
+
+    b = HidppBackend()
+    b._connect = lambda: b._dev or setattr(b, "_dev", Dev()) or b._dev
+    assert b.allowed_values() == list(grid.DEFAULT_VALUES) and Dev.reads == 0     # no HID from the loop
+    assert b.get_dpi() == 800 and Dev.reads == 1                                  # the guard thread reads it
+    assert b.allowed_values() == [400, 800, 1600]
+    b._drop()                                                                     # another mouse may come
+    assert b.allowed_values() == list(grid.DEFAULT_VALUES)
+
+
 # ---------------------------------------------------------------- backends
 def test_make_backend_env(monkeypatch):
     monkeypatch.setenv("CS2R_DPI_BACKEND", "fake")

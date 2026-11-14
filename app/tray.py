@@ -55,6 +55,8 @@ class TrayApp:
         self.panel_url = panel_url
         self.stop_server = stop_server
         self.icon = None
+        self._quitting = False
+        self.ready = threading.Event()          # the icon is on screen (notify/stop work from now on)
 
     # ------------------------------------------------------------------ menu
     def _open_panel(self, *_: object) -> None:
@@ -73,7 +75,7 @@ class TrayApp:
     def _quit(self, *_: object) -> None:
         # pystray calls menu actions on its own message-loop thread: never block it, or the icon
         # looks dead. Stop the server from a helper thread, then stop the icon loop.
-        if getattr(self, "_quitting", False):
+        if self._quitting:
             return
         self._quitting = True
 
@@ -111,7 +113,11 @@ class TrayApp:
             pystray.MenuItem("Выход", self._quit),
         )
         self.icon = pystray.Icon("hardmode", icon_image(64), "Hardmode", menu)
-        self.icon.run()
+        self.icon.run(setup=self._setup)
+
+    def _setup(self, icon) -> None:
+        icon.visible = True                     # with a setup callback pystray leaves showing the icon to us
+        self.ready.set()
 
 
 def stop_uvicorn(server, thread: threading.Thread, grace: float = 3.0, force_grace: float = 3.0) -> bool:
@@ -169,6 +175,9 @@ def run_with_tray(app_import: str, host: str, port: int, panel_url: str, open_br
     def watchdog() -> None:
         thread.join()
         if errors or not server.should_exit:
+            # the server may die at start (a broken update) before the icon exists: wait for it, otherwise a
+            # live icon would sit over a dead app (0.38.0)
+            tray.ready.wait(timeout=30)
             tray.notify("Сервер остановился с ошибкой, смотрите data/app.log")
             if tray.icon:
                 tray.icon.stop()

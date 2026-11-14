@@ -13,6 +13,7 @@ import logging.handlers
 import os
 import socket
 import sys
+import threading
 import time
 import urllib.request
 import webbrowser
@@ -66,8 +67,8 @@ def take_over(port: int, mine: str, log: logging.Logger,
     other = version_fn(port)
     if other is None:
         return "foreign"
-    if other == mine:
-        return "same"
+    if other == mine and os.environ.get("CS2R_GSI_RECORD") != "1":
+        return "same"                    # run-gsi-record.bat replaces even the same version: it must record
     log.info("another instance v%s is running on port %s, asking it to quit", other, port)
     if quit_fn(port) and wait_fn(port):
         log.info("v%s stopped, taking over the port", other)
@@ -108,6 +109,9 @@ def setup_logging(to_console: bool) -> str:
         sh.setFormatter(fmt)
         root.addHandler(sh)
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    # an exception that ends a background thread goes to the log: under pythonw there is no stderr to print it
+    threading.excepthook = lambda a: logging.getLogger("hardmode").error(
+        "thread %s died", a.thread.name if a.thread else "?", exc_info=(a.exc_type, a.exc_value, a.exc_traceback))
     return path
 
 

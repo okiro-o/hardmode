@@ -71,7 +71,7 @@ async def dpi_values_add(request: Request) -> dict:
     res = _svc(request).add_custom_value(body.get("value"))
     if not res["ok"]:
         raise HTTPException(400, res["error"])
-    request.app.state.app.persist_dpi_settings()
+    request.app.state.app.persist_settings()
     return res
 
 
@@ -79,7 +79,7 @@ async def dpi_values_add(request: Request) -> dict:
 async def dpi_values_remove(request: Request) -> dict:
     body = await _json(request)
     _svc(request).remove_custom_value(body.get("value"))
-    request.app.state.app.persist_dpi_settings()
+    request.app.state.app.persist_settings()
     return {"ok": True}
 
 

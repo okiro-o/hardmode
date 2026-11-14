@@ -43,10 +43,7 @@ class ObsSettings:
     def from_dict(cls, d: dict | None) -> "ObsSettings":
         s = cls()
         config.assign_fields(s, d, "obs")
-        try:
-            s.port = int(float(s.port))
-        except (TypeError, ValueError):
-            raise ValueError("port: нужно число") from None
+        s.port = config.to_num_int(s.port, "port")
         if not 1 <= s.port <= 65535:
             raise ValueError("port: от 1 до 65535")
         s.password = s.password.strip()[:200] if isinstance(s.password, str) else ""

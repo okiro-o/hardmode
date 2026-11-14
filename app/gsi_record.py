@@ -31,7 +31,7 @@ def payload_key(p: dict) -> tuple:
             _o(m.get("team_ct")).get("score"), _o(m.get("team_t")).get("score"),
             r.get("phase"), r.get("win_team"), r.get("bomb"),
             pl.get("steamid") == prov.get("steamid"), pl.get("steamid"), pl.get("team"), pl.get("activity"),
-            (st.get("health") or 0) > 0, st.get("round_kills"), st.get("round_killhs"), st.get("round_totaldmg"),
+            (st.get("health") or 0) > 0, st.get("round_kills"), st.get("round_killhs"),
             json.dumps(ms, sort_keys=True),
             tuple(sorted(f"{w.get('name')}:{w.get('ammo_reserve', '')}" for w in weapons if w.get("type") == "Grenade")),
             tuple(sorted(str(w.get("name")) for w in weapons)),

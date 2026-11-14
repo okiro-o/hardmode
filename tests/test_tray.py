@@ -117,6 +117,10 @@ def test_bat_files_keep_user_data_and_refresh_dependencies():
     assert "hardmode-data-keep" in build and build.count('move "%KEEP%" "dist\\hardmode\\data"') == 2
     assert "requirements.installed" in run and "fc /b requirements.txt" in run
     record = open(os.path.join(root, "run-gsi-record.bat"), encoding="utf-8", newline="").read()
-    assert 'set "CS2R_GSI_RECORD=1"' in record and "call run.bat" in record and "chcp 65001" in record
-    for text in (build, run, record):
-        assert "\r\n" in text and text.count("\n") == text.count("\r\n")   # CRLF only
+    assert 'set "CS2R_GSI_RECORD=1"' in record and "call run.bat || exit /b 1" in record and "chcp 65001" in record
+    assert run.count("exit /b 1") == 2                         # failures are failures for the callers too
+    import glob
+    for path in glob.glob(os.path.join(root, "*.bat")):       # every launcher, not a hand-picked list
+        text = open(path, encoding="utf-8", newline="").read()
+        assert "\r\n" in text and text.count("\n") == text.count("\r\n"), path   # CRLF only
+        assert "chcp 65001" in text, path

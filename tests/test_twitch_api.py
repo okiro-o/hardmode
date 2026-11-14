@@ -84,7 +84,15 @@ class FakeTwitch:
         if path == "/helix/channel_points/custom_rewards/redemptions":
             if method == "GET":
                 assert q["status"] == "UNFULFILLED"
-                return {"data": [r for r in self.redemptions.get(q["reward_id"], []) if r["id"] not in self.statuses]}
+                rows = [r for r in self.redemptions.get(q["reward_id"], []) if r["id"] not in self.statuses]
+                page = getattr(self, "page_size", 0)
+                if page:                                                   # Helix pagination by cursor
+                    start = int(q.get("after") or 0)
+                    more = start + page < len(rows)
+                    return {"data": rows[start:start + page], "pagination": {"cursor": str(start + page)} if more else {}}
+                return {"data": rows}
+            if getattr(self, "patch_fail", None):
+                raise self.patch_fail
             assert method == "PATCH" and body["status"] in ("FULFILLED", "CANCELED")
             self.statuses[q["id"]] = body["status"]
             return {"data": [{"id": q["id"], "status": body["status"]}]}
@@ -158,7 +166,7 @@ def test_create_duplicate_delete_and_sync_rewards(tmp_path):
         svc.create_reward("weapon")                                    # not signed in
     _signed_in(svc)
     r = svc.create_reward("weapon", cost="250")
-    assert r["title"] == "Добавить оружие в очередь" and r["cost"] == 250 and svc.managed_kind(r["id"]) == "weapon"
+    assert r["title"] == "Добавить оружие в очередь" and r["cost"] == 250 and svc.state["rewards"]["weapon"]["id"] == r["id"]
     with pytest.raises(T.TwitchError) as e:
         svc.create_reward("weapon")                                    # the same fixed title is already there
     assert "уже есть награда «Добавить оружие в очередь»" in str(e.value)
@@ -461,4 +469,44 @@ def test_stream_start_and_end_with_a_grace_for_dropped_connections(tmp_path):
     assert len(seen) == 2
     svc.poll_stream(now=400 + T.OFFLINE_GRACE_S)
     assert seen[-1] == {"live": False} and len(seen) == 3
+    svc._stop.set()
+
+
+def test_status_changes_survive_network_errors_and_restarts(tmp_path):
+    """0.38.0: a refund that failed on the network is kept in twitch.json and sent later, never dropped."""
+    fake = FakeTwitch()
+    svc, _ = _service(tmp_path, fake)
+    _signed_in(svc)
+    svc.set_status({"reward_id": "rw-1", "id": "r1"}, "CANCELED")
+    svc.set_status({"reward_id": "rw-1", "id": "r2"}, "FULFILLED")
+    fake.patch_fail = T.TwitchError("network down", None)
+    with pytest.raises(T.TwitchError):
+        svc.flush_actions()
+    assert fake.statuses == {} and len(svc.state["actions"]) == 2
+    again, _ = _service(tmp_path, fake)                                # the app restarted meanwhile
+    assert again.state["actions"] == [["rw-1", "r1", "CANCELED"], ["rw-1", "r2", "FULFILLED"]]
+    fake.patch_fail = None
+    assert again.flush_actions() == 2 and fake.statuses == {"r1": "CANCELED", "r2": "FULFILLED"}
+    assert again.state["actions"] == []
+    # Twitch refuses (already handled in the dashboard): dropped, not retried forever
+    again.set_status({"reward_id": "rw-1", "id": "r3"}, "CANCELED")
+    fake.patch_fail = T.TwitchError("redemption is not UNFULFILLED", 400)
+    assert again.flush_actions() == 0 and again.state["actions"] == []
+    svc._stop.set()
+
+
+def test_all_pages_of_open_redemptions_are_read(tmp_path):
+    fake = FakeTwitch()
+    svc, _ = _service(tmp_path, fake)
+    _signed_in(svc)
+    svc.create_reward("weapon")
+    rid = svc.state["rewards"]["weapon"]["id"]
+    for i in range(7):
+        fake.redeem(rid, f"r{i}", "Viewer", "awp")
+    svc.state["kept"] = {f"r{i}": rid for i in range(5)}                # accepted earlier, still waiting in the queue
+    fake.page_size = 2
+    seen = []
+    svc.on_redemption = lambda kind, item: seen.append(item["id"]) or "keep"
+    svc._call = lambda fn, *a: fn(*a)
+    assert svc.poll_once() == 2 and seen == ["r5", "r6"]
     svc._stop.set()

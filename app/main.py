@@ -1,9 +1,9 @@
 """FastAPI application: control panel, OBS overlays, SSE stream, GSI receiver.
 
-All state lives in one ``AppState`` and is only touched from the event-loop thread:
-every endpoint is ``async`` (they are all sub-millisecond); background threads (chat,
-Twitch reader, DPI guard, in-game overlay) marshal through ``Broker.call_threadsafe`` /
-``publish_threadsafe``.
+All state lives in one ``AppState`` and is changed from the event-loop thread: every endpoint is ``async``
+(they are all sub-millisecond, blocking I/O goes to an executor); background threads (chat, Twitch, DPI guard,
+OBS, updater) marshal changes through ``Broker.call_threadsafe`` / ``publish_threadsafe``. The in-game overlay
+thread only reads (``ingame_state``), so the reads it uses must not repair or rewrite state.
 """
 from __future__ import annotations
 
@@ -78,7 +78,7 @@ class AppState:
         self.dpi = DpiService(dpi_settings, config.dpi_state_path(),
                               publish=self.broker.publish, publish_threadsafe=self.broker.publish_threadsafe)
         try:
-            chat_settings = ChatSettings.from_dict(self.settings.chat)
+            chat_settings = ChatSettings.from_dict(self.settings.chat, strict=False)
         except ValueError:
             chat_settings = ChatSettings()
         self.settings.chat = chat_settings.to_dict()
@@ -93,6 +93,7 @@ class AppState:
                                        on_status=lambda: self.broker.publish_threadsafe("twitch", self.twitch.status()))
         self._announced: tuple[bool, int | None] = (self.roulette.running, self.roulette.current_uid())
         self.ingame = IngameOverlays(self.settings.ingame, self.ingame_state, self.ingame_colors)
+        self.ingame.on_change = lambda: self.broker.publish_threadsafe("ingame", self.ingame_info())
         self.queue = ViewerQueue(os.path.join(config.data_dir(), "viewer_queue.json"), publish=self.broker.publish)
         self.queue.context = self.queue_context
         self.queue.allowed = self.queue_refusal
@@ -251,8 +252,8 @@ class AppState:
     def ingame_info(self) -> dict:
         return {**self.settings.ingame.__dict__, **self.ingame.status()}
 
-    def persist_dpi_settings(self) -> None:
-        """Save settings changed outside /api/settings (learnt reward ids, channel login from the SE profile)."""
+    def persist_settings(self) -> None:
+        """Save module settings changed outside /api/settings (DPI values and viewer values from the DPI tab)."""
         self.settings.dpi = self.dpi.settings.to_dict()
         self.settings.chat = self.chat.settings.to_dict()
         self.settings.donations = self.donations.settings.to_dict()
@@ -348,7 +349,7 @@ class AppState:
             self.donations.update_settings({"reward_enabled": True})
         if kind == "dpi" and not self.dpi.settings.viewer_enabled:
             self.dpi.update_settings({"viewer_enabled": True})
-        self.persist_dpi_settings()
+        self.persist_settings()
         self.sync_twitch()
 
     def _on_stream(self, info: dict) -> None:
@@ -427,8 +428,10 @@ class AppState:
 
     def publish_gsi(self, force: bool = False) -> None:
         st = self.gsi.status
-        key = (st.connected, st.own_player, st.team, st.held, st.map_phase, st.round_phase, st.round,
-               st.activity, st.health, st.round_kills, st.match_kills, st.rejected_auth, st.name, st.rejected_name)
+        # what the pages show; HP, the round phase and the rejected-packet counter changed many times a second in a
+        # fight and re-sent «gsi» for nothing (0.38.0) — the 2 s re-publish still refreshes the counters and ages
+        key = (st.connected, st.own_player, st.team, st.held, st.map_phase, st.round,
+               st.activity, st.round_kills, st.match_kills, bool(st.rejected_auth), st.name, st.rejected_name)
         now = time.monotonic()
         if force or key != self._last_gsi_key or now - self._last_gsi_publish > 2.0:
             self._last_gsi_key = key
@@ -767,13 +770,10 @@ def create_app() -> FastAPI:
             s.gsi_token = secrets.token_urlsafe(12)
             state.gsi.token = s.gsi_token
         if "port" in body:
-            try:
-                port = int(body["port"])
-                if 1024 <= port <= 65535:
-                    s.port = port
-                else:
-                    rejected.append("port")
-            except (TypeError, ValueError):
+            port = config.parse_port(body["port"])
+            if port:
+                s.port = port
+            else:
                 rejected.append("port")
         if "open_browser" in body:
             s.open_browser = bool(body["open_browser"])

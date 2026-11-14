@@ -79,7 +79,7 @@ class Updater:
     # ------------------------------------------------------------------- check
     def check(self) -> dict:
         """Blocking: fetch and compare with the upstream branch."""
-        if not self.available:
+        if not self.available or self.state["busy"]:      # git pull is running: its lock would make fetch fail
             return self.status()
         with self._lock:
             try:
@@ -133,8 +133,6 @@ class Updater:
             self.state.update(busy=False, error=f"обновление не удалось: {e}", text=None)
             self._changed()
             raise RuntimeError(str(e)) from None
-        finally:
-            self.state["busy"] = False
 
     # ------------------------------------------------------------------ worker
     def start(self) -> None:

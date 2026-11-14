@@ -127,8 +127,14 @@ class HidppDevice:
                 raise DeviceNotFound("У устройства нет HID++ коллекций")
             for path in paths:
                 h = hid.device()
-                h.open_path(path)
-                h.set_nonblocking(True)
+                try:
+                    h.open_path(path)
+                    h.set_nonblocking(True)
+                except (OSError, ValueError) as e:
+                    # hidapi raises OSError('open failed') when the path vanished (receiver re-enumerated on
+                    # wake): as a HidppError it goes through the reconnect/next-candidate paths (0.38.0)
+                    self.close()
+                    raise HidppError(f"HID-устройство не открылось: {e}") from None
                 self._handles.append(h)
 
     def close(self) -> None:
@@ -331,6 +337,8 @@ class HidppDevice:
             try:
                 r = self.request(idx, fn, bytes([sensor, direction, page]))
             except HidppError:
+                if page == 0:            # no answer at all: not a list to cache as «the default grid»
+                    raise
                 break
             body = bytes(r[skip:])       # payload bytes per page form one continuous byte stream
             if not body or not any(body):

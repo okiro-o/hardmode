@@ -24,7 +24,7 @@
   .columns .cat .items { display: flex; flex-direction: column; gap: 8px; }
   .w { display: flex; flex-direction: column; align-items: center; width: 118px; height: 64px; }
   .hide-names .w { height: 46px; }
-  .hide-names .rows .cat { height: 58px; }
+  .rows.hide-names .cat { height: 58px; }   /* both classes sit on #root (0.38.0: the rows stayed 76px) */
   .w .iconwrap { width: 110px; height: 44px; filter: drop-shadow(0 2px 5px rgba(0,0,0,.6)); }
   .w .icon { width: 100%; height: 100%; background: var(--color); -webkit-mask: var(--mask) no-repeat center / contain; mask: var(--mask) no-repeat center / contain; }
   .w .name { font-size: 12px; line-height: 16px; height: 18px; margin-top: 2px; opacity: .9; text-shadow: 0 1px 4px rgba(0,0,0,.9); white-space: nowrap; }

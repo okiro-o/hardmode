@@ -294,8 +294,9 @@ class Roulette:
         return self.queue[0] if self.queue else None
 
     def current_uid(self) -> int | None:
-        self._q_sync()
-        return self.queue_uids[0] if self.queue_uids else None
+        """A pure read (0.38.0): the in-game overlay calls it from its own thread, and repairing the uids here
+        could land between the two list updates of a queue change and renumber every card."""
+        return self.queue_uids[0] if self.queue_uids and len(self.queue_uids) == len(self.queue) else None
 
     def current_name(self) -> str:
         cur = self.current()

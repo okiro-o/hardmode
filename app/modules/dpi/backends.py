@@ -136,6 +136,7 @@ class HidppBackend:
             if self._dev:
                 self._dev.close()
             self._dev = None
+            self._values = None                # another mouse may answer next time: read its grid again
 
     def close(self) -> None:
         self._drop()
@@ -156,7 +157,7 @@ class HidppBackend:
                     info["name"] = ""
                 mode = dev.get_onboard_mode() if dev.has_feature(0x8100) else None
                 params = dev.dpi_parameters()
-                values = self.allowed_values()
+                values = self._grid()
                 info.update({
                     "found": True,
                     "product": info.get("candidate", {}).get("product", ""),
@@ -175,33 +176,39 @@ class HidppBackend:
                 return {"found": False, "error": str(e)}
 
     def allowed_values(self) -> list[int]:
-        vals = self._values                   # cached grid: no lock, no HID traffic
-        if vals:
-            return vals
+        """The mouse's DPI grid from the cache, never HID traffic: the event loop calls it for every snapshot,
+        and a sleeping mouse costs a second per unanswered request (0.38.0). Probe, apply and the DPI guard
+        (worker threads) fill the cache through ``_grid``."""
+        return self._values or list(grid.DEFAULT_VALUES)
+
+    def _grid(self) -> list[int]:
+        """Worker threads only, under ``self._lock``: read the grid once and cache it."""
+        if self._values:
+            return self._values
         now = time.monotonic()
         if now - self._values_failed_at < 20.0:
             return list(grid.DEFAULT_VALUES)  # mouse was unreachable a moment ago: the default grid will do
-        with self._lock:
-            if self._values:
-                return self._values
-            try:
-                self._values = self._connect().dpi_ranges()
-            except HidppError:
-                self._values_failed_at = now
-                return list(grid.DEFAULT_VALUES)
-            return self._values
+        try:
+            self._values = self._connect().dpi_ranges()
+        except HidppError:
+            self._values_failed_at = now
+            return list(grid.DEFAULT_VALUES)
+        return self._values
 
     def get_dpi(self) -> int | None:
+        """The DPI guard's read (worker thread): also fills the grid cache once the mouse answers."""
         with self._lock:
             try:
-                return self._connect().dpi_parameters()["dpi_x"]
+                dpi = self._connect().dpi_parameters()["dpi_x"]
             except HidppError:
                 self._drop()
                 return None
+            self._grid()
+            return dpi
 
     def set_dpi(self, value: int) -> int:
         with self._lock:
-            v = grid.snap(int(value), self.allowed_values())
+            v = grid.snap(int(value), self._grid())
             try:
                 dev = self._connect()
                 dev.ensure_host_mode()

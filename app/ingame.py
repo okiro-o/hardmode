@@ -284,7 +284,7 @@ def render_weapons(st: dict, s: config.IngameSettings, colors: dict) -> Image.Im
     except Exception:  # noqa: BLE001 - never lose the whole block because of one silhouette
         log.exception("silhouette rasterization failed, falling back to text")
         cur_mask, next_masks = None, [(n, None) for n in nxt]
-    cur_w = cur_mask.size[0] if cur_mask else int(_text_w(name_f, cur["name"]))
+    cur_w = cur_mask.size[0] if cur_mask else int(_text_w(font(int(22 * k)), cur["name"]))
     name_h = int(22 * k) if s.weapons_names else 0
     w = pad * 2 + max(cur_w, int(_text_w(name_f, cur["name"])) if s.weapons_names else 0)
     if next_masks:
@@ -464,7 +464,6 @@ if IS_WINDOWS:  # pragma: no cover - exercised only on Windows
     user32.DispatchMessageW.argtypes = [ctypes.POINTER(wintypes.MSG)]
     user32.DispatchMessageW.restype = ctypes.c_ssize_t
     user32.EnumDisplayMonitors.argtypes = [wintypes.HDC, ctypes.POINTER(wintypes.RECT), MONITORENUMPROC, wintypes.LPARAM]
-    user32.IsWindowVisible.argtypes = [wintypes.HWND]
     gdi32.CreateCompatibleDC.argtypes = [wintypes.HDC]
     gdi32.CreateCompatibleDC.restype = wintypes.HDC
     gdi32.DeleteDC.argtypes = [wintypes.HDC]
@@ -480,7 +479,7 @@ if IS_WINDOWS:  # pragma: no cover - exercised only on Windows
     WS_POPUP = 0x80000000
     WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_EX_TOOLWINDOW = 0x8, 0x20, 0x80
     WS_EX_LAYERED, WS_EX_NOACTIVATE = 0x80000, 0x08000000
-    SW_HIDE, SW_SHOWNOACTIVATE = 0, 4
+    SW_HIDE = 0
     SWP_NOSIZE, SWP_NOMOVE, SWP_NOACTIVATE, SWP_SHOWWINDOW = 0x1, 0x2, 0x10, 0x40
     HWND_TOPMOST = ctypes.c_void_p(-1 & (2 ** (8 * ctypes.sizeof(ctypes.c_void_p)) - 1))
     ULW_ALPHA, AC_SRC_OVER, AC_SRC_ALPHA, PM_REMOVE = 2, 0, 1, 1
@@ -534,6 +533,7 @@ if IS_WINDOWS:  # pragma: no cover - exercised only on Windows
             hdc_mem = gdi32.CreateCompatibleDC(hdc_screen)
             bits = ctypes.c_void_p()
             hbmp = gdi32.CreateDIBSection(hdc_screen, ctypes.byref(bmi), 0, ctypes.byref(bits), None, 0)
+            old = None
             try:
                 if not hbmp or not bits:
                     raise OSError("CreateDIBSection failed")
@@ -544,8 +544,9 @@ if IS_WINDOWS:  # pragma: no cover - exercised only on Windows
                 if not user32.UpdateLayeredWindow(self.hwnd, hdc_screen, ctypes.byref(pt_dst), ctypes.byref(size),
                                                   hdc_mem, ctypes.byref(pt_src), 0, ctypes.byref(blend), ULW_ALPHA):
                     raise OSError(f"UpdateLayeredWindow failed: {ctypes.get_last_error()}")
-                gdi32.SelectObject(hdc_mem, old)
             finally:
+                if old:                    # a bitmap still selected into a DC cannot be deleted: it would leak
+                    gdi32.SelectObject(hdc_mem, old)
                 if hbmp:
                     gdi32.DeleteObject(hbmp)
                 gdi32.DeleteDC(hdc_mem)
@@ -593,6 +594,8 @@ class IngameOverlays:
         self.errors: dict[str, str | None] = {k: None for k in KINDS}
         self.present: dict[str, bool] = {k: False for k in KINDS}
         self.reason: dict[str, str] = {k: "" for k in KINDS}
+        # called from the overlay thread when what the panel shows changed (on screen / reason / error), 0.38.0
+        self.on_change: Callable[[], None] = lambda: None
 
     # -------------------------------------------------------------- control
     def start(self) -> None:
@@ -653,84 +656,103 @@ class IngameOverlays:
             self.error = f"{type(e).__name__}: {e}"
             log.exception("ingame overlay: cannot create windows")
             return
-        last_sig: dict[str, tuple] = {}
-        change_key: dict[str, object] = {}
-        shown_until: dict[str, float] = {k: 0.0 for k in KINDS}
-        last_raise = 0.0
-        mons = monitors()
-        last_mon_check = time.monotonic()
+        frame = {"last_sig": {}, "change_key": {}, "shown_until": {k: 0.0 for k in KINDS},
+                 "mons": monitors(), "mon_check": time.monotonic(), "raised": 0.0}
+        shown: tuple = ()
         try:
             while not self._stop.is_set():
-                pump_messages()
-                now = time.monotonic()
-                if now - last_mon_check > 10:
-                    mons, last_mon_check = monitors(), now
-                s = self.settings
-                mon = mons[min(max(0, int(s.monitor)), len(mons) - 1)]
                 try:
-                    state = self._state_fn() or {}
-                    colors = self._colors_fn()
-                except Exception:
-                    log.exception("ingame state failed")
-                    state, colors = {}, {}
-                for kind in KINDS:
-                    layer = layers[kind]
-                    st = state.get(kind) or {}
-                    previewing = now < self._preview_until[kind]
-                    if not st.get("present") and previewing:
-                        st = dict(SAMPLE_STATE[kind], sample=True)
-                    key = st.get("key")
-                    if key != change_key.get(kind, object()):
-                        change_key[kind] = key
-                        shown_until[kind] = now + float(getattr(s, f"{kind}_show_s"))
-                    enabled = bool(getattr(s, f"{kind}_enabled"))
-                    mode = getattr(s, f"{kind}_mode")
-                    self.present[kind] = bool(st.get("present"))
-                    visible = st.get("present") and (previewing or (enabled and (
-                        mode == "always" or st.get("hold") or now < shown_until[kind])))
-                    if not visible:
-                        self.reason[kind] = (st.get("reason") or "нет данных") if not st.get("present") else \
-                            ("выключено" if not enabled else "ждёт смены")
-                        if self.visible[kind]:
-                            log.info("ingame %s: hide (%s)", kind, self.reason[kind])
-                        layer.hide()
-                        last_sig.pop(kind, None)
-                        self.visible[kind] = False
-                        continue
-                    sig = (json.dumps(st, sort_keys=True, default=str), self._version, mon)
-                    if sig != last_sig.get(kind):
-                        try:
-                            with _RENDER_LOCK:
-                                img = render(kind, st, s, colors)
-                            self.errors[kind] = None
-                        except Exception as e:  # noqa: BLE001
-                            self.errors[kind] = f"render: {type(e).__name__}: {e}"
-                            log.exception("ingame %s: render failed", kind)
-                            img = None
-                        if img is None:
-                            self.reason[kind] = self.errors[kind] or "нечего рисовать"
-                            layer.hide()
-                            self.visible[kind] = False
-                            continue
-                        x, y = place(kind, s, img.size, mon)
-                        try:
-                            layer.update(img, x, y, float(getattr(s, f"{kind}_opacity")))
-                            last_sig[kind] = sig
-                            if not self.visible[kind]:
-                                log.info("ingame %s: show %dx%d at %d,%d", kind, img.size[0], img.size[1], x, y)
-                            self.visible[kind] = True
-                            self.reason[kind] = "на экране"
-                            self.errors[kind] = None
-                        except Exception as e:  # noqa: BLE001
-                            self.errors[kind] = f"window: {type(e).__name__}: {e}"
-                            self.error = self.errors[kind]
-                            log.exception("ingame %s: window update failed", kind)
-                if now - last_raise > 2.0:
-                    last_raise = now
-                    for layer in layers.values():
-                        layer.raise_()
+                    self._frame(layers, frame)
+                except Exception:  # noqa: BLE001 - one bad frame must never stop the overlay thread (0.38.0)
+                    log.exception("ingame overlay frame failed")
+                    time.sleep(1.0)
+                now_shown = (tuple(self.visible.values()), tuple(self.present.values()),
+                             tuple(self.reason.values()), tuple(self.errors.values()), self.error)
+                if now_shown != shown:              # the panel's «на экране» / reason / error chips follow
+                    shown = now_shown
+                    try:
+                        self.on_change()
+                    except Exception:  # noqa: BLE001
+                        log.exception("ingame on_change failed")
                 time.sleep(0.1)
         finally:
             for layer in layers.values():
                 layer.hide()
                 layer.destroy()
+
+    def _frame(self, layers: dict, f: dict) -> None:  # pragma: no cover - Windows only
+        pump_messages()
+        now = time.monotonic()
+        if now - f["mon_check"] > 10:
+            f["mons"], f["mon_check"] = monitors(), now
+        s = self.settings
+        mons = f["mons"]
+        mon = mons[min(max(0, int(s.monitor)), len(mons) - 1)]
+        last_sig, change_key, shown_until = f["last_sig"], f["change_key"], f["shown_until"]
+        try:
+            state = self._state_fn() or {}
+            colors = self._colors_fn()
+        except Exception:
+            log.exception("ingame state failed")
+            state, colors = {}, {}
+        for kind in KINDS:
+            layer = layers[kind]
+            st = state.get(kind) or {}
+            previewing = now < self._preview_until[kind]
+            if not st.get("present") and previewing:
+                st = dict(SAMPLE_STATE[kind], sample=True)
+            key = st.get("key")
+            if key != change_key.get(kind, object()):
+                change_key[kind] = key
+                shown_until[kind] = now + float(getattr(s, f"{kind}_show_s"))
+            enabled = bool(getattr(s, f"{kind}_enabled"))
+            mode = getattr(s, f"{kind}_mode")
+            self.present[kind] = bool(st.get("present"))
+            visible = st.get("present") and (previewing or (enabled and (
+                mode == "always" or st.get("hold") or now < shown_until[kind])))
+            if not visible:
+                self.reason[kind] = (st.get("reason") or "нет данных") if not st.get("present") else \
+                    ("выключено" if not enabled else "ждёт смены")
+                if self.visible[kind]:
+                    log.info("ingame %s: hide (%s)", kind, self.reason[kind])
+                layer.hide()
+                last_sig.pop(kind, None)
+                self.visible[kind] = False
+                continue
+            # colours are part of the picture: a colour change redraws a block that stays on screen (0.38.0)
+            sig = (json.dumps(st, sort_keys=True, default=str), json.dumps(colors, sort_keys=True, default=str),
+                   self._version, mon)
+            if sig == last_sig.get(kind):
+                continue
+            # a failed frame is remembered too: the same state is not retried 10 times a second with a traceback
+            # each time; the next change of the block tries again
+            last_sig[kind] = sig
+            try:
+                with _RENDER_LOCK:
+                    img = render(kind, st, s, colors)
+                self.errors[kind] = None
+            except Exception as e:  # noqa: BLE001
+                self.errors[kind] = f"render: {type(e).__name__}: {e}"
+                log.exception("ingame %s: render failed", kind)
+                img = None
+            if img is None:
+                self.reason[kind] = self.errors[kind] or "нечего рисовать"
+                layer.hide()
+                self.visible[kind] = False
+                continue
+            x, y = place(kind, s, img.size, mon)
+            try:
+                layer.update(img, x, y, float(getattr(s, f"{kind}_opacity")))
+                if not self.visible[kind]:
+                    log.info("ingame %s: show %dx%d at %d,%d", kind, img.size[0], img.size[1], x, y)
+                self.visible[kind] = True
+                self.reason[kind] = "на экране"
+                self.errors[kind] = None
+            except Exception as e:  # noqa: BLE001
+                self.errors[kind] = f"window: {type(e).__name__}: {e}"
+                self.error = self.errors[kind]
+                log.exception("ingame %s: window update failed", kind)
+        if now - f["raised"] > 2.0:
+            f["raised"] = now
+            for layer in layers.values():
+                layer.raise_()

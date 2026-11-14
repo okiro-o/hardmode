@@ -191,7 +191,6 @@ class DonationService:
                 "dp": {**self.status_["dp"], "verified": bool(dp.get("user")), "user": (dp.get("user") or {}).get("name")},
                 "log": self.state["log"][-20:][::-1],
                 "alias_errors": self.alias_errors,
-                "actions": ACTIONS,
             }
 
     def _changed(self) -> None:

@@ -46,10 +46,7 @@ class PredictionSettings:
         s.loss = (str(s.loss or "").strip() or cls.loss)[:25]
         if s.win.casefold() == s.loss.casefold():
             raise ValueError("ответы должны различаться")
-        try:
-            s.window_min = int(float(s.window_min))
-        except (TypeError, ValueError):
-            raise ValueError("window_min: нужно число") from None
+        s.window_min = config.to_num_int(s.window_min, "window_min")
         if not 1 <= s.window_min <= 30:
             raise ValueError("window_min: от 1 до 30 минут")
         return s
@@ -163,7 +160,7 @@ class PredictionService:
             title = s.title_for(map_name)
             try:
                 data = self.twitch.helix("POST", "predictions", body={
-                    "broadcaster_id": self.twitch.state["user"]["id"], "title": title,
+                    "broadcaster_id": self.twitch._uid(), "title": title,
                     "outcomes": [{"title": s.win}, {"title": s.loss}], "prediction_window": s.window_min * 60,
                 }).get("data") or [{}]
             except TwitchError as e:
@@ -204,7 +201,7 @@ class PredictionService:
 
     def _end(self, status: str, outcome_id: str | None, text: str) -> None:
         cur = self.current
-        body = {"broadcaster_id": self.twitch.state["user"]["id"], "id": cur["id"], "status": status}
+        body = {"broadcaster_id": self.twitch._uid(), "id": cur["id"], "status": status}
         if outcome_id:
             body["winning_outcome_id"] = outcome_id
         try:

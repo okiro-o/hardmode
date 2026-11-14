@@ -34,10 +34,15 @@ def is_enabled() -> bool:
         import winreg  # type: ignore
 
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
-            value, _ = winreg.QueryValueEx(key, VALUE_NAME)
-            return bool(value)
+            for name in (VALUE_NAME, *LEGACY_VALUE_NAMES):   # a pre-rename value starts the app too (0.38.0)
+                try:
+                    if winreg.QueryValueEx(key, name)[0]:
+                        return True
+                except OSError:
+                    continue
     except OSError:
-        return False
+        pass
+    return False
 
 
 def set_enabled(enabled: bool) -> bool:
@@ -49,14 +54,9 @@ def set_enabled(enabled: bool) -> bool:
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
         if enabled:
             winreg.SetValueEx(key, VALUE_NAME, 0, winreg.REG_SZ, launch_command())
-            for legacy in LEGACY_VALUE_NAMES:
-                try:
-                    winreg.DeleteValue(key, legacy)
-                except OSError:
-                    pass
-        else:
+        for name in LEGACY_VALUE_NAMES + (() if enabled else (VALUE_NAME,)):
             try:
-                winreg.DeleteValue(key, VALUE_NAME)
-            except FileNotFoundError:
+                winreg.DeleteValue(key, name)          # «off» removes the pre-rename value as well
+            except OSError:
                 pass
     return enabled

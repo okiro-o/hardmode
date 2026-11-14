@@ -71,6 +71,31 @@ def to_int(v, name: str) -> int:
         raise ValueError(f"{name}: нужно число") from None
 
 
+def to_num_int(v, name: str) -> int:
+    """A whole number from a field that may hold «3», «3.0» or 3.7 (rounded down). Junk, NaN and infinity raise
+    ``ValueError`` (0.38.0: ``int(float("1e999"))`` used to escape as OverflowError and answer 500)."""
+    if isinstance(v, bool):
+        raise ValueError(f"{name}: нужно число")
+    try:
+        f = float(v)
+        return int(f)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f"{name}: нужно число") from None
+
+
+def clamp_int(v, lo: int, hi: int, name: str) -> int:
+    return max(lo, min(hi, to_num_int(v, name)))
+
+
+def parse_port(v) -> int | None:
+    """A TCP port the app may listen on (1024–65535), else None."""
+    try:
+        port = to_num_int(v, "port")
+    except ValueError:
+        return None
+    return port if 1024 <= port <= 65535 else None
+
+
 def to_float(v, name: str) -> float:
     try:
         f = float(v)
@@ -163,8 +188,8 @@ class OverlaySettings:
                     rejected.append(k)
             elif k == "queue_max":
                 try:
-                    self.queue_max = max(1, min(10, int(float(v))))
-                except (TypeError, ValueError):
+                    self.queue_max = clamp_int(v, 1, 10, k)
+                except ValueError:
                     rejected.append(k)
             elif k in ("labels", "show_counter", "show_kills", "show_match", "loadout_names", "queue_amount", "queue_title"):
                 setattr(self, k, to_bool(v))
@@ -221,7 +246,7 @@ class IngameSettings:
         for k, v in (patch or {}).items():
             try:
                 if k == "monitor":
-                    self.monitor = max(0, min(8, int(float(v))))
+                    self.monitor = clamp_int(v, 0, 8, k)
                     continue
                 kind, _, opt = k.partition("_")
                 if kind not in ("dpi", "weapons", "queue") or k not in self.__dataclass_fields__:
@@ -237,7 +262,7 @@ class IngameSettings:
                     val = max(lo, min(hi, to_float(v, k)))
                 elif opt in self._INTS:
                     lo, hi = self._INTS[opt]
-                    val = max(lo, min(hi, int(float(v))))
+                    val = clamp_int(v, lo, hi, k)
                 else:
                     raise ValueError(k)
                 setattr(self, k, val)
@@ -252,7 +277,7 @@ class AppSettings:
     gsi_token: str = field(default_factory=lambda: secrets.token_urlsafe(12))
     roulette: dict = field(default_factory=dict)      # RouletteSettings as dict
     dpi: dict = field(default_factory=dict)           # DpiSettings as dict (validated by the module)
-    chat: dict = field(default_factory=dict)          # ChatSettings as dict (contains the SE JWT secret)
+    chat: dict = field(default_factory=dict)          # ChatSettings as dict
     donations: dict = field(default_factory=dict)     # DonationSettings as dict (contains DA/DonatePay secrets)
     obs: dict = field(default_factory=dict)           # ObsSettings as dict (contains the obs-websocket password)
     predictions: dict = field(default_factory=dict)   # PredictionSettings as dict
@@ -268,12 +293,7 @@ class AppSettings:
         s = cls()
         if not isinstance(d, dict):
             return s
-        try:
-            port = int(d.get("port", s.port) or s.port)
-            if 1024 <= port <= 65535:
-                s.port = port
-        except (TypeError, ValueError):
-            pass
+        s.port = parse_port(d.get("port", s.port)) or s.port
         tok = d.get("gsi_token")
         if isinstance(tok, str) and tok.strip():
             s.gsi_token = tok.strip()
@@ -313,7 +333,5 @@ class AppSettings:
                 s.save(path)
             except OSError:
                 pass
-        env_port = os.environ.get("CS2R_PORT")
-        if env_port and env_port.isdigit() and 1024 <= int(env_port) <= 65535:
-            s.port = int(env_port)
+        s.port = parse_port(os.environ.get("CS2R_PORT")) or s.port
         return s

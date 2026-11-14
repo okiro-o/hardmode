@@ -18,7 +18,7 @@ def test_settings():
 
 def test_render_template_tolerates_unknown_placeholders():
     assert render_template("Оружие: {weapon} ({completed}) {nope}", weapon="AK-47", completed=3) == "Оружие: AK-47 (3) {nope}"
-    assert render_template("{", weapon="x") == "{"
+    assert render_template("{", weapon="x") is None                  # cannot be filled: no message at all
 
 
 def make_notifier(ready=True, **settings):
@@ -97,3 +97,16 @@ def test_deliver_keeps_last_response():
     assert n.send_now("hi")["ok"]
     assert n.sent == ["hi"] and n.last_response == {"message_id": "m", "is_sent": True}
     assert n.status()["ready"] is True and n.status()["sent_count"] == 1
+
+
+def test_broken_templates_never_raise_and_are_refused_on_save():
+    """0.38.0: {user.x} raised AttributeError inside the reward handler: the viewer got the weapon and the refund."""
+    from app import chat as C
+    assert C.render_template("{user.foo} {user[0]}", user="Alice") is None
+    assert C.render_template("{user} {unknown}", user="Alice") == "Alice {unknown}"
+    for bad in ("{user.foo}", "{user[x]}", "{", "}"):
+        with pytest.raises(ValueError):
+            C.ChatSettings.from_dict({"request_template": bad})
+    # a settings.json from an older version: only that template falls back, the rest stays
+    s = C.ChatSettings.from_dict({"request_template": "{", "enabled": True}, strict=False)
+    assert s.request_template == C.ChatSettings.request_template and s.enabled

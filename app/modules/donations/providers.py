@@ -49,9 +49,6 @@ class Donation:
     created_ts: float | None = None
     test: bool = False
 
-    def to_dict(self) -> dict:
-        return dict(self.__dict__)
-
 
 def _http(method: str, url: str, *, headers: dict | None = None, form: dict | None = None,
           timeout: float = 10.0) -> dict:

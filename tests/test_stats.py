@@ -188,3 +188,30 @@ def test_file_without_parts_loads_as_play_outside_a_stream(tmp_path):
     p.write_text(json.dumps({"started_at": 123.0, "totals": {"kills": 2}}), encoding="utf-8")
     s = StatsTracker(str(p))
     assert s.session["kind"] == "offstream" and s.session["started_at"] == 123.0 and s.has_data()
+
+
+def test_a_restart_in_the_middle_of_a_match_does_not_count_it_twice(tmp_path):
+    """0.38.0: the update button restarts the app; the current map used to live only in memory."""
+    path = str(tmp_path / "stats.json")
+    live = types.SimpleNamespace(map_phase="live", map_name="de_mirage", mode="competitive")
+    s = StatsTracker(path)
+    s.handle_events([{"type": "round_start", "round": 1}], live, 800, now=1.0)
+    s.flush()
+    again = StatsTracker(path)
+    again.handle_events([{"type": "round_start", "round": 2}], live, 800, now=50.0)
+    assert again.snapshot()["maps"][0]["matches"] == 1
+    again.handle_events([{"type": "match_end", "result": None}], types.SimpleNamespace(map_phase="gameover", map_name="de_mirage"), 800, now=60.0)
+    third = StatsTracker(path)                                   # finished before the restart: the next one is new
+    third.handle_events([], types.SimpleNamespace(map_phase="warmup", map_name="de_mirage"), 800, now=70.0)
+    assert third.snapshot()["maps"][0]["matches"] == 2
+
+
+def test_flush_writes_the_time_counters(tmp_path):
+    path = str(tmp_path / "stats.json")
+    s = StatsTracker(path)
+    live = types.SimpleNamespace(map_phase="live", map_name="de_mirage", mode="competitive")
+    s.handle_events([{"type": "kill", "weapon": "ak47", "raw": "weapon_ak47"}], live, 800, now=100.0)
+    for t in (101.0, 103.0, 105.0, 107.0):                       # only time moves: not saved at once
+        s.handle_events([], live, 800, now=t)
+    s.flush()
+    assert StatsTracker(path).snapshot()["dpi"][0]["seconds"] >= 7.0

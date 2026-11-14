@@ -1,36 +1,36 @@
-"""Twitch account (optional, 0.23.0): rewards created by Hardmode with automatic point refunds.
+"""Twitch account (optional, 0.23.0): rewards created by Hardmode with automatic point refunds, chat messages
+from the streamer's account, predictions on the match (predictions.py) and the broadcast state (statistics).
 
-Why: the anonymous chat reader (twitch_irc.py) sees redemptions but cannot give points back, and Twitch
-lets an application change a redemption's status only for rewards **created by the same client id**
-(403 otherwise). So the streamer signs in once and Hardmode creates its own rewards («Оружие в очередь»,
-«DPI на колесо»). Their redemptions are read here (not from chat) and answered:
+Twitch lets an application change a redemption's status only for rewards **created by the same client id**
+(403 otherwise). So the streamer signs in once and Hardmode creates its own rewards («Добавить оружие в
+очередь», «Добавить DPI в рулетку»). Their redemptions are read here and answered:
 * rejected (unknown weapon, number out of range, knife switched off…) → ``CANCELED`` = points refunded;
 * DPI accepted → ``FULFILLED``;
 * weapon accepted → stays ``UNFULFILLED`` (it waits in the viewer queue, like in Twitch's request queue);
   closing the request ✓ / by a kill → ``FULFILLED``, × → ``CANCELED`` (refund).
-Chat: the streamer may also choose to send the app's chat messages from their own account
-(``send_chat``, Helix «Send Chat Message», scope ``user:write:chat``) instead of the StreamElements bot
-(user's decision 2026-11-08: «чат будет от моего имени»).
+Chat: the app's chat messages are sent from the streamer's own account (``send_chat``, Helix «Send Chat
+Message», scope ``user:write:chat``; StreamElements was removed in 0.24.0).
 
 Login: OAuth device code flow, public client (no secret, no server, no redirect): ``POST /oauth2/device``
 → the streamer confirms on twitch.tv/activate → ``POST /oauth2/token`` with the device code. Public-client
 refresh tokens rotate and live 30 days, so the account stays signed in while the app is used at least
 monthly. Tokens are validated at start and hourly (Twitch requirement). Scopes: ``channel:manage:redemptions``
-(also covers reading redemptions) and ``user:write:chat``. The client id of Hardmode's own public Twitch
+(also covers reading redemptions), ``user:write:chat`` and ``channel:manage:predictions``. The client id of Hardmode's own public Twitch
 application is built in (``BUILTIN_CLIENT_ID``, registered by the user 2026-11-08; not a secret), so signing in is
 one button (the field for another application was removed at the user's request, 0.23.2).
 
 Redemptions are polled (``GET …/custom_rewards/redemptions?status=UNFULFILLED``, every ``POLL_S``) instead of
 EventSub: the request queue itself is the source of truth, nothing is lost across restarts, and handled ids
-are remembered in data/twitch.json. Redemptions older than ``FRESH_S`` when first seen (the app was off)
-are refunded. One worker thread does all HTTP; decisions are taken on the event-loop thread.
+are remembered in data/twitch.json, all pages are read. Redemptions older than ``FRESH_S`` when first seen
+(the app was off) are refunded. Status changes are kept in twitch.json until Twitch answers (0.38.0): a network
+error or a quit never loses a refund. One worker thread does all HTTP; decisions are taken on the event-loop
+thread.
 """
 from __future__ import annotations
 
 import datetime as _dt
 import json
 import logging
-import queue
 import re
 import threading
 import time
@@ -48,6 +48,7 @@ HELIX = "https://api.twitch.tv/helix"
 SCOPES = ("channel:manage:redemptions", "user:write:chat", "channel:manage:predictions")
 DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
 POLL_S = 3.0
+MAX_PAGES = 10           # open redemptions read per reward: 10 pages of 50
 STREAM_S = 60.0          # how often the broadcast state is read (statistics parts, 0.37.0)
 OFFLINE_GRACE_S = 600.0  # offline this long = the broadcast ended (a dropped connection comes back sooner)
 VALIDATE_S = 3600.0
@@ -107,6 +108,13 @@ def _http(method: str, url: str, *, headers: dict | None = None, form: dict | No
     return out if isinstance(out, dict) else {"data": out}
 
 
+def _cost(value: Any) -> int:
+    try:
+        return max(1, config.to_num_int(value, "cost"))
+    except ValueError:
+        raise TwitchError("стоимость: нужно число") from None
+
+
 def _ts(value: Any) -> float | None:
     """RFC 3339 (``2026-11-08T12:00:00.123456Z``) → epoch seconds."""
     try:
@@ -124,12 +132,12 @@ class TwitchService:
         self._publish = publish_threadsafe
         self._call = call_threadsafe
         self._lock = threading.RLock()
-        self.state: dict = {"token": {}, "user": {}, "rewards": {}, "handled": [], "kept": {}}
+        # actions: status changes not yet accepted by Twitch, [reward_id, redemption_id, status]; kept in twitch.json
+        # and retried until Twitch answers, so a network error or a quit never loses a refund (0.38.0)
+        self.state: dict = {"token": {}, "user": {}, "rewards": {}, "handled": [], "kept": {}, "actions": []}
         self.login_flow: dict | None = None      # {user_code, uri, expires_at}
         self.error: str | None = None
-        self.last_poll: float | None = None
         self._login_gen = 0
-        self._actions: "queue.Queue[tuple[str, str, str]]" = queue.Queue()   # (reward_id, redemption_id, status)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._next_validate = 0.0
@@ -142,6 +150,7 @@ class TwitchService:
         self.on_stream: Callable[[dict], None] = lambda info: None
         self.stream: dict | None = None          # last reported state, None until the first answer
         self._offline_since: float | None = None
+        self._loop_error = False                 # self.error was set by the worker loop (it may clear it itself)
         self._http = _http                       # tests replace it
         self._load()
 
@@ -158,6 +167,8 @@ class TwitchService:
                     self.state[k] = d[k]
             if isinstance(d.get("handled"), list):
                 self.state["handled"] = [str(x) for x in d["handled"]][-MAX_HANDLED:]
+            if isinstance(d.get("actions"), list):
+                self.state["actions"] = [list(map(str, a)) for a in d["actions"] if isinstance(a, list) and len(a) == 3]
 
     def _save(self) -> None:
         with self._lock:
@@ -187,17 +198,11 @@ class TwitchService:
                     "can_chat": self.can_chat,
                     "login_flow": dict(self.login_flow) if self.login_flow else None,
                     "rewards": {k: dict(v) for k, v in self.state["rewards"].items()},
-                    "defaults": REWARDS, "error": self.error, "last_poll": self.last_poll}
+                    "defaults": REWARDS, "error": self.error}
 
     def _changed(self) -> None:
         self._save()
         self._publish("twitch_account", self.status())
-
-    def managed_kind(self, reward_id: str | None) -> str | None:
-        """Which of our rewards this is (``weapon``/``dpi``), None for any other reward."""
-        if not reward_id:
-            return None
-        return next((k for k, r in self.state["rewards"].items() if r.get("id") == reward_id), None)
 
     # ------------------------------------------------------------------ login
     def start_login(self) -> dict:
@@ -325,6 +330,13 @@ class TwitchService:
             raise TwitchError("не выполнен вход в Twitch", 401)
         return self._refresh() if time.time() > exp - 60 else token
 
+    def _uid(self) -> str:
+        """The signed-in broadcaster id; a clear error (not a KeyError) after a sign-out in another thread."""
+        uid = self.state["user"].get("id")
+        if not uid:
+            raise TwitchError("не выполнен вход в Twitch", 401)
+        return uid
+
     def helix(self, method: str, path: str, params: dict | None = None, body: dict | None = None) -> dict:
         url = f"{HELIX}/{path}" + ("?" + urllib.parse.urlencode(params) if params else "")
         try:
@@ -339,7 +351,7 @@ class TwitchService:
         """Blocking: post to the streamer's own chat from the streamer's account."""
         if not self.can_chat:
             raise TwitchError("нет входа в Twitch с разрешением на чат: войдите через Twitch")
-        uid = self.state["user"]["id"]
+        uid = self._uid()
         try:
             data = self.helix("POST", "chat/messages", body={"broadcaster_id": uid, "sender_id": uid,
                                                               "message": message[:500]}).get("data") or [{}]
@@ -362,14 +374,11 @@ class TwitchService:
             raise TwitchError("сначала войдите через Twitch")
         d = REWARDS[kind]
         title = d["title"]
-        try:
-            cost = max(1, int(float(cost if cost not in (None, "") else d["cost"])))
-        except (TypeError, ValueError):
-            raise TwitchError("стоимость: нужно число") from None
+        cost = _cost(cost if cost not in (None, "") else d["cost"])
         prompt = (str(prompt or "").strip() or d["prompt"])[:200]
         body = {"title": title, "cost": cost, "prompt": prompt, "is_enabled": True, **GUARDED}
         try:
-            data = self.helix("POST", "channel_points/custom_rewards", {"broadcaster_id": self.state["user"]["id"]},
+            data = self.helix("POST", "channel_points/custom_rewards", {"broadcaster_id": self._uid()},
                               body).get("data") or []
         except TwitchError as e:
             if "DUPLICATE" in str(e).upper():
@@ -398,7 +407,7 @@ class TwitchService:
         if self.logged_in:
             try:
                 self.helix("DELETE", "channel_points/custom_rewards",
-                           {"broadcaster_id": self.state["user"]["id"], "id": r["id"]})
+                           {"broadcaster_id": self._uid(), "id": r["id"]})
             except TwitchError as e:
                 if e.status != 404:
                     raise
@@ -415,15 +424,18 @@ class TwitchService:
         if not r or not self.logged_in or r.get("enabled", True) == enabled:
             return
         try:
-            self.helix("PATCH", "channel_points/custom_rewards", {"broadcaster_id": self.state["user"]["id"], "id": r["id"]},
+            self.helix("PATCH", "channel_points/custom_rewards", {"broadcaster_id": self._uid(), "id": r["id"]},
                        {"is_enabled": bool(enabled)})
         except TwitchError as e:
             log.warning("twitch: reward %s on=%s failed: %s", kind, enabled, e)
+            self._loop_error = False
             self.error = f"не удалось {'включить' if enabled else 'выключить'} награду в Twitch: {e}"
             self._changed()
             return
         with self._lock:
             r["enabled"] = bool(enabled)
+            if self.error and not self._loop_error:      # the earlier on/off failure is solved now
+                self.error = None
         log.info("twitch: reward %s %s", kind, "enabled" if enabled else "disabled")
         self._changed()
 
@@ -435,15 +447,12 @@ class TwitchService:
             raise TwitchError("награда ещё не создана")
         body: dict = {}
         if cost not in (None, ""):
-            try:
-                body["cost"] = max(1, int(float(cost)))
-            except (TypeError, ValueError):
-                raise TwitchError("стоимость: нужно число") from None
+            body["cost"] = _cost(cost)
         if prompt is not None:
             body["prompt"] = (str(prompt).strip() or REWARDS[kind]["prompt"])[:200]
         if not body:
             return dict(r)
-        self.helix("PATCH", "channel_points/custom_rewards", {"broadcaster_id": self.state["user"]["id"], "id": r["id"]},
+        self.helix("PATCH", "channel_points/custom_rewards", {"broadcaster_id": self._uid(), "id": r["id"]},
                    body)
         with self._lock:
             r.update(body)
@@ -467,7 +476,7 @@ class TwitchService:
         if not self.state["rewards"]:
             return
         data = self.helix("GET", "channel_points/custom_rewards",
-                          {"broadcaster_id": self.state["user"]["id"], "only_manageable_rewards": "true"}).get("data") or []
+                          {"broadcaster_id": self._uid(), "only_manageable_rewards": "true"}).get("data") or []
         alive = {r.get("id"): r for r in data}
         changed, fix = False, []
         with self._lock:
@@ -486,7 +495,7 @@ class TwitchService:
                 if any(x in a and a[x] != v for x, v in GUARDED.items()):
                     fix.append((k, r["id"]))
         for k, rid in fix:
-            self.helix("PATCH", "channel_points/custom_rewards", {"broadcaster_id": self.state["user"]["id"], "id": rid},
+            self.helix("PATCH", "channel_points/custom_rewards", {"broadcaster_id": self._uid(), "id": rid},
                        dict(GUARDED))
             log.info("twitch: reward %s: «text required» / «no auto-fulfil» restored", k)
         if gone:
@@ -495,12 +504,16 @@ class TwitchService:
             self._changed()
 
     # ------------------------------------------------------------------ redemptions
+    def _queue_action(self, reward_id: str, rid: str, status: str) -> None:
+        with self._lock:
+            self.state["kept"].pop(rid, None)
+            self.state["actions"].append([reward_id, rid, status])
+        self._save()
+
     def set_status(self, redemption: dict | None, status: str) -> None:
         """Thread-safe: queue FULFILLED / CANCELED for a redemption {reward_id, id}."""
         if redemption and redemption.get("id") and redemption.get("reward_id"):
-            with self._lock:
-                self.state["kept"].pop(redemption["id"], None)
-            self._actions.put((redemption["reward_id"], redemption["id"], status))
+            self._queue_action(redemption["reward_id"], redemption["id"], status)
 
     def poll_once(self, now: float | None = None) -> int:
         """Fetch new redemptions of our rewards and hand them to the loop thread. Returns how many."""
@@ -509,10 +522,7 @@ class TwitchService:
             return 0
         found = 0
         for kind, r in list(self.state["rewards"].items()):
-            data = self.helix("GET", "channel_points/custom_rewards/redemptions",
-                              {"broadcaster_id": self.state["user"]["id"], "reward_id": r["id"],
-                               "status": "UNFULFILLED", "sort": "OLDEST", "first": 50}).get("data") or []
-            for red in data:
+            for red in self._unfulfilled(r["id"]):
                 rid = str(red.get("id") or "")
                 with self._lock:
                     if not rid or rid in self.state["handled"] or rid in self.state["kept"]:
@@ -525,13 +535,26 @@ class TwitchService:
                         "t": _ts(red.get("redeemed_at"))}
                 if item["t"] is not None and now - item["t"] > FRESH_S:
                     log.info("twitch: stale redemption %s of %s refunded", rid, item["user"])
-                    self._actions.put((r["id"], rid, "CANCELED"))    # the app was off: give the points back
+                    self._queue_action(r["id"], rid, "CANCELED")    # the app was off: give the points back
                     continue
                 self._call(self._dispatch, kind, item)
-        self.last_poll = now
         if found:
             self._save()
         return found
+
+    def _unfulfilled(self, reward_id: str) -> list[dict]:
+        """All open redemptions of a reward, page by page: accepted weapon requests stay open while they wait in
+        the queue, so the first page alone may hold only those and hide the new ones."""
+        out: list[dict] = []
+        params = {"broadcaster_id": self._uid(), "reward_id": reward_id, "status": "UNFULFILLED", "sort": "OLDEST", "first": 50}
+        for _ in range(MAX_PAGES):
+            page = self.helix("GET", "channel_points/custom_rewards/redemptions", params)
+            out += page.get("data") or []
+            cursor = (page.get("pagination") or {}).get("cursor")
+            if not cursor:
+                break
+            params = {**params, "after": cursor}
+        return out
 
     def _dispatch(self, kind: str, item: dict) -> None:
         """Event-loop thread: let the app decide, then queue the status change."""
@@ -545,24 +568,32 @@ class TwitchService:
                 self.state["kept"][item["id"]] = item["reward_id"]
             self._save()
         else:
-            self._actions.put((item["reward_id"], item["id"], "FULFILLED" if decision == "fulfill" else "CANCELED"))
+            self._queue_action(item["reward_id"], item["id"], "FULFILLED" if decision == "fulfill" else "CANCELED")
 
     def flush_actions(self) -> int:
+        """Send the queued status changes. An action is dropped only once Twitch has answered for it: done, or
+        400/403/404 (already handled in the Twitch dashboard, not ours any more). A network error, 401, 429 or
+        5xx stops the flush and keeps the rest for the next round (the worker backs off)."""
         n = 0
         while True:
-            try:
-                reward_id, rid, status = self._actions.get_nowait()
-            except queue.Empty:
-                return n
+            with self._lock:
+                if not self.state["actions"]:
+                    return n
+                reward_id, rid, status = self.state["actions"][0]
             try:
                 self.helix("PATCH", "channel_points/custom_rewards/redemptions",
-                           {"broadcaster_id": self.state["user"]["id"], "reward_id": reward_id, "id": rid},
-                           {"status": status})
+                           {"broadcaster_id": self._uid(), "reward_id": reward_id, "id": rid}, {"status": status})
                 n += 1
                 log.info("twitch: redemption %s → %s", rid, status)
             except TwitchError as e:
-                # 400/404: already handled in the Twitch dashboard; anything else is logged and dropped
-                log.warning("twitch: redemption %s → %s failed: %s", rid, status, e)
+                if e.status not in (400, 403, 404):
+                    log.warning("twitch: redemption %s → %s will be retried: %s", rid, status, e)
+                    raise
+                log.warning("twitch: redemption %s → %s refused: %s", rid, status, e)
+            with self._lock:
+                if self.state["actions"] and self.state["actions"][0] == [reward_id, rid, status]:
+                    self.state["actions"].pop(0)
+            self._save()
 
     # ------------------------------------------------------------------ stream
     def poll_stream(self, now: float | None = None) -> dict | None:
@@ -572,7 +603,7 @@ class TwitchService:
         if not self.logged_in:
             return None
         now = time.monotonic() if now is None else now
-        data = self.helix("GET", "streams", {"user_id": self.state["user"]["id"], "type": "live"}).get("data") or []
+        data = self.helix("GET", "streams", {"user_id": self._uid(), "type": "live"}).get("data") or []
         live = data[0] if data else None
         if live:
             self._offline_since = None
@@ -620,22 +651,22 @@ class TwitchService:
                 if time.monotonic() >= next_sync:
                     next_sync = time.monotonic() + SYNC_S
                     self._sync_rewards()
-                self.flush_actions()
                 if time.monotonic() >= next_stream:
                     next_stream = time.monotonic() + STREAM_S
                     self.poll_stream()
-                if time.monotonic() >= next_poll:
+                if time.monotonic() >= next_poll:     # status changes and new redemptions, with the same backoff
+                    self.flush_actions()
                     self.poll_once()
-                    next_poll = time.monotonic() + POLL_S * min(2 ** fails, 10)
                     fails = 0
-                    if self.error:
-                        self.error = None
+                    next_poll = time.monotonic() + POLL_S
+                    if self.error and self._loop_error:   # only what the loop itself reported: not a failed on/off
+                        self.error, self._loop_error = None, False
                         self._changed()
             except TwitchError as e:
                 fails += 1
                 next_poll = time.monotonic() + POLL_S * min(2 ** fails, 10)
                 if self.error != str(e):
-                    self.error = str(e)
+                    self.error, self._loop_error = str(e), True
                     self._changed()
                 log.warning("twitch: %s", e)
             except Exception:  # noqa: BLE001 - never kill the thread
@@ -643,7 +674,7 @@ class TwitchService:
 
 
 def device_poll_with(http: Callable[..., dict], client_id: str, device_code: str) -> dict | None:
-    """``device_poll`` through a replaceable HTTP function (tests)."""
+    """One device-code token request through a replaceable HTTP function (tests)."""
     try:
         return http("POST", f"{ID_BASE}/token", form={"client_id": client_id, "scopes": " ".join(SCOPES),
                                                       "device_code": device_code, "grant_type": DEVICE_GRANT})

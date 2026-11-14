@@ -10,7 +10,6 @@ import logging
 import queue
 import threading
 import time
-from collections import defaultdict
 from dataclasses import asdict, dataclass
 from typing import Any, Callable
 
@@ -44,7 +43,9 @@ class ChatSettings:
     min_interval_s: float = 2.0
 
     @classmethod
-    def from_dict(cls, d: dict | None) -> "ChatSettings":
+    def from_dict(cls, d: dict | None, strict: bool = True) -> "ChatSettings":
+        """``strict``: a template that cannot be filled is an error (the panel shows it); on start (settings.json
+        written by an older version) it falls back to its default instead of resetting every chat setting."""
         s = cls()
         config.assign_fields(s, d, "chat")
         for b in ("enabled", "on_start", "on_weapon", "on_dpi", "on_viewer", "on_reject", "on_donation", "on_request",
@@ -56,6 +57,10 @@ class ChatSettings:
             if not isinstance(v, str):
                 raise ValueError(f"{t}: нужна строка")
             setattr(s, t, v.strip()[:400])
+            if render_template(getattr(s, t), **_SAMPLE) is None:
+                if strict:
+                    raise ValueError(f"{t}: шаблон не разбирается, подстановки пишутся как {{user}}")
+                setattr(s, t, getattr(cls, t))
         try:
             s.min_interval_s = max(0.5, min(60.0, float(s.min_interval_s)))
             s.reject_cooldown_s = max(0.0, min(3600.0, float(s.reject_cooldown_s)))
@@ -67,16 +72,20 @@ class ChatSettings:
         return asdict(self)
 
 
-class _Fmt(defaultdict):
+class _Fmt(dict):
     def __missing__(self, key: str) -> str:
         return "{" + key + "}"
 
 
-def render_template(template: str, **values: Any) -> str:
+_SAMPLE = {k: "x" for k in ("weapon", "completed", "kills", "side", "dpi", "user", "reason", "result", "position")}
+
+
+def render_template(template: str, **values: Any) -> str | None:
+    """The message, or None for a template that cannot be filled ({user.x}, {user[0]}, a lone brace…)."""
     try:
-        return template.format_map(_Fmt(str, **{k: v for k, v in values.items()}))
-    except (ValueError, IndexError):
-        return template
+        return template.format_map(_Fmt(values))
+    except Exception:  # noqa: BLE001 - any formatting error: a chat line must never break the caller
+        return None
 
 
 class ChatNotifier:
@@ -130,8 +139,8 @@ class ChatNotifier:
         """Messages are on and the streamer is signed in to Twitch with the chat permission."""
         return bool(self.settings.enabled and self.twitch_ready())
 
-    def _enqueue(self, kind: str, message: str) -> None:
-        if not self.can_send() or not message.strip():
+    def _enqueue(self, kind: str, message: str | None) -> None:
+        if not self.can_send() or not message or not message.strip():
             return
         self._queue.put((kind, message.strip()[:450]))
         self.start()
