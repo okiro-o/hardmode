@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import secrets
@@ -122,6 +123,24 @@ def assign_fields(obj, d, label: str) -> dict:
         else:
             unknown[k] = v
     return unknown
+
+
+def read_json(path: str) -> dict | None:
+    """A saved state file as a dict; None when it is missing or not a dict. A corrupted file is kept as
+    ``<name>.broken`` and logged (0.38.x): starting from scratch is fine, losing the evidence silently is not."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as e:
+        logging.getLogger("hardmode").warning("%s is unreadable (%s): kept as .broken, starting afresh", path, e)
+        try:
+            os.replace(path, path + ".broken")
+        except OSError:
+            pass
+        return None
+    return d if isinstance(d, dict) else None
 
 
 def write_json_atomic(path: str, data, indent: int | None = None) -> None:
@@ -297,12 +316,8 @@ class AppSettings:
         tok = d.get("gsi_token")
         if isinstance(tok, str) and tok.strip():
             s.gsi_token = tok.strip()
-        s.roulette = dict(d.get("roulette") or {}) if isinstance(d.get("roulette"), dict) else {}
-        s.dpi = dict(d.get("dpi") or {}) if isinstance(d.get("dpi"), dict) else {}
-        s.chat = dict(d.get("chat") or {}) if isinstance(d.get("chat"), dict) else {}
-        s.donations = dict(d.get("donations") or {}) if isinstance(d.get("donations"), dict) else {}
-        s.obs = dict(d.get("obs") or {}) if isinstance(d.get("obs"), dict) else {}
-        s.predictions = dict(d.get("predictions") or {}) if isinstance(d.get("predictions"), dict) else {}
+        for section in ("roulette", "dpi", "chat", "donations", "obs", "predictions"):   # validated by the modules
+            setattr(s, section, dict(d[section]) if isinstance(d.get(section), dict) else {})
         s.open_browser = to_bool(d.get("open_browser", True))
         if isinstance(d.get("overlay"), dict):
             s.overlay.apply(d["overlay"])

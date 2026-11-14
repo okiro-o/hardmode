@@ -4,6 +4,7 @@ import urllib.parse
 import pytest
 
 from app import twitch_api as T
+from tests.conftest import wait_until as _wait
 
 CID = T.BUILTIN_CLIENT_ID
 
@@ -32,7 +33,7 @@ class FakeTwitch:
         self.calls.append((method, path))
         if path == "/oauth2/device":
             assert form["client_id"] == self.cid and form["scopes"] == " ".join(T.SCOPES)
-            return {"device_code": "dev-1", "user_code": "ABCD-EFGH", "expires_in": 1800, "interval": 1,
+            return {"device_code": "dev-1", "user_code": "ABCD-EFGH", "expires_in": 1800, "interval": 0.01,
                     "verification_uri": "https://www.twitch.tv/activate?public=true&device-code=ABCDEFGH"}
         if path == "/oauth2/token":
             if form["grant_type"] == T.DEVICE_GRANT:
@@ -378,14 +379,6 @@ def test_sync_now_shows_a_reward_switched_off_in_twitch(client, app_twitch):
     assert client.post("/api/twitch/sync").json()["logged_in"] is False  # signed out: nothing to read
 
 
-def _wait(cond, timeout=3.0):
-    end = time.time() + timeout
-    while time.time() < end:
-        if cond():
-            return True
-        time.sleep(0.02)
-    return False
-
 
 def test_app_switch_turns_the_reward_on_and_off_in_twitch(client, app_twitch):
     st, svc, fake = app_twitch
@@ -393,7 +386,7 @@ def test_app_switch_turns_the_reward_on_and_off_in_twitch(client, app_twitch):
     assert client.get("/api/settings").json()["dpi"]["viewer_enabled"] is True     # created → switched on
     fake.patches.clear()
     client.post("/api/settings", json={"dpi": {"viewer_min": 500}})               # another setting: untouched
-    time.sleep(0.2)
+    time.sleep(0.05)      # a wrongly started on/off thread would have called Twitch by now
     assert fake.patches == []
     assert client.post("/api/settings", json={"dpi": {"viewer_enabled": False}}).status_code == 200
     assert _wait(lambda: fake.rewards[rid]["is_enabled"] is False)
@@ -406,11 +399,11 @@ def test_app_switch_turns_the_reward_on_and_off_in_twitch(client, app_twitch):
     client.post("/api/twitch/sync")
     fake.patches.clear()
     client.post("/api/settings", json={"dpi": {"viewer_max": 6000}})
-    time.sleep(0.2)
+    time.sleep(0.05)      # a wrongly started on/off thread would have called Twitch by now
     assert fake.patches == [] and fake.rewards[rid]["is_enabled"] is False
     # the weapon switch follows its own reward; no reward yet: nothing to switch
     client.post("/api/settings", json={"donations": {"reward_enabled": True}})
-    time.sleep(0.2)
+    time.sleep(0.05)      # a wrongly started on/off thread would have called Twitch by now
     assert fake.patches == []
     wid = client.post("/api/twitch/reward", json={"kind": "weapon"}).json()["reward"]["id"]
     client.post("/api/settings", json={"donations": {"reward_enabled": False}})

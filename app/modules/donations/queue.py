@@ -23,7 +23,6 @@ Persisted in data/viewer_queue.json; ``done``/``dismissed`` entries are kept as 
 """
 from __future__ import annotations
 
-import json
 import threading
 import time
 from typing import Callable
@@ -49,7 +48,7 @@ class ViewerQueue:
         self._lock = threading.Lock()
         self.entries: list[dict] = []
         self._next_id = 1
-        # what can be played now, wired by app.main: {"now": ids of the current side, "later": ids of the other
+        # what can be played now, wired by app.state: {"now": ids of the current side, "later": ids of the other
         # side, "other": "T"|"CT", "loadout": bool} or None (side unknown: nothing is reordered)
         self.context: Callable[[], dict | None] = lambda: None
         # None when the weapon may be requested, else the reason (knife/Zeus switched off in the race)
@@ -61,12 +60,8 @@ class ViewerQueue:
 
     # ------------------------------------------------------------------ store
     def _load(self) -> None:
-        try:
-            with open(self.path, encoding="utf-8") as f:
-                d = json.load(f)
-        except (OSError, ValueError):
-            return
-        if not isinstance(d, dict):
+        d = config.read_json(self.path)
+        if d is None:
             return
         rows = [e for e in d.get("entries") or [] if isinstance(e, dict) and isinstance(e.get("id"), int)]
         for e in rows:

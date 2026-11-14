@@ -2,7 +2,7 @@
 
 Этот документ — источник правды о приложении: зачем оно, как устроено, какие решения приняты
 и почему, что отклонено, что в бэклоге. Обновляется при каждом значимом изменении.
-Последнее обновление: 2026-11-14, версия приложения 0.38.0. Название продукта: **Hardmode** (до 0.13.0 — CS2 Roulette; переименовано по просьбе пользователя: «roulette» ассоциируется со скам-сайтами, «CS2» — чужой знак).
+Последнее обновление: 2026-11-14, версия приложения 0.39.0. Название продукта: **Hardmode** (до 0.13.0 — CS2 Roulette; переименовано по просьбе пользователя: «roulette» ассоциируется со скам-сайтами, «CS2» — чужой знак).
 
 ## 1. Назначение и пользователь
 
@@ -46,8 +46,9 @@ push-обновлений, обычные HTML/JS-страницы без сбо
 | `app/__main__.py` | точка входа: режим трей/консоль (`want_tray`: `--tray`, frozen → трей, `--console` отменяет), лог `data/app.log` (RotatingFileHandler 1 МБ×3), занятый порт → открыть панель и выйти |
 | `app/tray.py` | pystray-иконка (глиф рисуется Pillow), uvicorn в потоке, меню: панель, автозапуск, папка данных, выход; watchdog уведомляет при падении сервера |
 | `app/autostart.py` | HKCU\...\Run `hardmode` → `pythonw start_tray.pyw` или `hardmode.exe --tray` |
-| `app/main.py` | FastAPI: панель, оверлеи, `/events` (SSE), `/gsi`, API, middleware same-origin, lifespan |
-| `app/config.py` | `AppSettings` (port, gsi_token, roulette, dpi, chat, overlay, ingame), пути `data/` |
+| `app/main.py` | FastAPI вокруг `AppState`: панель, оверлеи, `/events` (SSE), `/gsi`, API, lifespan (0.39.0: состояние вынесено в state.py) |
+| `app/state.py` | `AppState` (0.39.0, из main.py): связывает модули, GSI→гонка/DPI/статистика/очередь/прогнозы, Twitch-хуки; `_typed` + таблица `MODULE_SETTINGS` — одна точка для загрузки, отдачи (`module_settings`, секреты только `*_set`), сохранения и событий настроек модулей; правила потоков в docstring |
+| `app/config.py` | `AppSettings` (port, gsi_token, секции модулей, overlay, ingame), пути `data/`; помощники `to_bool`/`to_int`/`to_float`/`to_num_int`/`clamp_int`/`parse_port`, `read_json` (битый файл → `.broken` + лог), `write_json_atomic` |
 | `app/events.py` | SSE-брокер (очереди на подписчика, первое событие — полный снапшот) |
 | `app/weapons.py` | каталог оружия: id = basename иконки = buy-alias, GSI-имя, сторона, категория, aspect иконки |
 | `app/loadout.py` | генерация/валидация лоадаута, пул стороны для рулетки |
@@ -69,7 +70,7 @@ push-обновлений, обычные HTML/JS-страницы без сбо
 | `app/docs.py` | мини-рендер Markdown → HTML для вкладки «Справка» (заголовки с id, списки, таблицы, код, жирный, ссылки; всё экранируется) |
 | `app/templates/panel.html` | панель: вкладки «Startup», «Оружие», «Лоадаут», «DPI», «Вид», «Донаты», «Статистика», «Общее», «Справка» |
 | `app/modules/donations/` | донаты DonationAlerts/DonatePay, правила, зрительская очередь, словарь оружия (см. §6d) |
-| `app/web.py` | общие HTTP-помощники: страницы без кэша (`page`), разбор JSON-тела (`json_body`) |
+| `app/web.py` | общие HTTP-помощники: страницы без кэша (`page`), разбор JSON-тела (`json_body`), middleware `SameOriginOnly` (0.39.0, из main.py) |
 | `app/stats.py` | статистика стрима (см. §6c), data/stats.json |
 | `app/version.py` | единственное место с номером версии |
 | `app/templates/overlay_weapons.html` | виджет оружия (конвейер карточек, ширина по aspect силуэта) |
@@ -731,6 +732,14 @@ CS2 (GSI)» (`cfg_state == ok`, короткий чип «подключено»
     `.rows.hide-names .cat` (ряды без названий оставались 76 px, источник обрезался снизу).
   - Мёртвое: `managed_kind`, `last_poll`, `Donation.to_dict`, `status()["actions"]`, `IsWindowVisible`,
     `SW_SHOWNOACTIVATE`, `round_totaldmg` в записи пакетов; `persist_dpi_settings` → `persist_settings`.
+  0.39.0 (вторая часть аудита, структура): `main.py` 1040 → ~550 строк (`AppState` → state.py, middleware → web.py);
+  настройки модулей перечислены в одном месте (`MODULE_SETTINGS`), невалидные при старте пишутся в лог;
+  `asyncio.to_thread` вместо `run_in_executor` (17 мест); `config.read_json` в roulette/twitch/predictions/донатах/
+  очереди (битый state.json больше не пропадает молча); в панели одно закрытие всплывающих окон (`closePopups`).
+  Тесты: 14 → ~5 с (пороги ожиданий настраиваемые: `twitch_api.MIN_LOGIN_POLL_S`, `stop_uvicorn(settle=)`,
+  короткие интервалы чата и кручения в фикстурах), общий `wait_until` в conftest, у стража DPI в тесте дедлайн,
+  `tests/test_panel.py` проверяет, что каждый `$('id')` есть в разметке и каждый `/api`-путь панели обслуживается,
+  CRLF-тест обходит все `*.bat`.
   Не сделано намеренно: вынос CSS/JS панели в файлы (без отдельной настройки кэша браузер может держать старый JS
   при новом HTML); `hardmode.exe --console` без окна (пользователь запускает через run.bat); статичные пояснения в
   блоках (921, текст в `dpi-mouse-info`, длинные подписи, заметки у наград) — спросить пользователя.

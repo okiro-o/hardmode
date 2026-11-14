@@ -1035,7 +1035,15 @@ function placePicker(ev) {
 }
 async function pickWeapon(side, cat, oldId, newId) { closePicker(); const r = await post('/api/loadout/slot', {side, category: cat, old: oldId, new: newId}); if (r) toast('Заменено'); }
 async function pickRandom(side, cat, id) { closePicker(); await post('/api/loadout/replace', {side, category: cat, weapon: id}); }
-document.addEventListener('click', e => { if (!e.target.closest('#picker')) closePicker(); closeAllDd(); });
+function closePopups(keep) {
+  if (keep !== 'picker') closePicker();
+  if (keep !== 'dd') closeAllDd();
+  if (keep !== 'upd') $('upd-pop').classList.remove('open');
+  if (keep !== 'tw') $('tw-pop').classList.remove('open');
+}
+document.addEventListener('click', e => {
+  closePopups(e.target.closest('#picker') ? 'picker' : e.target.closest('#updbox, #upd-pop') ? 'upd' : e.target.closest('#twbox') ? 'tw' : null);
+});
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { closePicker(); closeAllDd(); } });
 function showTab(t) { if (!S) return; tab = t; lastTabClick = Date.now(); renderLoadout(); post('/api/loadout/view', {side: t}); }
 async function installCfg() { const r = await post('/api/gsi/install', {}); if (r) { toast('Конфиг записан: ' + r.path); refreshState(); } }
@@ -1057,7 +1065,7 @@ function enhanceSelects() {
       it.addEventListener('click', e => { e.stopPropagation(); if (sel.value !== o.value) { sel.value = o.value; sel.dispatchEvent(new Event('change')); } dd.classList.remove('open'); sync(); });
       menu.appendChild(it);
     });
-    btn.addEventListener('click', e => { e.stopPropagation(); const open = dd.classList.contains('open'); closeAllDd(); if (!open) dd.classList.add('open'); });
+    btn.addEventListener('click', e => { e.stopPropagation(); const open = dd.classList.contains('open'); closePopups(); if (!open) dd.classList.add('open'); });
     btn.addEventListener('keydown', e => {
       const opts = [...menu.querySelectorAll('.dd-opt')]; let i = opts.findIndex(o => o.classList.contains('sel'));
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); i = Math.max(0, Math.min(opts.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1))); opts[i].click(); dd.classList.add('open'); }
@@ -1233,7 +1241,7 @@ function renderStatsSessions() {
     + statsHistory.map(h => opt(h.id, sessLabel(h), (h.title ? '«' + h.title.slice(0, 40) + '» · ' : '') + kd(h.totals || {}))).join('');
   $('stats-reset').style.display = statsSess ? 'none' : '';
 }
-function statsSessToggle(ev) { ev.stopPropagation(); const dd = $('st-sess'), open = dd.classList.contains('open'); closeAllDd(); if (!open) { dd.classList.add('open'); loadStatsHistory(); } }
+function statsSessToggle(ev) { ev.stopPropagation(); const dd = $('st-sess'), open = dd.classList.contains('open'); closePopups(); if (!open) { dd.classList.add('open'); loadStatsHistory(); } }
 async function pickStatsSess(id) {
   closeAllDd();
   if (id) {
@@ -1345,6 +1353,7 @@ function renderUpdate() {
 }
 function updButton(ev) {
   ev.stopPropagation();
+  closePopups('upd');
   const pop = $('upd-pop'), r = $('upd-btn').getBoundingClientRect();
   if (pop.classList.toggle('open')) {
     const up = r.top > innerHeight / 2;           // bottom of the sidebar: open upwards; narrow window (menu on top): down
@@ -1356,7 +1365,6 @@ async function updApply() {
   const r = await post('/api/update/apply', {});
   if (r && !r.ok) toast(r.error, true); else if (r) toast(r.text || 'Обновлено');
 }
-document.addEventListener('click', e => { if (!e.target.closest('#updbox') && !e.target.closest('#upd-pop')) $('upd-pop').classList.remove('open'); });
 // blocks re-rendered on frequent events (GSI several times a second in a fight) are written only when their
 // markup changed: rebuilding a block between mousedown and mouseup lost the click (0.38.0)
 function setHTML(el, html) { if (el && el._html !== html) { el.innerHTML = html; el._html = html; } }
@@ -1440,9 +1448,9 @@ function twitchButton(ev) {
   if (!S) return;
   const a = S.twitch_account || {};
   if (!a.logged_in && !a.login_flow) { twitchLogin(); return; }      // one click: Twitch opens right away
+  closePopups('tw');
   $('tw-pop').classList.toggle('open');
 }
-document.addEventListener('click', e => { if (!e.target.closest('#twbox')) $('tw-pop').classList.remove('open'); });
 function renderTwitch() {
   const a = S.twitch_account; if (!a || !$('tw-btn')) return;
   const btn = $('tw-btn'), u = a.user || {}, pop = $('tw-pop');

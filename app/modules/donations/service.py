@@ -22,7 +22,6 @@ unrecognised weapon is rejected (and the points refunded) instead of queued.
 """
 from __future__ import annotations
 
-import json
 import logging
 import secrets
 import threading
@@ -131,7 +130,7 @@ class DonationService:
         self._oauth_state: tuple[str, float] | None = None
         self.state: dict = {"da": {}, "dp": {}, "log": []}
         self.status_: dict = {"da": {"error": None, "last_poll": None}, "dp": {"error": None, "last_poll": None}}
-        # actions, wired by app.main (all called on the event-loop thread)
+        # actions, wired by app.state (all called on the event-loop thread)
         self.add_wheel: Callable[[int, str], dict] = lambda v, u: {"ok": False, "error": "колесо недоступно"}
         self.queue_weapon: Callable[..., dict] = lambda *a, **k: {}
         self.current_side: Callable[[], str | None] = lambda: None   # T/CT: picks «плётка» = G3SG1 or SCAR-20
@@ -164,12 +163,8 @@ class DonationService:
         self.alias_errors = errors
 
     def _load(self) -> None:
-        try:
-            with open(self.state_path, encoding="utf-8") as f:
-                d = json.load(f)
-        except (OSError, ValueError):
-            return
-        if isinstance(d, dict):
+        d = config.read_json(self.state_path)
+        if d:
             self.state["da"] = d.get("da") if isinstance(d.get("da"), dict) else {}
             self.state["dp"] = d.get("dp") if isinstance(d.get("dp"), dict) else {}
             self.state["log"] = [e for e in d.get("log") or [] if isinstance(e, dict)][-MAX_LOG:]

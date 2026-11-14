@@ -120,14 +120,14 @@ class TrayApp:
         self.ready.set()
 
 
-def stop_uvicorn(server, thread: threading.Thread, grace: float = 3.0, force_grace: float = 3.0) -> bool:
+def stop_uvicorn(server, thread: threading.Thread, grace: float = 3.0, force_grace: float = 3.0, settle: float = 0.3) -> bool:
     """Ask uvicorn to exit; escalate to force_exit when open connections (SSE widgets, the panel)
     keep it waiting. Returns True when the server thread has finished."""
     try:
         # End the SSE responses ourselves first: otherwise uvicorn cancels them at the graceful
         # timeout and logs a traceback ("Exception in ASGI application") per widget.
         events.close_all_streams_threadsafe()
-        time.sleep(0.3)
+        time.sleep(settle)
     except Exception:
         log.exception("closing SSE streams failed")
     server.should_exit = True

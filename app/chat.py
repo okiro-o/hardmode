@@ -92,7 +92,7 @@ class ChatNotifier:
     def __init__(self, settings: ChatSettings, publish_threadsafe: Callable[[str, dict], None]) -> None:
         self.settings = settings
         self._publish = publish_threadsafe
-        # the streamer's own Twitch account (app.twitch_api), wired by app.main
+        # the streamer's own Twitch account (app.twitch_api), wired by app.state
         self.twitch_send: Callable[[str], dict] | None = None
         self.twitch_ready: Callable[[], bool] = lambda: False
         self._queue: "queue.Queue[tuple[str, str] | None]" = queue.Queue()

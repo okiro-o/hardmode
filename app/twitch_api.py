@@ -48,6 +48,7 @@ HELIX = "https://api.twitch.tv/helix"
 SCOPES = ("channel:manage:redemptions", "user:write:chat", "channel:manage:predictions")
 DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
 POLL_S = 3.0
+MIN_LOGIN_POLL_S = 1.0   # the sign-in poll never asks Twitch more often (tests lower it)
 MAX_PAGES = 10           # open redemptions read per reward: 10 pages of 50
 STREAM_S = 60.0          # how often the broadcast state is read (statistics parts, 0.37.0)
 OFFLINE_GRACE_S = 600.0  # offline this long = the broadcast ended (a dropped connection comes back sooner)
@@ -142,7 +143,7 @@ class TwitchService:
         self._thread: threading.Thread | None = None
         self._next_validate = 0.0
         self._last_sync = 0.0
-        # wired by app.main, called on the event-loop thread: (kind, redemption) -> "fulfill" | "cancel" | "keep"
+        # wired by app.state, called on the event-loop thread: (kind, redemption) -> "fulfill" | "cancel" | "keep"
         self.on_redemption: Callable[[str, dict], str] = lambda kind, r: "cancel"
         self.on_login: Callable[[dict], None] = lambda user: None     # called from the sign-in thread
         # the broadcast went live / ended (statistics parts, 0.37.0), on the event-loop thread:
@@ -156,12 +157,8 @@ class TwitchService:
 
     # ------------------------------------------------------------------ state
     def _load(self) -> None:
-        try:
-            with open(self.state_path, encoding="utf-8") as f:
-                d = json.load(f)
-        except (OSError, ValueError):
-            return
-        if isinstance(d, dict):
+        d = config.read_json(self.state_path)
+        if d:
             for k in ("token", "user", "rewards", "kept"):
                 if isinstance(d.get(k), dict):
                     self.state[k] = d[k]
@@ -223,7 +220,7 @@ class TwitchService:
         return dict(self.login_flow)
 
     def _login_run(self, gen: int, cid: str, device_code: str, interval: float) -> None:
-        while not self._stop.wait(max(1.0, interval)):
+        while not self._stop.wait(max(MIN_LOGIN_POLL_S, interval)):
             with self._lock:
                 if gen != self._login_gen or not self.login_flow:
                     return                                   # cancelled or restarted

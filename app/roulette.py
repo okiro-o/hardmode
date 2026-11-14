@@ -6,7 +6,6 @@ render snapshots of this object, so an OBS page reload never loses anything.
 """
 from __future__ import annotations
 
-import json
 import random
 import time
 from dataclasses import asdict, dataclass, field
@@ -542,12 +541,8 @@ class Roulette:
 
     @classmethod
     def load(cls, path: str) -> "Roulette":
-        try:
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
-        except FileNotFoundError:
-            return cls()
-        except (OSError, json.JSONDecodeError, ValueError):
+        data = config.read_json(path)
+        if data is None:
             return cls()
         try:
             return cls.from_dict(data)

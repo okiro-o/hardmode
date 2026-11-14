@@ -53,7 +53,7 @@ def test_stop_uvicorn_escalates_to_force_exit():
 
     t = threading.Thread(target=serve, daemon=True)
     t.start()
-    assert stop_uvicorn(srv, t, grace=0.2, force_grace=2.0) is True
+    assert stop_uvicorn(srv, t, grace=0.2, force_grace=2.0, settle=0) is True
     assert srv.should_exit and srv.force_exit and not t.is_alive()
 
 
@@ -75,7 +75,7 @@ def test_stop_uvicorn_graceful_path_does_not_force():
 
     t = threading.Thread(target=serve, daemon=True)
     t.start()
-    assert stop_uvicorn(srv, t, grace=2.0, force_grace=1.0) is True
+    assert stop_uvicorn(srv, t, grace=2.0, force_grace=1.0, settle=0) is True
     assert srv.force_exit is False
 
 

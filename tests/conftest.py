@@ -1,5 +1,22 @@
+import time
+
 import pytest
 from fastapi.testclient import TestClient
+
+
+@pytest.fixture(autouse=True)
+def fast_twitch_sign_in(monkeypatch):
+    """The device-code sign-in polls Twitch at most once a second; the fake Twitch answers at once."""
+    from app import twitch_api
+    monkeypatch.setattr(twitch_api, "MIN_LOGIN_POLL_S", 0.01)
+
+
+def wait_until(cond, timeout: float = 3.0, step: float = 0.01) -> bool:
+    """Poll ``cond`` until it is true or the time is up; returns its last value (for background threads)."""
+    deadline = time.monotonic() + timeout
+    while not cond() and time.monotonic() < deadline:
+        time.sleep(step)
+    return bool(cond())
 
 
 @pytest.fixture

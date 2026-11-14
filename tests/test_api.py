@@ -209,16 +209,15 @@ def test_chat_settings_and_notifications_wired(client, monkeypatch):
     _chat_as_streamer(app_state, sent)
     r = client.post("/api/settings", json={"chat": {"enabled": True, "min_interval_s": 0.5}})
     assert r.status_code == 200 and r.json()["chat"]["enabled"] is True
+    app_state.chat.settings.min_interval_s = 0.02               # past the 0.5 s floor: the test only waits
     # start -> start message; next -> weapon message; dpi apply -> dpi message
     client.post("/api/loadout/generate", json={})
     client.post("/api/session/start")
     client.post("/api/roulette/next")
     client.post("/api/settings", json={"dpi": {"backend": "fake"}})
     client.post("/api/dpi/apply", json={"value": 1600})
-    import time as _t
-    end = _t.time() + 3
-    while _t.time() < end and len(sent) < 3:
-        _t.sleep(0.05)
+    from tests.conftest import wait_until
+    wait_until(lambda: len(sent) >= 3)
     assert any("началась" in m for m in sent) and any("Оружие:" in m for m in sent) and any("1600" in m for m in sent)
     res = client.post("/api/chat/test", json={"message": "hi"}).json()
     assert res["ok"] and sent[-1] == "hi"
@@ -308,3 +307,16 @@ def test_stream_start_and_end_split_the_statistics(client):
     assert client.get("/api/stats/history/bad-id").status_code == 404
     st._on_stream({"live": False})                                                    # already outside: nothing
     assert len(client.get("/api/stats/history").json()["sessions"]) == 2
+
+
+def test_a_corrupted_state_file_is_kept_and_the_app_starts_afresh(tmp_path):
+    """0.38.x: unreadable JSON state is moved to *.broken (and logged) instead of vanishing silently."""
+    from app import config
+    from app.roulette import Roulette
+    p = tmp_path / "state.json"
+    p.write_text("{not json", encoding="utf-8")
+    assert Roulette.load(str(p)).loadout is None
+    assert not p.exists() and (tmp_path / "state.json.broken").read_text(encoding="utf-8") == "{not json"
+    assert config.read_json(str(tmp_path / "missing.json")) is None
+    (tmp_path / "list.json").write_text("[1, 2]", encoding="utf-8")
+    assert config.read_json(str(tmp_path / "list.json")) is None and (tmp_path / "list.json").exists()

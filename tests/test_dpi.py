@@ -251,6 +251,7 @@ def service(tmp_path, monkeypatch):
                      publish=lambda ev, d: events.append((ev, d)),
                      publish_threadsafe=lambda ev, d: events.append((ev, d)))
     svc.events = events
+    svc.settings.spin_duration_ms = 30          # past the 500 ms floor of the setting: the tests only wait for it
     return svc
 
 
@@ -264,7 +265,10 @@ def test_spin_picks_from_wheel_and_applies_at_stop(service):
             assert spin["values"][spin["index"]] == spin["value"]
             assert ("dpi_spin", spin) in service.events
             assert service.backend.calls == []          # not applied yet (apply_at = stop)
-            await asyncio.sleep(0.8)
+            for _ in range(200):
+                if service.backend.calls:
+                    break
+                await asyncio.sleep(0.01)
             assert service.backend.calls == [spin["value"]]
             assert service.current_dpi == spin["value"]
             assert service.last_spin["applied"] is not None
@@ -317,7 +321,10 @@ def test_service_persistence(service, tmp_path):
         service.start(loop)
         try:
             service.spin("manual")
-            await asyncio.sleep(0.8)
+            for _ in range(200):
+                if service.backend.calls:
+                    break
+                await asyncio.sleep(0.01)
         finally:
             service.stop()
     asyncio.run(run())
@@ -328,17 +335,18 @@ def test_service_persistence(service, tmp_path):
 def test_guard_reapplies_after_revert(tmp_path):
     svc = DpiService(DpiSettings.from_dict({"guard": True, "backend": "fake", "spin_duration_ms": 500}),
                      str(tmp_path / "dpi.json"), lambda *a: None, lambda *a: None)
-    svc.backend = FakeBackend(dpi=800, revert_after=0.2)
+    svc.backend = FakeBackend(dpi=800, revert_after=0.01)
     svc.target_dpi = 1600
     svc.current_dpi = 1600
     svc.backend.set_dpi(1600)
-    time.sleep(0.3)
+    time.sleep(0.03)
     assert svc.backend.get_dpi() == 800   # "G HUB" reverted
     svc._guard_stop.clear()
     import threading
     t = threading.Thread(target=svc._guard_loop, daemon=True)
-    # make the loop tick fast
-    svc._guard_stop.wait = lambda timeout=None: False if svc.guard_reapplies == 0 else True
+    # make the loop tick fast; a deadline so a broken guard cannot leave a hot thread behind
+    deadline = time.monotonic() + 2.0
+    svc._guard_stop.wait = lambda timeout=None: svc.guard_reapplies > 0 or time.monotonic() > deadline
     t.start()
     t.join(timeout=2.0)
     assert svc.guard_reapplies >= 1 and svc.backend.get_dpi() == 1600

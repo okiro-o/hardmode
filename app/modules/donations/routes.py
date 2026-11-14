@@ -55,9 +55,7 @@ async def da_callback(request: Request) -> HTMLResponse:
         ok, text = False, f"DonationAlerts отказал: {q.get('error_description') or q.get('error')}"
     else:
         try:
-            loop = asyncio.get_running_loop()
-            user = await loop.run_in_executor(None, svc.da_finish, q.get("code") or "", q.get("state") or "",
-                                              da_redirect_uri(request))
+            user = await asyncio.to_thread(svc.da_finish, q.get("code") or "", q.get("state") or "", da_redirect_uri(request))
             ok, text = True, f"DonationAlerts подключён: {user.get('name') or user.get('code') or 'аккаунт'}"
         except (ValueError, ProviderError) as e:
             ok, text = False, f"Не получилось: {e}"
@@ -79,7 +77,7 @@ async def da_disconnect(request: Request) -> dict:
 async def dp_verify(request: Request) -> dict:
     svc = _state(request).donations
     try:
-        user = await asyncio.get_running_loop().run_in_executor(None, svc.dp_verify)
+        user = await asyncio.to_thread(svc.dp_verify)
     except (ValueError, ProviderError) as e:
         return {"ok": False, "error": str(e)}
     return {"ok": True, "user": user.get("name")}

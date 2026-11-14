@@ -10,7 +10,6 @@ match (GSI ``match_end``) resolves it: win/loss → the winning outcome, a draw 
 Only what the streamer sees anyway is used (the final score), see SPEC §9 «честная игра»."""
 from __future__ import annotations
 
-import json
 import logging
 import threading
 import time
@@ -77,12 +76,8 @@ class PredictionService:
 
     # ------------------------------------------------------------------ store
     def _load(self) -> None:
-        try:
-            with open(self.state_path, encoding="utf-8") as f:
-                d = json.load(f)
-        except (OSError, ValueError):
-            return
-        if isinstance(d, dict):
+        d = config.read_json(self.state_path)
+        if d:
             self.current = d.get("current") if isinstance(d.get("current"), dict) and d["current"].get("id") else None
             self.last = d.get("last") if isinstance(d.get("last"), dict) else None
 

@@ -7,6 +7,7 @@ from app import twitch_api as T
 from app.gsi import GsiTracker
 from tests.test_gsi import payload
 from tests.test_twitch_api import FakeTwitch, _service, _signed_in
+from tests.conftest import wait_until as _wait
 
 
 class FakePredictions(FakeTwitch):
@@ -50,12 +51,6 @@ def _svc(tmp_path, fake=None, **settings):
                               str(tmp_path / "predictions.json"), publish_threadsafe=lambda ev, d: published.append((ev, d)))
     return svc, fake, published
 
-
-def _wait(cond, timeout=3.0):
-    t0 = time.monotonic()
-    while not cond() and time.monotonic() - t0 < timeout:
-        time.sleep(0.02)
-    return cond()
 
 
 def test_settings_validation_and_title():

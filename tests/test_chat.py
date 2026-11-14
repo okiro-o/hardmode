@@ -1,8 +1,7 @@
-import time
-
 import pytest
 
 from app.chat import ChatNotifier, ChatSettings, render_template
+from tests.conftest import wait_until as wait_for
 
 
 def test_settings():
@@ -26,19 +25,12 @@ def make_notifier(ready=True, **settings):
     events = []
     n = ChatNotifier(ChatSettings.from_dict({"enabled": True, "min_interval_s": 0.5, **settings}),
                      publish_threadsafe=lambda ev, d: events.append((ev, d)))
+    n.settings.min_interval_s = 0.05            # the pause between messages, shortened past its 0.5 s floor
     n.twitch_send = lambda msg: sent.append(msg) or {"message_id": "m", "is_sent": True}
     n.twitch_ready = lambda: ready
     n.sent, n.events = sent, events
     return n
 
-
-def wait_for(cond, timeout=3.0):
-    end = time.time() + timeout
-    while time.time() < end:
-        if cond():
-            return True
-        time.sleep(0.02)
-    return False
 
 
 def test_notifier_sends_and_coalesces_bursts():
@@ -46,7 +38,7 @@ def test_notifier_sends_and_coalesces_bursts():
     for i in range(5):
         n.notify_weapon(f"W{i}", i)
     assert wait_for(lambda: n.sent_count >= 1)
-    time.sleep(0.8)
+    assert wait_for(lambda: n.sent[-1].startswith("🎲 Оружие: W4"))
     # bursts collapse: the first message goes out, later ones collapse to the newest
     assert n.sent[0].startswith("🎲 Оружие: W0") and n.sent[-1].startswith("🎲 Оружие: W4")
     assert len(n.sent) <= 3
@@ -57,12 +49,10 @@ def test_notifier_needs_messages_on_and_a_twitch_sign_in():
     n = make_notifier(enabled=False)
     n.notify_weapon("AK-47", 1)
     n.notify_dpi(1600)
-    time.sleep(0.2)
-    assert n.sent == [] and not n.can_send()
+    assert n.sent == [] and not n.can_send() and n._thread is None      # refused before anything is queued
     signed_out = make_notifier(ready=False)
     signed_out.notify_start("AWP")
-    time.sleep(0.2)
-    assert signed_out.sent == [] and not signed_out.can_send()
+    assert signed_out._thread is None and signed_out.sent == [] and not signed_out.can_send()
     n2 = make_notifier(on_dpi=False)
     n2.notify_dpi(1600)
     n2.notify_start("AWP")
