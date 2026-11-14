@@ -420,6 +420,7 @@
     <span class="chip" id="chip-held"><span class="dot"></span>В руках: <b>—</b></span>
     <span class="chip" id="chip-mouse"><span class="dot"></span><b>мышь: ?</b></span>
     <span class="chip" id="chip-sse"><span class="dot"></span><b>нет связи с приложением</b></span>
+    <span class="chip warn" id="chip-rec" style="display:none;" title="Запущено через run-gsi-record.bat: пакеты CS2 пишутся в data\gsi-record.jsonl"><span class="dot"></span><b>запись пакетов CS2</b></span>
     <div class="twbox" id="twbox">
       <button class="twbtn" id="tw-btn" onclick="twitchButton(event)"><span class="twdot"></span><span id="tw-btn-label">Войти через Twitch</span></button>
       <div class="twpop" id="tw-pop"></div>
@@ -1606,6 +1607,7 @@ function renderSettings() {
 
 function renderMisc() {
   $('version').textContent = 'v' + S.version;
+  $('chip-rec').style.display = S.gsi_record ? '' : 'none';
   $('url-weapons').textContent = S.urls.overlay_weapons;
   $('url-loadout').textContent = S.urls.overlay_loadout;
   $('url-requests').textContent = S.urls.overlay_requests;

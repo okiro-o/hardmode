@@ -28,6 +28,7 @@ from .gsi import GsiTracker, build_cfg
 from . import ingame as ingame_mod
 from .obs import ObsService, ObsSettings
 from .predictions import PredictionService, PredictionSettings
+from .gsi_record import GsiRecorder
 from .twitch_api import TwitchError, TwitchService
 from .ingame import IngameOverlays
 from .chat import ChatNotifier, ChatSettings
@@ -133,6 +134,9 @@ class AppState:
         self.donations.chat_result = lambda user, text: self.chat.notify_donation(user, text, ok=True)
         self.donations.chat_reject = lambda user, text: self.chat.notify_donation(user, text, ok=False)
         self._save_lock = threading.Lock()
+        # run-gsi-record.bat: real payloads for the developer, never switched on from the panel
+        self.gsi_recorder = (GsiRecorder(os.path.join(config.data_dir(), "gsi-record.jsonl"))
+                             if os.environ.get("CS2R_GSI_RECORD") == "1" else None)
         self._last_gsi_publish = 0.0
         self._last_gsi_key: tuple = ()
         self._last_gsi_error_log = 0.0
@@ -379,6 +383,7 @@ class AppState:
             "obs": self.obs.status(),
             "twitch_account": self.twitch_api.status(),
             "predictions": self.predictions.status(),
+            "gsi_record": bool(self.gsi_recorder and self.gsi_recorder.enabled),
             "urls": self.urls(),
             "gsi_token": self.settings.gsi_token,
             "port": self.settings.port,
@@ -410,6 +415,8 @@ class AppState:
             self.broker.publish("gsi", st.to_dict())
 
     def handle_gsi(self, payload: dict) -> None:
+        if self.gsi_recorder:
+            self.gsi_recorder.record(payload)
         events = self.gsi.handle(payload)
         st = self.gsi.status
         if st.own_player and st.team in (W.T, W.CT):
