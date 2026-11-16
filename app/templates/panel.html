@@ -1351,6 +1351,9 @@ function renderUpdate() {
     + (u.error ? `<div class="err">${esc(u.error)}</div>` : '')
     + (u.behind > 0 ? `<button class="primary" onclick="updApply()" ${u.busy ? 'disabled' : ''}>${u.restart_self ? 'Обновить и перезапустить' : 'Обновить'}</button>` : '');
 }
+function updCheckSoon() {   // the server skips it when it checked less than two minutes ago
+  fetch('/api/update/check', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{"soft": true}'}).catch(() => {});
+}
 function updButton(ev) {
   ev.stopPropagation();
   closePopups('upd');
@@ -1871,6 +1874,13 @@ function renderChecks() {
   if (prs.enabled) opt.push(item(pr.allowed && !pr.error ? 'ok' : 'warn', 'Twitch: прогнозы на матч', !pr.logged_in ? 'войдите через Twitch: кнопка справа сверху'
     : !pr.allowed ? 'войдите через Twitch заново и разрешите прогнозы' : pr.error ? pr.error : pr.current ? `идёт «${pr.current.title}»` : 'откроется сам в первом раунде матча', openPred));
   else opt.push(item('off', 'Twitch: прогнозы на матч', 'прогноз «победа или поражение» на каждый матч', openPred));
+  const up = S.update || {};
+  const UPD_WHY = {exe: 'exe обновляется пересборкой через build.bat', no_git: 'git не найден: обновляйся вручную командой git pull',
+                   no_checkout: 'папка скачана не через git: обновление из панели недоступно', off: 'выключено'};
+  if (!up.available) opt.push(item('off', 'Обновления', UPD_WHY[up.reason] || 'недоступно', ''));
+  else if (up.error) opt.push(item('warn', 'Обновления', up.error, ''));
+  else if (up.behind > 0) opt.push(item('warn', 'Обновления', `вышла v${up.latest || '?'}: кнопка «Обновить» внизу меню`, ''));
+  else opt.push(item('ok', 'Обновления', up.checked_at ? `последняя версия, проверено в ${fmtTime(up.checked_at).slice(0, 5)}` : 'проверяю…', ''));
   const a = S.autostart || {};
   const dn = S.donations || {}, dns = dn.settings || {};
   if (dns.enabled) opt.push(item((dn.da && dn.da.connected) || (dn.dp && dn.dp.verified) ? 'ok' : 'warn', 'Донаты', [dn.da && dn.da.connected ? 'DonationAlerts подключён' : '', dn.dp && dn.dp.verified ? 'DonatePay: ключ принят' : ''].filter(Boolean).join(' · ') || 'не подключён ни один сервис', `<button onclick="showMainTab('donations')">Открыть</button>`));
@@ -1916,12 +1926,13 @@ es.addEventListener('snapshot', e => {
   S = JSON.parse(e.data);
   // the app was updated and restarted while this page stayed open: load the new panel
   if (loadedVersion && S.version !== loadedVersion) { location.reload(); return; }
+  if (!loadedVersion) updCheckSoon();          // a page (re)load asks GitHub too, not only the 3-hour timer
   loadedVersion = S.version;
   renderAll(); $('chip-sse').className='chip ok';
 });
 es.addEventListener('stats_history', () => { loadStatsHistory(); });
-es.addEventListener('update', e => { if (!S) return; S.update = JSON.parse(e.data); renderUpdate(); });
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { previewAll(); twitchSyncSoon(); } });
+es.addEventListener('update', e => { if (!S) return; S.update = JSON.parse(e.data); renderUpdate(); renderChecks(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { previewAll(); twitchSyncSoon(); updCheckSoon(); } });
 es.addEventListener('roulette', e => { if (!S) return; S.roulette = JSON.parse(e.data); renderHeader(); renderQueue(); renderLoadout(); renderSettings(); renderChecks(); schedulePreview('weapons'); });
 es.addEventListener('gsi', e => { if (!S) return; const prev = S.gsi || {}; S.gsi = JSON.parse(e.data); renderHeader(); renderMisc(); renderChecks(); if (S.gsi.held !== prev.held || S.gsi.connected !== prev.connected) schedulePreview('weapons'); });
 es.addEventListener('settings', e => { if (!S) return; const d = JSON.parse(e.data); S.overlay = d.overlay; S.ingame = d.ingame || S.ingame; if (S.donations && d.donations) S.donations.settings = d.donations; if (S.obs && d.obs) S.obs.settings = d.obs; S.gsi_token = d.gsi_token; S.port = d.port; if (S.dpi && d.dpi) S.dpi.settings = d.dpi; if (S.chat && d.chat) S.chat.settings = d.chat; if (d.roulette) S.roulette.settings = d.roulette; if (d.predictions && S.predictions) S.predictions.settings = d.predictions;

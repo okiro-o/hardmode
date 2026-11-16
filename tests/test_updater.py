@@ -101,3 +101,32 @@ def test_api_update_routes(client):
     assert client.get("/api/state").json()["update"]["available"] is False
     r = client.post("/api/update/apply").json()
     assert r["ok"] is False and "git" in r["error"]
+
+
+def test_soft_check_is_skipped_when_fresh_and_reasons_are_reported(tmp_path, monkeypatch):
+    git = FakeGit(behind=0)
+    u, _, _ = _up(tmp_path, monkeypatch, git)
+    u.check()
+    fetches = sum(1 for c in git.calls if c[0] == "fetch")
+    u.check(max_age=120)                                         # the panel reloaded a moment later
+    assert sum(1 for c in git.calls if c[0] == "fetch") == fetches
+    u.check()                                                    # the timer or a forced check still fetches
+    assert sum(1 for c in git.calls if c[0] == "fetch") == fetches + 1
+    assert u.status()["reason"] is None
+    monkeypatch.setattr(U, "find_git", lambda: None)
+    (tmp_path / "b").mkdir()
+    (tmp_path / "b" / ".git").mkdir()
+    assert U.Updater(str(tmp_path / "b"), "0.39.2", lambda ev, d: None).status()["reason"] == "no_git"
+
+
+def test_git_is_found_outside_path_on_windows(tmp_path, monkeypatch):
+    """0.39.2: git installed without the PATH option (or only inside GitHub Desktop)."""
+    monkeypatch.setattr(U.shutil, "which", lambda name: None)
+    monkeypatch.setattr(U.sys, "platform", "win32")
+    exe = tmp_path / "GitHubDesktop" / "app-3.4.1" / "resources" / "app" / "git" / "cmd" / "git.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_text("")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("ProgramFiles", str(tmp_path / "nope"))
+    monkeypatch.setenv("ProgramFiles(x86)", str(tmp_path / "nope"))
+    assert U.find_git() == str(exe)

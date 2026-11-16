@@ -414,8 +414,10 @@ def create_app() -> FastAPI:
         return state.updater.status()
 
     @app.post("/api/update/check")
-    async def update_check() -> dict:
-        return await asyncio.to_thread(state.updater.check)
+    async def update_check(request: Request) -> dict:
+        """{soft: true} — the panel on load: only when the last check is older than two minutes."""
+        soft = bool((await _json(request)).get("soft"))
+        return await asyncio.to_thread(state.updater.check, 120.0 if soft else 0.0)
 
     @app.post("/api/update/apply")
     async def update_apply() -> dict:

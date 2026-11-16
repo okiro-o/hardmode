@@ -9,6 +9,7 @@ that way; the old console window closes when its instance quits on the take-over
 Windows process flags cannot be exercised on macOS: tests replace ``run``/``spawn``."""
 from __future__ import annotations
 
+import glob
 import logging
 import os
 import re
@@ -38,6 +39,21 @@ def default_run(args: list[str], cwd: str, timeout: float) -> tuple[int, str]:
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
 
+def find_git() -> str | None:
+    """git on PATH, else the usual Windows places (0.39.2: the user's app saw no git, the button never came):
+    Git for Windows without the PATH option, and the copy bundled with GitHub Desktop."""
+    found = shutil.which("git")
+    if found or not sys.platform.startswith("win"):
+        return found
+    env = os.environ.get
+    places = [os.path.join(env("ProgramFiles", r"C:\Program Files"), "Git", "cmd", "git.exe"),
+              os.path.join(env("ProgramFiles(x86)", r"C:\Program Files (x86)"), "Git", "cmd", "git.exe"),
+              os.path.join(env("LOCALAPPDATA", ""), "Programs", "Git", "cmd", "git.exe")]
+    places += sorted(glob.glob(os.path.join(env("LOCALAPPDATA", ""), "GitHubDesktop", "app-*", "resources", "app",
+                                            "git", "cmd", "git.exe")), reverse=True)
+    return next((p for p in places if os.path.isfile(p)), None)
+
+
 def default_spawn(root: str, console: bool) -> None:
     env = {**os.environ, "CS2R_NO_BROWSER": "1"}      # the open panel reconnects by itself, no new tab
     bat = "run-console.bat" if console else "run.bat"
@@ -54,16 +70,20 @@ class Updater:
         self._run = run
         self._spawn = spawn
         self._lock = threading.Lock()
-        self.git = shutil.which("git")
-        self.available = bool(self.git) and os.path.isdir(os.path.join(root, ".git")) \
-            and not getattr(sys, "frozen", False) and os.environ.get("CS2R_NO_UPDATE") != "1"
+        self.git = find_git()
+        # why the panel cannot update by itself (shown in Startup), None when it can
+        self.reason = ("exe" if getattr(sys, "frozen", False) else "off" if os.environ.get("CS2R_NO_UPDATE") == "1"
+                       else "no_checkout" if not os.path.isdir(os.path.join(root, ".git"))
+                       else "no_git" if not self.git else None)
+        self.available = self.reason is None
         self.state: dict = {"behind": 0, "latest": None, "changes": [], "checked_at": None, "error": None,
                             "busy": False, "text": None}
         self._stop = threading.Event()
 
     # ------------------------------------------------------------------ status
     def status(self) -> dict:
-        return {"available": self.available, "current": self.current, "restart_self": sys.platform.startswith("win"),
+        return {"available": self.available, "reason": self.reason, "current": self.current,
+                "restart_self": sys.platform.startswith("win"),
                 "console": os.environ.get("CS2R_MODE") != "tray",
                 **{k: (list(v) if isinstance(v, list) else v) for k, v in self.state.items()}}
 
@@ -77,9 +97,13 @@ class Updater:
         return out
 
     # ------------------------------------------------------------------- check
-    def check(self) -> dict:
-        """Blocking: fetch and compare with the upstream branch."""
+    def check(self, max_age: float = 0.0) -> dict:
+        """Blocking: fetch and compare with the upstream branch. ``max_age``: skip when checked that recently (the
+        panel asks on every load; a page refresh must not hammer GitHub)."""
         if not self.available or self.state["busy"]:      # git pull is running: its lock would make fetch fail
+            return self.status()
+        last = self.state["checked_at"]
+        if max_age and last and time.time() - last < max_age:
             return self.status()
         with self._lock:
             try:
