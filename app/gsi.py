@@ -111,6 +111,10 @@ class GsiTracker:
     _thrown: list[tuple[str, float]] = field(default_factory=list)
     _was_alive: bool = False   # last own payload had health > 0 (death detection)
     _phase: tuple[str | None, str | None] = (None, None)   # (map name, map phase) of the previous payload
+    _last_round: int | None = None              # map.round of the previous payload (a restart sends it back)
+    # a first live round not judged yet: (map, mode). It becomes «match_start» once the freeze time is over and the
+    # inventory holds a gun; a knife-only first round is a knife round (FACEIT, 0.39.1), the real start follows it
+    _start_pending: tuple[str, str | None] | None = None
 
     # ------------------------------------------------------------------ parsing
     @staticmethod
@@ -161,7 +165,9 @@ class GsiTracker:
            "ambiguous": grenade_name|None, "index": i, "count": n}``
         ``{"type": "side", "side": "T"|"CT"}``
         ``{"type": "death"}`` (our player just died in a live round / live DM)
-        ``{"type": "match_start", "map": name, "mode": mode}`` (first live round of a match: Twitch predictions)
+        ``{"type": "match_start", "map": name, "mode": mode}`` (first live round of a match, a gun in hand when the
+          freeze time ends: Twitch predictions)
+        ``{"type": "knife_round"}`` (that first round was a knife round: the match starts after the server restart)
         ``{"type": "match_end", "result": "win"|"loss"|"draw"|None}`` (map phase turned "gameover";
           None when there is no team score to judge by, e.g. deathmatch)
         ``{"type": "status"}`` (always last, status object updated)
@@ -206,17 +212,22 @@ class GsiTracker:
         # screen the player block often follows a teammate. Our side is the last one seen in own payloads.
         if st.map_phase == "gameover" and self._phase[0] == st.map_name and self._phase[1] not in (None, "gameover"):
             events.append({"type": "match_end", "result": self._match_result(map_, st.team, st.mode)})
-        # start of a match: the phase turns "live" in its first round (after warmup, or straight away after
-        # loading); half-time and later rounds never qualify
-        if st.map_phase == "live" and self._phase[1] != "live" and (st.round or 0) <= 1 and st.map_name:
-            events.append({"type": "match_start", "map": st.map_name, "mode": st.mode})
-        self._phase = (st.map_name, st.map_phase)
+        # start of a match: the phase turns "live" in its first round (after warmup, or straight away after loading),
+        # or the round counter goes back while live (the server restarted the game, e.g. after a knife round);
+        # half-time and later rounds never qualify. Judged below, when the freeze time is over.
+        fresh = st.map_phase == "live" and self._phase[1] != "live" and (st.round or 0) <= 1
+        restarted = (st.map_phase == "live" and self._phase == (st.map_name, "live") and st.round is not None
+                     and self._last_round is not None and st.round < self._last_round)
+        if st.map_name and (fresh or restarted):
+            self._start_pending = (st.map_name, st.mode)
+        self._phase, self._last_round = (st.map_name, st.map_phase), st.round
 
         if not player or not map_:
             # main menu / loading: nothing to track, reset per-round memory and stale fields
             if not map_:
                 self._prev = None
                 self._was_alive = False
+                self._start_pending = None
                 st.clear_player()
                 st.team = None
             events.append({"type": "status"})
@@ -232,6 +243,13 @@ class GsiTracker:
 
         state = _obj(player.get("state"))
         entries = self._weapon_entries(player.get("weapons"))   # parsed once, reused below
+        pend = self._start_pending
+        if pend and pend[0] == st.map_name and st.map_phase == "live" and st.round_phase != "freezetime":
+            self._start_pending = None
+            if any((w := W.from_gsi_name(_str(e.get("name")))) and w.id not in ("knife", "taser") for e in entries):
+                events.append({"type": "match_start", "map": pend[0], "mode": pend[1]})
+            else:                                  # knife only: a knife round, the real match starts after it
+                events.append({"type": "knife_round"})
         active = self._active_weapon(entries)
         active_raw = _str(active.get("name")) if active else None
         held = W.from_gsi_name(active_raw)
@@ -401,6 +419,7 @@ class GsiTracker:
             self._prev = None
             self._was_alive = False
             self._phase = (None, None)
+            self._start_pending = None
             return True
         return False
 

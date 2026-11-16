@@ -132,6 +132,36 @@ def test_gsi_match_start_only_in_the_first_live_round():
     assert not [e for e in t.handle(payload(phase="live", round_=12), now=5.0) if e["type"] == "match_start"]
 
 
+KNIFE_ONLY = {"weapon_0": {"name": "weapon_knife_t", "type": "Knife", "state": "holstered"}}
+
+
+def _starts(t, p, now):
+    ev = t.handle(p, now=now)
+    return [e["type"] for e in ev if e["type"] in ("match_start", "knife_round")]
+
+
+def test_faceit_knife_round_is_not_the_start_of_the_match():
+    """0.39.1, user's report: on FACEIT the knife round after warmup opened a prediction, then the restart opened
+    a second one. The start is judged when the freeze time ends: knife only = knife round."""
+    t = GsiTracker()
+    t.handle(payload(phase="warmup", round_=0), now=1.0)
+    assert _starts(t, payload(phase="live", round_=0, rphase="freezetime", weapons=KNIFE_ONLY, active="weapon_knife_t"), 2.0) == []
+    assert _starts(t, payload(phase="live", round_=0, rphase="live", weapons=KNIFE_ONLY, active="weapon_knife_t"), 3.0) == ["knife_round"]
+    t.handle(payload(phase="live", round_=1, rphase="over", weapons=KNIFE_ONLY, active="weapon_knife_t"), now=4.0)
+    # the server restarts the game: the round counter goes back to 0 while the phase stays live
+    assert _starts(t, payload(phase="live", round_=0, rphase="freezetime"), 5.0) == []          # pistol bought, still frozen
+    assert _starts(t, payload(phase="live", round_=0, rphase="live"), 6.0) == ["match_start"]
+    assert _starts(t, payload(phase="live", round_=0, rphase="live"), 7.0) == []                # once
+
+
+def test_restart_through_warmup_after_the_knife_round():
+    t = GsiTracker()
+    t.handle(payload(phase="warmup", round_=0), now=1.0)
+    assert _starts(t, payload(phase="live", round_=0, rphase="live", weapons=KNIFE_ONLY, active="weapon_knife_t"), 2.0) == ["knife_round"]
+    t.handle(payload(phase="warmup", round_=0), now=3.0)                                        # a short warmup again
+    assert _starts(t, payload(phase="live", round_=0, rphase="live"), 4.0) == ["match_start"]
+
+
 def test_api_routes_and_settings(client, tmp_path):
     st = client.app.state.app
     fake = FakePredictions()
