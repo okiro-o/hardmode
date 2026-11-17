@@ -1351,6 +1351,12 @@ function renderUpdate() {
     + (u.error ? `<div class="err">${esc(u.error)}</div>` : '')
     + (u.behind > 0 ? `<button class="primary" onclick="updApply()" ${u.busy ? 'disabled' : ''}>${u.restart_self ? 'Обновить и перезапустить' : 'Обновить'}</button>` : '');
 }
+// after an update (by the button or by hand) the panel says so once: the version it saw last time is remembered
+function noteUpdated(version) {
+  let seen = null;
+  try { seen = localStorage.getItem('hardmode.seenVersion'); localStorage.setItem('hardmode.seenVersion', version); } catch (e) {}
+  if (seen && seen !== version) setTimeout(() => toast(`Hardmode обновлён: v${seen} → v${version}`), 400);
+}
 function updCheckSoon() {   // the server skips it when it checked less than two minutes ago
   fetch('/api/update/check', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{"soft": true}'}).catch(() => {});
 }
@@ -1926,7 +1932,7 @@ es.addEventListener('snapshot', e => {
   S = JSON.parse(e.data);
   // the app was updated and restarted while this page stayed open: load the new panel
   if (loadedVersion && S.version !== loadedVersion) { location.reload(); return; }
-  if (!loadedVersion) updCheckSoon();          // a page (re)load asks GitHub too, not only the 3-hour timer
+  if (!loadedVersion) { updCheckSoon(); noteUpdated(S.version); }   // a (re)load asks GitHub too, not only the timer
   loadedVersion = S.version;
   renderAll(); $('chip-sse').className='chip ok';
 });
