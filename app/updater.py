@@ -91,7 +91,11 @@ class Updater:
         self._publish("update", self.status())
 
     def _git(self, *args: str, timeout: float = 60.0) -> str:
-        code, out = self._run([self.git or "git", *args], self.root, timeout)
+        # «detected dubious ownership» (0.39.4, user's report): the app folder is owned by another account (made as
+        # admin, another drive). Trusting it here is no new risk — whoever can write there already changes the
+        # app's own code — and it spares the streamer «git config --global --add safe.directory …»
+        safe = "safe.directory=" + os.path.abspath(self.root).replace("\\", "/")
+        code, out = self._run([self.git or "git", "-c", safe, *args], self.root, timeout)
         if code != 0:
             raise RuntimeError(out.strip().splitlines()[-1] if out.strip() else f"git {args[0]}: код {code}")
         return out

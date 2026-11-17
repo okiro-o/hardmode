@@ -11,7 +11,8 @@ class FakeGit:
         self.calls: list[list[str]] = []
 
     def __call__(self, args, cwd, timeout):
-        cmd = args[1:]
+        assert args[1] == "-c" and args[2].startswith("safe.directory=")     # the app trusts its own folder
+        cmd = args[3:]
         self.calls.append(cmd)
         if cmd[0] in self.fail:
             return 1, self.fail[cmd[0]]
