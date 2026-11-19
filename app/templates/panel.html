@@ -68,6 +68,7 @@
   section h2 .right.nowrap { flex-wrap:nowrap; flex-shrink:0; }
   h3 .setup-sum { order:1; font-size:12.5px; font-weight:600; letter-spacing:normal; text-transform:none; color:var(--text); }
   #setup-sum-race { margin-top:-2px; }
+  h3 .svc { min-width:11em; }              /* the service names share one width: their status chips line up */
   .setup-btn { order:3; padding:3px 10px; font-size:12px; font-weight:600; letter-spacing:normal; text-transform:none; }
   /* buttons */
   a.btn { display:inline-block; text-decoration:none; text-align:center; }
@@ -831,7 +832,7 @@
       <section id="sec-donations">
         <h2>Донаты <span class="right"><span class="chip" id="chip-donations"><span class="dot"></span><b>выкл</b></span></span></h2>
         <label class="inline"><input type="checkbox" data-key="donations.enabled"> Донаты включены</label>
-        <h3>DonationAlerts <span class="chip" id="chip-da" style="margin-left:8px;"><span class="dot"></span><b>—</b></span><button class="setup-btn" id="setup-btn-da" onclick="setupToggle('da')" style="display:none;">Настроить</button></h3>
+        <h3><span class="svc">DonationAlerts</span><span class="chip" id="chip-da"><span class="dot"></span><b>—</b></span><button class="setup-btn" id="setup-btn-da" onclick="setupToggle('da')" style="display:none;">Настроить</button></h3>
         <div class="form" id="setup-da">
           <div class="f full"><span>Адрес возврата (вписать в приложение DonationAlerts)</span>
             <div class="url" style="margin:0;"><code id="da-redirect"></code><button onclick="copyText('da-redirect')">Копировать</button></div></div>
@@ -847,7 +848,7 @@
             <button onclick="post('/api/donations/da/disconnect')">Отключить</button>
           </div>
         </div>
-        <h3>DonatePay <span class="chip" id="chip-dp" style="margin-left:8px;"><span class="dot"></span><b>—</b></span><button class="setup-btn" id="setup-btn-dp" onclick="setupToggle('dp')" style="display:none;">Настроить</button></h3>
+        <h3><span class="svc">DonatePay</span><span class="chip" id="chip-dp"><span class="dot"></span><b>—</b></span><button class="setup-btn" id="setup-btn-dp" onclick="setupToggle('dp')" style="display:none;">Настроить</button></h3>
         <div class="form" id="setup-dp">
           <label class="f full"><span>Ключ API <span id="dp-key-state" class="muted"></span></span>
             <div class="tokenbox">
